@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { BellRing, FileCheck, Calendar, Clock } from "lucide-react";
+import { BellRing, FileCheck, Calendar, Clock, Mic, MicOff, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
 const TaskTypePopup = ({ isOpen, onClose, onSelect }) => {
   if (!isOpen) return null;
@@ -201,6 +202,16 @@ export default function AssignTask() {
   const [givenByOptions, setGivenByOptions] = useState([]);
   const [doerOptions, setDoerOptions] = useState([]);
 
+  const browserSupportsSpeechRecognition = SpeechRecognition.browserSupportsSpeechRecognition();
+  const [isMicrophoneAvailable, setIsMicrophoneAvailable] = useState(true);
+
+  const {
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition: browserSupports
+  } = useSpeechRecognition();
+
   const getFrequencies = () => {
     if (selectedTaskType === "delegation") {
       return [
@@ -383,6 +394,29 @@ export default function AssignTask() {
 
     return `${dateStr} at ${timeStr}`;
   };
+
+  useEffect(() => {
+    if (transcript) {
+      setFormData(prev => ({
+        ...prev,
+        description: transcript
+      }));
+    }
+  }, [transcript]);
+
+  useEffect(() => {
+    const checkMicrophone = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        setIsMicrophoneAvailable(true);
+      } catch (error) {
+        setIsMicrophoneAvailable(false);
+      }
+    };
+
+    checkMicrophone();
+  }, []);
 
   useEffect(() => {
     fetchMasterSheetOptions();
@@ -1297,23 +1331,85 @@ export default function AssignTask() {
                   </div>
 
                   {/* Description */}
+                  {/* Description with Voice Input */}
                   <div className="space-y-2">
                     <label
                       htmlFor="description"
                       className="block text-sm font-medium text-purple-700"
                     >
-                      Task Description
+                      Task Description *
                     </label>
-                    <textarea
-                      id="description"
-                      name="description"
-                      value={formData.description}
-                      onChange={handleChange}
-                      placeholder="Enter task description"
-                      rows={4}
-                      required
-                      className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
+                    <div className="relative">
+                      <textarea
+                        id="description"
+                        name="description"
+                        value={formData.description}
+                        onChange={handleChange}
+                        placeholder="Enter task description or use voice input"
+                        rows={4}
+                        required
+                        className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 pr-10"
+                      />
+
+                      {/* Voice Input Button */}
+                      {browserSupportsSpeechRecognition && isMicrophoneAvailable && (
+                        <div className="absolute bottom-2 right-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (listening) {
+                                SpeechRecognition.stopListening();
+                              } else {
+                                SpeechRecognition.startListening({ continuous: true, language: 'en-US' });
+                              }
+                            }}
+                            className={`p-2 rounded-full ${listening
+                              ? 'bg-red-100 text-red-600'
+                              : 'bg-purple-100 text-purple-600'
+                              } hover:opacity-80 transition-all`}
+                            title={listening ? 'Stop listening' : 'Start voice typing'}
+                          >
+                            {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Voice Input Status */}
+                    {browserSupportsSpeechRecognition && isMicrophoneAvailable && (
+                      <div className="flex items-center text-sm text-gray-500">
+                        {listening && (
+                          <div className="flex items-center mr-2">
+                            <span className="relative flex h-3 w-3 mr-1">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                            </span>
+                            Listening... Speak clearly
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={resetTranscript}
+                          disabled={!transcript}
+                          className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Clear voice input
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Browser Support Message */}
+                    {!browserSupportsSpeechRecognition && (
+                      <div className="text-sm text-amber-600 mt-1">
+                        Voice input is not supported in your browser. Please use Chrome for best experience.
+                      </div>
+                    )}
+
+                    {!isMicrophoneAvailable && (
+                      <div className="text-sm text-amber-600 mt-1">
+                        Microphone access is blocked. Please allow microphone access to use voice input.
+                      </div>
+                    )}
                   </div>
 
                   {/* Date, Time and Frequency */}
