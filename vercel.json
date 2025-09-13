@@ -2,6 +2,12 @@
   "rewrites": [
     {
       "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "microphone=()"
+        }
+      ],
       "destination": "/"
     }
   ],
