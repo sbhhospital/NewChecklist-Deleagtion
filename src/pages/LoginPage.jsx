@@ -16,6 +16,8 @@ const LoginPage = () => {
     password: "",
   })
   const [toast, setToast] = useState({ show: false, message: "", type: "" })
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
+  const [loggedInUsername, setLoggedInUsername] = useState("")
 
   // Function to check if a role is any variation of "inactive"
   const isInactiveRole = (role) => {
@@ -163,6 +165,7 @@ const LoginPage = () => {
         if (correctPassword === trimmedPassword) {
           // Store user info in sessionStorage
           sessionStorage.setItem('username', trimmedUsername)
+          setLoggedInUsername(trimmedUsername) // Set the username for the popup
 
           // Check if user is admin - explicitly compare with the string "admin"
           const isAdmin = userRole === "admin";
@@ -182,8 +185,13 @@ const LoginPage = () => {
             console.log("USER LOGIN - Setting restricted access");
           }
 
-          // Navigate to dashboard
-          navigate("/dashboard/admin")
+          // Show success popup
+          setShowSuccessPopup(true)
+
+          // After 2 seconds, navigate to dashboard
+          setTimeout(() => {
+            navigate("/dashboard/admin")
+          }, 2000)
 
           showToast(`Login successful. Welcome, ${trimmedUsername}!`, "success")
           return
@@ -291,6 +299,34 @@ const LoginPage = () => {
           : "bg-red-100 text-red-800 border-l-4 border-red-500"
           }`}>
           {toast.message}
+        </div>
+      )}
+
+      {/* Success Popup Modal */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl transform transition-all duration-300 scale-100 opacity-100">
+            <div className="text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
+                <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="mt-3 text-lg font-medium text-gray-900">Login Successful!</h3>
+              <div className="mt-2 px-4 py-3">
+                <p className="text-xl text-gray-600">
+                  Welcome <span className="font-semibold text-blue-600">{loggedInUsername}</span>, you have successfully logged in.
+                </p>
+
+              </div>
+              <div className="mt-4">
+                <div className="flex justify-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Redirecting to dashboard...</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -204,6 +204,7 @@ export default function AssignTask() {
 
   const browserSupportsSpeechRecognition = SpeechRecognition.browserSupportsSpeechRecognition();
   const [isMicrophoneAvailable, setIsMicrophoneAvailable] = useState(true);
+  const [isDateDisabled, setIsDateDisabled] = useState(false);
 
   const {
     transcript,
@@ -255,6 +256,7 @@ export default function AssignTask() {
       taskType: type,
       frequency: type === "delegation" ? "one-time" : "daily",
     }));
+    setIsDateDisabled(false);
   };
 
   const handleChange = (e) => {
@@ -266,6 +268,18 @@ export default function AssignTask() {
         [name]: value,
         frequency: value === "delegation" ? "one-time" : "daily",
       }));
+    } else if (name === "frequency") {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+
+      // Check if it's delegation task with critical/urgent frequency
+      if (selectedTaskType === "delegation" && (value === "critical" || value === "urgent")) {
+        setIsDateDisabled(true);
+        // Set date to today
+        const today = new Date();
+        setSelectedDate(today);
+      } else {
+        setIsDateDisabled(false);
+      }
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
@@ -393,6 +407,28 @@ export default function AssignTask() {
     const timeStr = time || "09:00";
 
     return `${dateStr} at ${timeStr}`;
+  };
+
+  const handleCancel = () => {
+    const userRole = sessionStorage.getItem("role");
+    const username = sessionStorage.getItem("username");
+
+    const resetFormData = {
+      department: "",
+      givenBy: "",
+      doer: userRole !== "admin" && username ? formData.doer : "",
+      description: "",
+      frequency: "daily",
+      enableReminders: true,
+      requireAttachment: false,
+    };
+
+    setFormData(resetFormData);
+    setSelectedDate(new Date()); // Reset to today's date
+    setTime("09:00");
+    setGeneratedTasks([]);
+    setAccordionOpen(false);
+    setSelectedTaskType(null);
   };
 
   useEffect(() => {
@@ -540,6 +576,13 @@ export default function AssignTask() {
 
     fetchDoerOptions();
   }, []);
+
+  useEffect(() => {
+    if (selectedTaskType) {
+      const today = new Date();
+      setSelectedDate(today);
+    }
+  }, [selectedTaskType]);
 
   // Add a function to get the last task ID from the specified sheet
   const getLastTaskId = async (sheetName) => {
@@ -703,7 +746,135 @@ export default function AssignTask() {
     setAccordionOpen(false);
     setSelectedTaskType(null); // This will return to the task selection page
   };
-  // UPDATED: generateTasks function with proper frequency logic
+
+  // const generateTasks = async () => {
+  //   if (
+  //     !date ||
+  //     !time ||
+  //     !formData.doer ||
+  //     !formData.description ||
+  //     !formData.frequency
+  //   ) {
+  //     alert("Please fill in all required fields including date and time.");
+  //     return;
+  //   }
+
+  //   // Fetch working days from the sheet
+  //   const workingDays = await fetchWorkingDays();
+  //   if (workingDays.length === 0) {
+  //     alert(
+  //       "Could not retrieve working days. Please make sure the Working Day Calendar sheet is properly set up."
+  //     );
+  //     return;
+  //   }
+
+  //   // Sort the working days chronologically
+  //   const sortedWorkingDays = [...workingDays].sort((a, b) => {
+  //     const [dayA, monthA, yearA] = a.split("/").map(Number);
+  //     const [dayB, monthB, yearB] = b.split("/").map(Number);
+  //     return (
+  //       new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB)
+  //     );
+  //   });
+
+  //   const selectedDate = new Date(date);
+  //   const tasks = [];
+
+  //   // Handle all delegation task frequencies (one-time, critical, urgent)
+  //   if (selectedTaskType === "delegation") {
+  //     // Filter out dates before the selected date (no back dates)
+  //     const futureDates = sortedWorkingDays.filter((dateStr) => {
+  //       const [dateDay, month, year] = dateStr.split("/").map(Number);
+  //       const dateObj = new Date(year, month - 1, dateDay);
+  //       return dateObj >= selectedDate;
+  //     });
+
+  //     if (futureDates.length === 0) {
+  //       alert(
+  //         "No working days found on or after your selected date. Please choose a different start date or update the Working Day Calendar."
+  //       );
+  //       return;
+  //     }
+
+  //     const startDateStr = formatDateToDDMMYYYY(selectedDate);
+  //     let startIndex = futureDates.findIndex((d) => d === startDateStr);
+
+  //     if (startIndex === -1) {
+  //       startIndex = 0;
+  //       alert(
+  //         `The selected date (${startDateStr}) is not in the Working Day Calendar. The next available working day will be used instead: ${futureDates[0]}`
+  //       );
+  //     }
+
+  //     const taskDateStr = futureDates[startIndex];
+  //     const taskDateTimeStr = formatDateTimeForStorage(
+  //       new Date(taskDateStr.split("/").reverse().join("-")),
+  //       time
+  //     );
+
+  //     tasks.push({
+  //       description: formData.description,
+  //       department: formData.department,
+  //       givenBy: formData.givenBy,
+  //       doer: formData.doer,
+  //       dueDate: taskDateTimeStr,
+  //       status: "pending",
+  //       frequency: formData.frequency,
+  //       enableReminders: formData.enableReminders,
+  //       requireAttachment: formData.requireAttachment,
+  //     });
+  //   }
+  //   // Handle checklist tasks (all frequencies)
+  //   else if (selectedTaskType === "checklist") {
+  //     // Filter out dates before the selected date (no back dates)
+  //     const futureDates = sortedWorkingDays.filter((dateStr) => {
+  //       const [dateDay, month, year] = dateStr.split("/").map(Number);
+  //       const dateObj = new Date(year, month - 1, dateDay);
+  //       return dateObj >= selectedDate;
+  //     });
+
+  //     if (futureDates.length === 0) {
+  //       alert(
+  //         "No working days found on or after your selected date. Please choose a different start date or update the Working Day Calendar."
+  //       );
+  //       return;
+  //     }
+
+  //     const startDateStr = formatDateToDDMMYYYY(selectedDate);
+  //     let startIndex = futureDates.findIndex((d) => d === startDateStr);
+
+  //     if (startIndex === -1) {
+  //       startIndex = 0;
+  //       alert(
+  //         `The selected date (${startDateStr}) is not in the Working Day Calendar. The next available working day will be used instead: ${futureDates[0]}`
+  //       );
+  //     }
+
+  //     const taskDateStr = futureDates[startIndex];
+  //     const taskDateTimeStr = formatDateTimeForStorage(
+  //       new Date(taskDateStr.split("/").reverse().join("-")),
+  //       time
+  //     );
+
+  //     tasks.push({
+  //       description: formData.description,
+  //       department: formData.department,
+  //       givenBy: formData.givenBy,
+  //       doer: formData.doer,
+  //       dueDate: taskDateTimeStr,
+  //       status: "pending",
+  //       frequency: formData.frequency,
+  //       enableReminders: formData.enableReminders,
+  //       requireAttachment: formData.requireAttachment,
+  //     });
+  //   }
+
+  //   setGeneratedTasks(tasks);
+  //   setAccordionOpen(true);
+  // };
+
+  // Helper function to find the closest working day to a target date
+
   const generateTasks = async () => {
     if (
       !date ||
@@ -716,58 +887,12 @@ export default function AssignTask() {
       return;
     }
 
-    // Fetch working days from the sheet
-    const workingDays = await fetchWorkingDays();
-    if (workingDays.length === 0) {
-      alert(
-        "Could not retrieve working days. Please make sure the Working Day Calendar sheet is properly set up."
-      );
-      return;
-    }
-
-    // Sort the working days chronologically
-    const sortedWorkingDays = [...workingDays].sort((a, b) => {
-      const [dayA, monthA, yearA] = a.split("/").map(Number);
-      const [dayB, monthB, yearB] = b.split("/").map(Number);
-      return (
-        new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB)
-      );
-    });
-
     const selectedDate = new Date(date);
     const tasks = [];
 
     // Handle all delegation task frequencies (one-time, critical, urgent)
     if (selectedTaskType === "delegation") {
-      // Filter out dates before the selected date (no back dates)
-      const futureDates = sortedWorkingDays.filter((dateStr) => {
-        const [dateDay, month, year] = dateStr.split("/").map(Number);
-        const dateObj = new Date(year, month - 1, dateDay);
-        return dateObj >= selectedDate;
-      });
-
-      if (futureDates.length === 0) {
-        alert(
-          "No working days found on or after your selected date. Please choose a different start date or update the Working Day Calendar."
-        );
-        return;
-      }
-
-      const startDateStr = formatDateToDDMMYYYY(selectedDate);
-      let startIndex = futureDates.findIndex((d) => d === startDateStr);
-
-      if (startIndex === -1) {
-        startIndex = 0;
-        alert(
-          `The selected date (${startDateStr}) is not in the Working Day Calendar. The next available working day will be used instead: ${futureDates[0]}`
-        );
-      }
-
-      const taskDateStr = futureDates[startIndex];
-      const taskDateTimeStr = formatDateTimeForStorage(
-        new Date(taskDateStr.split("/").reverse().join("-")),
-        time
-      );
+      const taskDateTimeStr = formatDateTimeForStorage(selectedDate, time);
 
       tasks.push({
         description: formData.description,
@@ -783,35 +908,7 @@ export default function AssignTask() {
     }
     // Handle checklist tasks (all frequencies)
     else if (selectedTaskType === "checklist") {
-      // Filter out dates before the selected date (no back dates)
-      const futureDates = sortedWorkingDays.filter((dateStr) => {
-        const [dateDay, month, year] = dateStr.split("/").map(Number);
-        const dateObj = new Date(year, month - 1, dateDay);
-        return dateObj >= selectedDate;
-      });
-
-      if (futureDates.length === 0) {
-        alert(
-          "No working days found on or after your selected date. Please choose a different start date or update the Working Day Calendar."
-        );
-        return;
-      }
-
-      const startDateStr = formatDateToDDMMYYYY(selectedDate);
-      let startIndex = futureDates.findIndex((d) => d === startDateStr);
-
-      if (startIndex === -1) {
-        startIndex = 0;
-        alert(
-          `The selected date (${startDateStr}) is not in the Working Day Calendar. The next available working day will be used instead: ${futureDates[0]}`
-        );
-      }
-
-      const taskDateStr = futureDates[startIndex];
-      const taskDateTimeStr = formatDateTimeForStorage(
-        new Date(taskDateStr.split("/").reverse().join("-")),
-        time
-      );
+      const taskDateTimeStr = formatDateTimeForStorage(selectedDate, time);
 
       tasks.push({
         description: formData.description,
@@ -830,7 +927,6 @@ export default function AssignTask() {
     setAccordionOpen(true);
   };
 
-  // Helper function to find the closest working day to a target date
   const findClosestWorkingDayIndex = (workingDays, targetDateStr) => {
     // Parse the target date (DD/MM/YYYY format)
     const [targetDay, targetMonth, targetYear] = targetDateStr
@@ -1418,17 +1514,25 @@ export default function AssignTask() {
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-purple-700">
                         Task Deadline Date
+                        {(selectedTaskType === "delegation" && (formData.frequency === "critical" || formData.frequency === "urgent")) && (
+                          <span className="text-xs text-purple-600 ml-1"></span>
+                        )}
                       </label>
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setShowCalendar(!showCalendar)}
-                          className="w-full flex justify-start items-center rounded-md border border-purple-200 p-2 text-left focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          onClick={() => !isDateDisabled && setShowCalendar(!showCalendar)}
+                          disabled={isDateDisabled}
+                          className={`w-full flex justify-start items-center rounded-md border border-purple-200 p-2 text-left focus:outline-none focus:ring-1 focus:ring-purple-500 ${isDateDisabled ? "bg-gray-100 cursor-not-allowed opacity-75" : ""
+                            }`}
                         >
                           <Calendar className="mr-2 h-4 w-4 text-purple-500" />
                           {date ? getFormattedDate(date) : "Select a date"}
+                          {isDateDisabled && (
+                            <span className="ml-2 text-xs text-gray-500"></span>
+                          )}
                         </button>
-                        {showCalendar && (
+                        {showCalendar && !isDateDisabled && (
                           <div className="absolute z-10 mt-1">
                             <CalendarComponent
                               date={date}
@@ -1682,7 +1786,7 @@ export default function AssignTask() {
                       };
 
                       setFormData(resetFormData);
-                      setSelectedDate(null);
+                      setSelectedDate(new Date());
                       setTime("09:00");
                       setGeneratedTasks([]);
                       setAccordionOpen(false);
