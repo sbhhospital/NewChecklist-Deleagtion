@@ -1736,206 +1736,116 @@ function AccountDataPage() {
             </>
           ) : (
             /* Regular Tasks Table with Status Column */
-            // <div className="h-[calc(100vh-250px)] overflow-auto" onScroll={handleTableScroll}>
-            //   <table className="min-w-full divide-y divide-gray-200">
-            //     <thead className="bg-gray-50 sticky top-0 z-10">
-            //       <tr>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
-            //           <input
-            //             type="checkbox"
-            //             className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-            //             checked={
-            //               // Only consider enabled items for select all
-            //               filteredAccountData.filter(item => {
-            //                 const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-            //                 return taskStatus !== "Admin Done" && taskStatus !== "Done";
-            //               }).length > 0 &&
-            //               selectedItems.size === filteredAccountData.filter(item => {
-            //                 const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-            //                 return taskStatus !== "Admin Done" && taskStatus !== "Done";
-            //               }).length
-            //             }
-            //             onChange={handleSelectAllItems}
-            //           />
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-            //           Task ID
-            //         </th>
-            //         {/* Status Column Header */}
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-            //           Status
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-            //           Department Name
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-            //           Given By
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-            //           Name
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-            //           Status
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
-            //           Remarks
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
-            //           Task Description
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-yellow-50 min-w-[140px]">
-            //           Task Start Date & Time
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-            //           Freq
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-            //           Enable Reminders
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-            //           Require Attachment
-            //         </th>
-            //         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-            //           Upload Image
-            //         </th>
-            //       </tr>
-            //     </thead>
-            //     {/* // Replace the tbody section in tasks table with this: */}
-            //     <tbody className="bg-white divide-y divide-gray-200">
-            //       {/* Add padding for virtual scrolling */}
-            //       {visibleRange.start > 0 && (
-            //         <tr style={{ height: visibleRange.start * 60 }}>
-            //           <td colSpan={14}></td>
-            //         </tr>
-            //       )}
+            <div className="h-[calc(100vh-250px)] overflow-auto" onScroll={handleTableScroll}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                        checked={
+                          // Only consider enabled items for select all
+                          filteredAccountData.filter(item => {
+                            const taskStatus = getTaskStatus(item["col10"], item["col15"]);
+                            return taskStatus !== "Admin Done" && taskStatus !== "Done";
+                          }).length > 0 &&
+                          selectedItems.size === filteredAccountData.filter(item => {
+                            const taskStatus = getTaskStatus(item["col10"], item["col15"]);
+                            return taskStatus !== "Admin Done" && taskStatus !== "Done";
+                          }).length
+                        }
+                        onChange={handleSelectAllItems}
+                      />
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                      Task ID
+                    </th>
+                    {/* Status Column Header */}
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                      Status
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                      Department Name
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                      Given By
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                      Name
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                      Status
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
+                      Remarks
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
+                      Task Description
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-yellow-50 min-w-[140px]">
+                      Task Start Date & Time
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                      Freq
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                      Enable Reminders
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                      Require Attachment
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
+                      Upload Image
+                    </th>
+                  </tr>
+                </thead>
+                {/* // Replace the tbody section in tasks table with this: */}
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* Add padding for virtual scrolling */}
+                  {visibleRange.start > 0 && (
+                    <tr style={{ height: visibleRange.start * 60 }}>
+                      <td colSpan={14}></td>
+                    </tr>
+                  )}
 
-            //       {visibleAccountData.length > 0 ? (
-            //         visibleAccountData.map((account) => (
-            //           <MemoizedTaskRow
-            //             key={account._id}
-            //             account={account}
-            //             isSelected={selectedItems.has(account._id)}
-            //             additionalData={additionalData[account._id]}
-            //             remarksData={remarksData[account._id]}
-            //             onCheckboxClick={handleCheckboxClick}
-            //             onAdditionalDataChange={handleAdditionalDataChange}
-            //             onRemarksChange={handleRemarksChange}
-            //             onImageUpload={handleImageUpload}
-            //           />
-            //         ))
-            //       ) : (
-            //         <tr>
-            //           <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
-            //             {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
-            //               ? "No tasks matching your filters"
-            //               : "No tasks found for today, tomorrow, or past due dates"}
-            //           </td>
-            //         </tr>
-            //       )}
+                  {visibleAccountData.length > 0 ? (
+                    visibleAccountData.map((account) => (
+                      <MemoizedTaskRow
+                        key={account._id}
+                        account={account}
+                        isSelected={selectedItems.has(account._id)}
+                        additionalData={additionalData[account._id]}
+                        remarksData={remarksData[account._id]}
+                        onCheckboxClick={handleCheckboxClick}
+                        onAdditionalDataChange={handleAdditionalDataChange}
+                        onRemarksChange={handleRemarksChange}
+                        onImageUpload={handleImageUpload}
+                      />
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
+                        {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
+                          ? "No tasks matching your filters"
+                          : "No tasks found for today, tomorrow, or past due dates"}
+                      </td>
+                    </tr>
+                  )}
 
-            //       {/* Add padding for virtual scrolling */}
-            //       {visibleRange.end < filteredAccountData.length && (
-            //         <tr style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}>
-            //           <td colSpan={14}></td>
-            //         </tr>
-            //       )}
-            //     </tbody>
-            //   </table>
-            // </div>
+                  {/* Add padding for virtual scrolling */}
+                  {visibleRange.end < filteredAccountData.length && (
+                    <tr style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}>
+                      <td colSpan={14}></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
 
 
-      <div className="h-[calc(100vh-250px)] overflow-auto">
-  <table className="min-w-full divide-y divide-gray-200">
-    <thead className="bg-gray-50 sticky top-0 z-10">
-      <tr>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-            checked={
-              // Only consider enabled items for select all
-              filteredAccountData.filter(item => {
-                const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-                return taskStatus !== "Admin Done" && taskStatus !== "Done";
-              }).length > 0 &&
-              selectedItems.size === filteredAccountData.filter(item => {
-                const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-                return taskStatus !== "Admin Done" && taskStatus !== "Done";
-              }).length
-            }
-            onChange={handleSelectAllItems}
-          />
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-          Task ID
-        </th>
-        {/* Status Column Header */}
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-          Status
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-          Department Name
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-          Given By
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-          Name
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-          Status
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[150px]">
-          Remarks
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
-          Task Description
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-yellow-50 min-w-[140px]">
-          Task Start Date & Time
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-          Freq
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-          Enable Reminders
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-          Require Attachment
-        </th>
-        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-          Upload Image
-        </th>
-      </tr>
-    </thead>
-    <tbody className="bg-white divide-y divide-gray-200">
-      {filteredAccountData.length > 0 ? (
-        filteredAccountData.map((account) => (
-          <MemoizedTaskRow
-            key={account._id}
-            account={account}
-            isSelected={selectedItems.has(account._id)}
-            additionalData={additionalData[account._id]}
-            remarksData={remarksData[account._id]}
-            onCheckboxClick={handleCheckboxClick}
-            onAdditionalDataChange={handleAdditionalDataChange}
-            onRemarksChange={handleRemarksChange}
-            onImageUpload={handleImageUpload}
-          />
-        ))
-      ) : (
-        <tr>
-          <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
-            {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
-              ? "No tasks matching your filters"
-              : "No tasks found for today, tomorrow, or past due dates"}
-          </td>
-        </tr>
-      )}
-    </tbody>
-  </table>
-</div>
+      
           )}
         </div>
       </div>
