@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { flushSync } from "react-dom";
 import {
   CheckCircle2,
   Upload,
@@ -16,7 +15,7 @@ import AdminLayout from "../components/layout/AdminLayout";
 const CONFIG = {
   // Google Apps Script URL
   APPS_SCRIPT_URL:
-    "https://script.google.com/macros/s/AKfycbwZ2h_itaVDRpMXMVwUJDjLCMnPkMa8QwM58sgHYKhhetpA7gh8lepQg9kKPFsJ9uSl-A/exec",
+    "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
 
   // Google Drive folder ID for file uploads
   DRIVE_FOLDER_ID: "1aNvrucZButW0c4RwMBGDJiJ-wbOlpQIb",
@@ -24,7 +23,6 @@ const CONFIG = {
   // Sheet names
   SOURCE_SHEET_NAME: "DELEGATION",
   TARGET_SHEET_NAME: "DELEGATION DONE",
-  WHATSAPP_SHEET_NAME: "Whatsapp",
 
   // Page configuration
   PAGE_CONFIG: {
@@ -79,9 +77,6 @@ function DelegationDataPage() {
     start: "",
     end: "",
   });
-
-  const [whatsappNameFilter, setWhatsappNameFilter] = useState("");
-  const [allWhatsAppData, setAllWhatsAppData] = useState([]);
 
   // NEW: Admin history selection states
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([]);
@@ -295,49 +290,8 @@ function DelegationDataPage() {
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }, []);
 
-  // const sortDateWise = useCallback(
-  //   (a, b) => {
-  //     const dateStrA = a["col6"] || "";
-  //     const dateStrB = b["col6"] || "";
-  //     const dateA = parseDateFromDDMMYYYY(dateStrA);
-  //     const dateB = parseDateFromDDMMYYYY(dateStrB);
-  //     if (!dateA) return 1;
-  //     if (!dateB) return -1;
-  //     return dateA.getTime() - dateB.getTime();
-  //   },
-  //   [parseDateFromDDMMYYYY]
-  // );
-
   const sortDateWise = useCallback(
     (a, b) => {
-      const statusA = a["col20"] || "";
-      const statusB = b["col20"] || "";
-
-      // Define status priority order: Pending first, then others, Done last
-      const getStatusPriority = (status) => {
-        switch (status) {
-          case "Pending":
-            return 1; // Highest priority - top
-          case "Verify Pending":
-            return 2;
-          case "Planned":
-            return 3;
-          case "Done":
-            return 4; // Lowest priority - bottom
-          default:
-            return 2; // Unknown statuses go with middle group
-        }
-      };
-
-      const priorityA = getStatusPriority(statusA);
-      const priorityB = getStatusPriority(statusB);
-
-      // First sort by status priority
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-
-      // Then sort by date within same status
       const dateStrA = a["col6"] || "";
       const dateStrB = b["col6"] || "";
       const dateA = parseDateFromDDMMYYYY(dateStrA);
@@ -445,41 +399,34 @@ function DelegationDataPage() {
     </div>
   );
 
+
   // Optimized filtered data with debounced search
   const filteredAccountData = useMemo(() => {
     const filtered = debouncedSearchTerm
       ? accountData.filter(
-          (account) =>
-            Object.values(account).some(
-              (value) =>
-                value &&
-                value
-                  .toString()
-                  .toLowerCase()
-                  .includes(debouncedSearchTerm.toLowerCase())
-            ) ||
-            (account["col20"] &&
-              account["col20"]
+        (account) =>
+          Object.values(account).some(
+            (value) =>
+              value &&
+              value
                 .toString()
                 .toLowerCase()
-                .includes(debouncedSearchTerm.toLowerCase()))
-        )
+                .includes(debouncedSearchTerm.toLowerCase())
+          ) ||
+          (account["col20"] &&
+            account["col20"]
+              .toString()
+              .toLowerCase()
+              .includes(debouncedSearchTerm.toLowerCase()))
+      )
       : accountData;
 
     return filtered
       .filter((account) => {
         // Name filter - apply if a name is selected
-        if (
-          nameFilter &&
-          account["col4"].toLowerCase() !== nameFilter.toLowerCase()
-        ) {
+        if (nameFilter && account["col4"].toLowerCase() !== nameFilter.toLowerCase()) {
           return false;
         }
-
-        if (whatsappNameFilter && account["col4"] !== whatsappNameFilter) {
-          return false;
-        }
-
         // Date range filter
         if (dateRange.start || dateRange.end) {
           const taskDate = parseDateFromDDMMYYYY(
@@ -547,20 +494,7 @@ function DelegationDataPage() {
     return Array.from(names).sort();
   }, [accountData, historyData, userRole, username]);
 
-  const uniqueWhatsappNames = useMemo(() => {
-    const names = new Set();
 
-    // Extract names from allWhatsAppData (col2 contains usernames)
-    allWhatsAppData.forEach((item) => {
-      if (item["col2"] && item["col2"].trim() !== "") {
-        names.add(item["col2"]);
-      }
-    });
-
-    return Array.from(names).sort();
-  }, [allWhatsAppData]);
-
-  // console.log("uniqueNames",uniqueNames);
 
   const uniqueDates = useMemo(() => {
     const dates = new Set();
@@ -589,21 +523,18 @@ function DelegationDataPage() {
         if (!userMatch) return false;
 
         // Name filter - apply if a name is selected (check column H - col7)
-        if (
-          nameFilter &&
-          item["col7"].toLowerCase() !== nameFilter.toLowerCase()
-        ) {
+        if (nameFilter && item["col7"].toLowerCase() !== nameFilter.toLowerCase()) {
           return false;
         }
         const matchesSearch = debouncedSearchTerm
           ? Object.values(item).some(
-              (value) =>
-                value &&
-                value
-                  .toString()
-                  .toLowerCase()
-                  .includes(debouncedSearchTerm.toLowerCase())
-            )
+            (value) =>
+              value &&
+              value
+                .toString()
+                .toLowerCase()
+                .includes(debouncedSearchTerm.toLowerCase())
+          )
           : true;
 
         let matchesDateRange = true;
@@ -653,16 +584,12 @@ function DelegationDataPage() {
       setError(null);
 
       // Parallel fetch both sheets for better performance
-      const [mainResponse, historyResponse, whatsAppSheet] = await Promise.all([
+      const [mainResponse, historyResponse] = await Promise.all([
         fetch(
           `${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SOURCE_SHEET_NAME}&action=fetch`
         ),
         fetch(
           `${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.TARGET_SHEET_NAME}&action=fetch`
-        ).catch(() => null),
-
-        fetch(
-          `${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.WHATSAPP_SHEET_NAME}&action=fetch`
         ).catch(() => null),
       ]);
 
@@ -685,101 +612,6 @@ function DelegationDataPage() {
           throw new Error("Invalid JSON response from server");
         }
       }
-
-      const whatsAppText = await whatsAppSheet.text();
-      let whatsAPPData;
-      try {
-        whatsAPPData = JSON.parse(whatsAppText);
-      } catch (parseError) {
-        const jsonStart = whatsAppText.indexOf("{");
-        const jsonEnd = whatsAppText.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          const jsonString = whatsAppText.substring(jsonStart, jsonEnd + 1);
-          whatsAPPData = JSON.parse(jsonString);
-        } else {
-          throw new Error("Invalid JSON response from server");
-        }
-      }
-
-      let allWhatsAppData = [];
-
-      console.log("WhatsAppData", whatsAPPData);
-
-      let whatsApprows = [];
-
-      if (whatsAPPData.table && whatsAPPData.table.rows) {
-        whatsApprows = whatsAPPData.table.rows;
-      } else if (Array.isArray(whatsAPPData)) {
-        whatsApprows = whatsAPPData;
-      } else if (whatsAPPData.values) {
-        whatsApprows = whatsAPPData.values.map((row) => ({
-          c: row.map((val) => ({ v: val })),
-        }));
-      }
-
-      // Inside the fetchSheetData function, update the data processing section:
-      whatsApprows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return; // Skip header row
-
-        let rowValues = [];
-        if (row.c) {
-          rowValues = row.c.map((cell) =>
-            cell && cell.v !== undefined ? cell.v : ""
-          );
-        } else if (Array.isArray(row)) {
-          rowValues = row;
-        } else {
-          return;
-        }
-
-        const googleSheetsRowIndex = rowIndex + 1;
-        const taskId = rowValues[1] || "";
-        const stableId = taskId
-          ? `task_${taskId}_${googleSheetsRowIndex}`
-          : `row_${googleSheetsRowIndex}_${Math.random()
-              .toString(36)
-              .substring(2, 15)}`;
-
-        const rowData = {
-          _id: stableId,
-          _rowIndex: googleSheetsRowIndex,
-          _taskId: taskId,
-        };
-
-        // Map all columns including timestamp (column A)
-        for (let i = 0; i < 21; i++) {
-          if (i === 0 || i === 6 || i === 10) {
-            // Column A (0), G (6), K (10) are dates
-            rowData[`col${i}`] = rowValues[i]
-              ? parseGoogleSheetsDate(String(rowValues[i]))
-              : "";
-          } else {
-            rowData[`col${i}`] = rowValues[i] || "";
-          }
-        }
-
-        // ✅ NEW: Skip rows where Column L (col11) has a value
-        // const actualValue = rowData["col11"] // Column L (Actual)
-        // if (!isEmpty(actualValue)) {
-        //   return // Skip this row if Column L is not empty
-        // }
-
-        // ✅ User filtering logic
-        if (userRole !== "admin") {
-          const taskAssignedTo = rowData["col4"]; // Column E (Name)
-          if (
-            !taskAssignedTo ||
-            taskAssignedTo.toLowerCase().trim() !==
-              username.toLowerCase().trim()
-          ) {
-            return; // Skip if not assigned to this user
-          }
-        }
-
-        allWhatsAppData.push(rowData);
-      });
-
-      setAllWhatsAppData(allWhatsAppData);
 
       // Process history data if available
       let processedHistoryData = [];
@@ -810,8 +642,8 @@ function DelegationDataPage() {
 
                 const rowValues = row.c
                   ? row.c.map((cell) =>
-                      cell && cell.v !== undefined ? cell.v : ""
-                    )
+                    cell && cell.v !== undefined ? cell.v : ""
+                  )
                   : [];
 
                 // Map all columns including column H (col7) for user filtering, column I (col8) for Task, and column P (col15) for Admin Done
@@ -872,8 +704,8 @@ function DelegationDataPage() {
         const stableId = taskId
           ? `task_${taskId}_${googleSheetsRowIndex}`
           : `row_${googleSheetsRowIndex}_${Math.random()
-              .toString(36)
-              .substring(2, 15)}`;
+            .toString(36)
+            .substring(2, 15)}`;
 
         const rowData = {
           _id: stableId,
@@ -905,7 +737,7 @@ function DelegationDataPage() {
           if (
             !taskAssignedTo ||
             taskAssignedTo.toLowerCase().trim() !==
-              username.toLowerCase().trim()
+            username.toLowerCase().trim()
           ) {
             return; // Skip if not assigned to this user
           }
@@ -914,22 +746,14 @@ function DelegationDataPage() {
         allDelegationData.push(rowData);
       });
 
-      // setAccountData(allDelegationData);
-
-      // setDelegationD
-      // ata(allDelegationData);
-
-      flushSync(() => {
-        setAccountData(allDelegationData);
-        setDelegationData(allDelegationData);
-      });
-
+      setAccountData(allDelegationData);
+      setDelegationData(allDelegationData);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching sheet data:", error);
       setError("Failed to load account data: " + error.message);
       setLoading(false);
-    } 
+    }
   }, [
     formatDateToDDMMYYYY,
     parseGoogleSheetsDate,
@@ -1505,32 +1329,16 @@ function DelegationDataPage() {
               value={nameFilter}
               onChange={(e) => setNameFilter(e.target.value)}
               className="border border-purple-300 rounded-lg px-3 py-2 text-sm min-w-[160px] max-w-[200px] focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-              disabled={userRole !== "admin" && uniqueWhatsappNames.length <= 1}
+              disabled={userRole !== "admin" && uniqueNames.length <= 1}
             >
               <option value="">All Names</option>
-              {uniqueWhatsappNames.map((name) => (
+              {uniqueNames.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
             </select>
           </div>
-
-          {/* <div className="flex items-center">
-            <select
-              id="whatsapp-name-filter"
-              value={whatsappNameFilter}
-              onChange={(e) => setWhatsappNameFilter(e.target.value)}
-              className="border border-purple-300 rounded-lg px-3 py-2 text-sm min-w-[160px] max-w-[200px] focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-            >
-              <option value="">All WhatsApp Users</option>
-              {uniqueWhatsappNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div> */}
 
           {/* Date Filter */}
           <div className="flex items-center space-x-4">
@@ -1595,17 +1403,12 @@ function DelegationDataPage() {
           </div>
 
           {/* Clear Filters Button */}
-          {(nameFilter ||
-            statusFilter ||
-            dateRange.start ||
-            dateRange.end ||
-            whatsappNameFilter) && (
+          {(nameFilter || statusFilter || dateRange.start || dateRange.end) && (
             <button
               onClick={() => {
                 setNameFilter("");
                 setDateRange({ start: "", end: "" });
                 setStatusFilter("");
-                setWhatsappNameFilter("");
               }}
               className="ml-auto flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-all duration-200"
             >
@@ -1652,9 +1455,8 @@ function DelegationDataPage() {
             </h2>
             <p className="text-purple-600 text-sm">
               {showHistory
-                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${
-                    userRole === "admin" ? "all" : "your"
-                  } tasks`
+                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${userRole === "admin" ? "all" : "your"
+                } tasks`
                 : CONFIG.PAGE_CONFIG.description}
             </p>
           </div>
@@ -1754,9 +1556,9 @@ function DelegationDataPage() {
                                   (item) => !isItemAdminDone(item)
                                 ).length > 0 &&
                                 selectedHistoryItems.length ===
-                                  filteredHistoryData.filter(
-                                    (item) => !isItemAdminDone(item)
-                                  ).length
+                                filteredHistoryData.filter(
+                                  (item) => !isItemAdminDone(item)
+                                ).length
                               }
                               onChange={(e) => {
                                 const unprocessedItems =
@@ -1828,9 +1630,8 @@ function DelegationDataPage() {
                         return (
                           <tr
                             key={history._id}
-                            className={`hover:bg-gray-50 ${
-                              isAdminDone ? "opacity-70 bg-gray-100" : ""
-                            }`}
+                            className={`hover:bg-gray-50 ${isAdminDone ? "opacity-70 bg-gray-100" : ""
+                              }`}
                           >
                             <td className="px-3 py-4 min-w-[80px]">
                               {editingRemarks[history._id] ? (
@@ -1890,11 +1691,10 @@ function DelegationDataPage() {
                                 <div className="flex flex-col items-center">
                                   <input
                                     type="checkbox"
-                                    className={`h-4 w-4 rounded border-gray-300 ${
-                                      isAdminDone
-                                        ? "text-green-600 bg-green-100"
-                                        : "text-green-600 focus:ring-green-500"
-                                    }`}
+                                    className={`h-4 w-4 rounded border-gray-300 ${isAdminDone
+                                      ? "text-green-600 bg-green-100"
+                                      : "text-green-600 focus:ring-green-500"
+                                      }`}
                                     checked={isAdminDone || isSelected}
                                     disabled={isAdminDone}
                                     onChange={() => {
@@ -1902,20 +1702,19 @@ function DelegationDataPage() {
                                         setSelectedHistoryItems((prev) =>
                                           isSelected
                                             ? prev.filter(
-                                                (item) =>
-                                                  item._id !== history._id
-                                              )
+                                              (item) =>
+                                                item._id !== history._id
+                                            )
                                             : [...prev, history]
                                         );
                                       }
                                     }}
                                   />
                                   <span
-                                    className={`text-xs mt-1 text-center break-words ${
-                                      isAdminDone
-                                        ? "text-green-600"
-                                        : "text-gray-400"
-                                    }`}
+                                    className={`text-xs mt-1 text-center break-words ${isAdminDone
+                                      ? "text-green-600"
+                                      : "text-gray-400"
+                                      }`}
                                   >
                                     {isAdminDone ? "Done" : "Mark Done"}
                                   </span>
@@ -1962,13 +1761,12 @@ function DelegationDataPage() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                  history["col2"] === "Done"
-                                    ? "bg-green-100 text-green-800"
-                                    : history["col2"] === "Extend date"
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${history["col2"] === "Done"
+                                  ? "bg-green-100 text-green-800"
+                                  : history["col2"] === "Extend date"
                                     ? "bg-yellow-100 text-yellow-800"
                                     : "bg-gray-100 text-gray-800"
-                                }`}
+                                  }`}
                               >
                                 {history["col2"] || "—"}
                               </span>
@@ -1986,6 +1784,7 @@ function DelegationDataPage() {
                                 {history["col4"] || "—"}
                               </div>
                             </td> */}
+
 
                             <td className="px-6 py-4 whitespace-nowrap">
                               {history["col5"] ? (
@@ -2079,17 +1878,10 @@ function DelegationDataPage() {
                         className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                         checked={
                           // Check if all enabled items are selected
-                          filteredAccountData.filter(
-                            (item) => !isTaskDisabled(item["col20"])
-                          ).length > 0 &&
-                          filteredAccountData.filter(
-                            (item) =>
-                              !isTaskDisabled(item["col20"]) &&
-                              selectedItems.has(item._id)
-                          ).length ===
-                            filteredAccountData.filter(
-                              (item) => !isTaskDisabled(item["col20"])
-                            ).length
+                          filteredAccountData.filter(item => !isTaskDisabled(item["col20"])).length > 0 &&
+                          filteredAccountData.filter(item =>
+                            !isTaskDisabled(item["col20"]) && selectedItems.has(item._id)
+                          ).length === filteredAccountData.filter(item => !isTaskDisabled(item["col20"])).length
                         }
                         onChange={handleSelectAllItems}
                       />
@@ -2107,10 +1899,7 @@ function DelegationDataPage() {
                       Department
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-purple-50" : ""
-                      }`}
-                    >
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-purple-50" : ""}`}>
                       Remarks
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2123,37 +1912,32 @@ function DelegationDataPage() {
                       Task Description
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-yellow-50" : ""
-                      }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-yellow-50" : ""
+                        }`}
                     >
                       Old Deadline Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-green-50" : ""
-                      }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-green-50" : ""
+                        }`}
                     >
                       New Deadline Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-blue-50" : ""
-                      }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-blue-50" : ""
+                        }`}
                     >
                       Status
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-indigo-50" : ""
-                      }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-indigo-50" : ""
+                        }`}
                     >
                       Next Target Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
-                        !accountData["col17"] ? "bg-orange-50" : ""
-                      }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-orange-50" : ""
+                        }`}
                     >
                       Upload Image
                     </th>
@@ -2168,13 +1952,11 @@ function DelegationDataPage() {
                       return (
                         <tr
                           key={account._id}
-                          className={`${
-                            isSelected ? "bg-purple-50" : ""
-                          } hover:bg-gray-50 ${rowColorClass} ${
-                            isTaskDisabled(account["col20"])
+                          className={`${isSelected ? "bg-purple-50" : ""
+                            } hover:bg-gray-50 ${rowColorClass} ${isTaskDisabled(account["col20"])
                               ? "opacity-50 bg-gray-100 cursor-not-allowed"
                               : ""
-                          }`}
+                            }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <input
@@ -2212,9 +1994,8 @@ function DelegationDataPage() {
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-purple-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-purple-50" : ""
+                              }`}
                           >
                             <input
                               type="text"
@@ -2249,27 +2030,24 @@ function DelegationDataPage() {
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-yellow-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-yellow-50" : ""
+                              }`}
                           >
                             <div className="text-sm text-gray-900">
                               {formatDateForDisplay(account["col6"])}
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-green-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-green-50" : ""
+                              }`}
                           >
                             <div className="text-sm text-gray-900">
                               {formatDateForDisplay(account["col10"])}
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-blue-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-blue-50" : ""
+                              }`}
                           >
                             <select
                               disabled={!isSelected}
@@ -2285,9 +2063,8 @@ function DelegationDataPage() {
                             </select>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-indigo-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-indigo-50" : ""
+                              }`}
                           >
                             <input
                               type="date"
@@ -2298,18 +2075,18 @@ function DelegationDataPage() {
                               value={
                                 nextTargetDate[account._id]
                                   ? (() => {
-                                      const dateStr =
-                                        nextTargetDate[account._id];
-                                      if (dateStr && dateStr.includes("/")) {
-                                        const [day, month, year] =
-                                          dateStr.split("/");
-                                        return `${year}-${month.padStart(
-                                          2,
-                                          "0"
-                                        )}-${day.padStart(2, "0")}`;
-                                      }
-                                      return dateStr;
-                                    })()
+                                    const dateStr =
+                                      nextTargetDate[account._id];
+                                    if (dateStr && dateStr.includes("/")) {
+                                      const [day, month, year] =
+                                        dateStr.split("/");
+                                      return `${year}-${month.padStart(
+                                        2,
+                                        "0"
+                                      )}-${day.padStart(2, "0")}`;
+                                    }
+                                    return dateStr;
+                                  })()
                                   : ""
                               }
                               onChange={(e) => {
@@ -2331,9 +2108,8 @@ function DelegationDataPage() {
                           </td>
 
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${
-                              !account["col17"] ? "bg-orange-50" : ""
-                            }`}
+                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-orange-50" : ""
+                              }`}
                           >
                             {account.image ? (
                               <div className="flex items-center">
@@ -2366,11 +2142,10 @@ function DelegationDataPage() {
                               </div>
                             ) : (
                               <label
-                                className={`flex items-center cursor-pointer ${
-                                  account["col9"]?.toUpperCase() === "YES"
-                                    ? "text-red-600 font-medium"
-                                    : "text-purple-600"
-                                } hover:text-purple-800`}
+                                className={`flex items-center cursor-pointer ${account["col9"]?.toUpperCase() === "YES"
+                                  ? "text-red-600 font-medium"
+                                  : "text-purple-600"
+                                  } hover:text-purple-800`}
                               >
                                 <Upload className="h-4 w-4 mr-1" />
                                 <span className="text-xs">
