@@ -944,20 +944,25 @@ const filteredAccountData = useMemo(() => {
     setRemarksData((prev) => ({ ...prev, [id]: value }))
   }, [])
 
-  const handleTableScroll = useCallback((e) => {
-    const scrollTop = e.target.scrollTop
-    const itemHeight = 60 // approximate row height
-    const containerHeight = e.target.clientHeight
-    const start = Math.floor(scrollTop / itemHeight)
-    const end = Math.min(start + Math.ceil(containerHeight / itemHeight) + 10, filteredAccountData.length)
+const handleTableScroll = useCallback((e) => {
+  const scrollTop = e.target.scrollTop;
+  const itemHeight = 60; // approximate row height
+  const containerHeight = e.target.clientHeight;
+  
+  // Calculate visible range with buffer
+  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 10); // Add buffer above
+  const end = Math.min(
+    start + Math.ceil(containerHeight / itemHeight) + 20, // Add buffer below
+    filteredAccountData.length
+  );
 
-    setVisibleRange({ start, end })
-  }, [filteredAccountData.length])
+  setVisibleRange({ start, end });
+}, [filteredAccountData.length]);
 
   // Add this to get visible data
   const visibleAccountData = useMemo(() => {
-    return filteredAccountData.slice(visibleRange.start, visibleRange.end)
-  }, [filteredAccountData, visibleRange])
+  return filteredAccountData.slice(visibleRange.start, visibleRange.end);
+}, [filteredAccountData, visibleRange.start, visibleRange.end]);
 
   const handleImageUpload = useCallback(async (id, e) => {
     const file = e.target.files[0]
@@ -1814,44 +1819,52 @@ const filteredAccountData = useMemo(() => {
                 </thead>
                 {/* // Replace the tbody section in tasks table with this: */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {/* Add padding for virtual scrolling */}
-                  {visibleRange.start > 0 && (
-                    <tr style={{ height: visibleRange.start * 60 }}>
-                      <td colSpan={14}></td>
-                    </tr>
-                  )}
+  {/* Top spacer - fixed height calculation */}
+  {visibleRange.start > 0 && (
+    <tr>
+      <td 
+        colSpan={14} 
+        style={{ height: visibleRange.start * 60 }}
+        className="p-0 m-0"
+      />
+    </tr>
+  )}
 
-                  {visibleAccountData.length > 0 ? (
-                    visibleAccountData.map((account) => (
-                      <MemoizedTaskRow
-                        key={account._id}
-                        account={account}
-                        isSelected={selectedItems.has(account._id)}
-                        additionalData={additionalData[account._id]}
-                        remarksData={remarksData[account._id]}
-                        onCheckboxClick={handleCheckboxClick}
-                        onAdditionalDataChange={handleAdditionalDataChange}
-                        onRemarksChange={handleRemarksChange}
-                        onImageUpload={handleImageUpload}
-                      />
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
-                        {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
-                          ? "No tasks matching your filters"
-                          : "No tasks found for today, tomorrow, or past due dates"}
-                      </td>
-                    </tr>
-                  )}
+  {visibleAccountData.length > 0 ? (
+    visibleAccountData.map((account) => (
+      <MemoizedTaskRow
+        key={account._id}
+        account={account}
+        isSelected={selectedItems.has(account._id)}
+        additionalData={additionalData[account._id]}
+        remarksData={remarksData[account._id]}
+        onCheckboxClick={handleCheckboxClick}
+        onAdditionalDataChange={handleAdditionalDataChange}
+        onRemarksChange={handleRemarksChange}
+        onImageUpload={handleImageUpload}
+      />
+    ))
+  ) : (
+    <tr>
+      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
+        {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
+          ? "No tasks matching your filters"
+          : "No tasks found for today, tomorrow, or past due dates"}
+      </td>
+    </tr>
+  )}
 
-                  {/* Add padding for virtual scrolling */}
-                  {visibleRange.end < filteredAccountData.length && (
-                    <tr style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}>
-                      <td colSpan={14}></td>
-                    </tr>
-                  )}
-                </tbody>
+  {/* Bottom spacer - fixed height calculation */}
+  {visibleRange.end < filteredAccountData.length && (
+    <tr>
+      <td 
+        colSpan={14} 
+        style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}
+        className="p-0 m-0"
+      />
+    </tr>
+  )}
+</tbody>
               </table>
             </div>
           )}

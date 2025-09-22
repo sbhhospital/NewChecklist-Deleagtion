@@ -24,7 +24,7 @@ export default function AdminDashboard() {
   const [filterStaff, setFilterStaff] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("overview")
-  const [profileImage, setProfileImage] = useState(null);
+  const [userName, setUserName] = useState("");
 
   // State for department data
   const [departmentData, setDepartmentData] = useState({
@@ -62,6 +62,38 @@ export default function AdminDashboard() {
     completionRate: 0
   });
 
+  useEffect(() => {
+  const fetchUserName = async () => {
+    const username = sessionStorage.getItem('username');
+    if (username) {
+      try {
+        const response = await fetch(
+          `https://script.google.com/macros/s/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/exec?username=${encodeURIComponent(username)}`
+        );
+        const data = await response.json();
+        if (data.success && data.email) {
+          setUserName(data.email.split('@')[0]); // Extract name from email
+        } else {
+          setUserName(username); // Fallback to username
+        }
+      } catch (error) {
+        console.error("Error fetching user name:", error);
+        setUserName(username); // Fallback to username
+      }
+    }
+  };
+
+  fetchUserName();
+}, []);
+
+// Add this function to get the appropriate greeting based on time of day
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+};
+
   // Helper function to format date from ISO format to DD/MM/YYYY
   const formatLocalDate = (isoDate) => {
     if (!isoDate) return "";
@@ -87,101 +119,6 @@ export default function AdminDashboard() {
       alert("Start date must be before end date");
       return;
     }
-
-useEffect(() => {
-    const fetchProfileImage = async () => {
-      try {
-        const username = sessionStorage.getItem('username');
-        if (!username) {
-          console.log('No username found in sessionStorage');
-          return;
-        }
-
-        console.log('Fetching profile image for username:', username);
-        
-        // Use your Apps Script URL to fetch the profile image
-        const response = await fetch(`https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec?username=${encodeURIComponent(username)}&action=getProfileImage`);
-        
-        if (!response.ok) {
-          console.error('Failed to fetch profile image - response not OK');
-          throw new Error('Failed to fetch profile image');
-        }
-
-        const data = await response.json();
-        console.log('Profile image API response:', data);
-        
-        if (data.success && data.profileImage) {
-          console.log('Raw image URL from API:', data.profileImage);
-          const displayableUrl = getDisplayableImageUrl(data.profileImage);
-          console.log('Processed displayable image URL:', displayableUrl);
-          setProfileImage(displayableUrl);
-        } else {
-          console.log('No profile image found or API returned unsuccessful');
-        }
-      } catch (error) {
-        console.error('Error fetching profile image:', error);
-      }
-    };
-
-    fetchProfileImage();
-  }, []);
-
-  // Update the getDisplayableImageUrl function with more logging
-  const getDisplayableImageUrl = (url) => {
-    if (!url) {
-      console.log('No URL provided to getDisplayableImageUrl');
-      return null;
-    }
-    
-    console.log('Processing URL in getDisplayableImageUrl:', url);
-    
-    // If it's already a direct image URL, return as is
-    if (url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-      console.log('URL is already a direct image link');
-      return url;
-    }
-    
-    // Handle Google Drive URLs
-    try {
-      // Extract file ID from various Google Drive URL formats
-      let fileId = null;
-      
-      // Format 1: https://drive.google.com/file/d/FILE_ID/view
-      const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-      if (fileMatch) {
-        fileId = fileMatch[1];
-        console.log('Extracted file ID from /file/d/ format:', fileId);
-      }
-      
-      // Format 2: https://drive.google.com/open?id=FILE_ID
-      const openMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-      if (openMatch) {
-        fileId = openMatch[1];
-        console.log('Extracted file ID from ?id= format:', fileId);
-      }
-      
-      // Format 3: Direct file ID
-      const idMatch = url.match(/^[a-zA-Z0-9_-]{25,}$/);
-      if (idMatch) {
-        fileId = url;
-        console.log('URL is a direct file ID:', fileId);
-      }
-      
-      if (fileId) {
-        const thumbnailUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200`;
-        console.log('Generated thumbnail URL:', thumbnailUrl);
-        return thumbnailUrl;
-      }
-      
-      console.log('Could not extract file ID, returning original URL');
-      return url;
-    } catch (e) {
-      console.error("Error processing image URL:", e);
-      return url;
-    }
-  };
-
-  
 
     // Filter tasks within the date range
     const filteredTasks = departmentData.allTasks.filter(task => {
@@ -957,50 +894,27 @@ useEffect(() => {
     );
   };
 
-return (
+  return (
     <AdminLayout>
       <div className="space-y-6">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <h1 className="text-2xl font-bold tracking-tight text-purple-500">Admin Dashboard</h1>
-          <div className="flex items-center gap-4">
-            {/* Dashboard Type Selection */}
-            <select
-              value={dashboardType}
-              onChange={(e) => {
-                setDashboardType(e.target.value);
-              }}
-              className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-            >
-              <option value="checklist">Checklist</option>
-              <option value="delegation">Delegation</option>
-            </select>
-            
-            {/* Profile Image */}
-            <div className="flex items-center gap-2">
-              {profileImage ? (
-                <img
-                  src={profileImage}
-                  alt="Profile"
-                  className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
-                  onError={(e) => {
-                    console.error('Image failed to load:', profileImage);
-                    e.target.style.display = 'none';
-                    // Fallback to initials
-                    const username = sessionStorage.getItem('username') || 'U';
-                    const fallbackDiv = document.createElement('div');
-                    fallbackDiv.className = 'w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold border-2 border-purple-500';
-                    fallbackDiv.textContent = username.charAt(0).toUpperCase();
-                    e.target.parentNode.appendChild(fallbackDiv);
-                  }}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold border-2 border-purple-500">
-                  {(sessionStorage.getItem('username') || 'U').charAt(0).toUpperCase()}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+  <div>
+    <h1 className="text-2xl font-bold tracking-tight text-purple-500"> {getGreeting()}, {userName.toUpperCase()} Welcome On Board </h1>
+  </div>
+  <div className="flex items-center gap-2">
+    {/* Dashboard Type Selection */}
+    <select
+      value={dashboardType}
+      onChange={(e) => {
+        setDashboardType(e.target.value);
+      }}
+      className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+    >
+      <option value="checklist">Checklist</option>
+      <option value="delegation">Delegation</option>
+    </select>
+  </div>
+</div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-all bg-white">
