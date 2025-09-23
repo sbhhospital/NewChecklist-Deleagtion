@@ -90,9 +90,20 @@ const fetchUserProfileFromSheets = async (username) => {
         if (email) {
           setUserEmail(email);
         }
+        
+        // Try to get profile image from master sheet Column H (index 7) first
+        const masterImageUrl = getCellValue(userRow, 7); // Column H (index 7) - Image URL in master sheet
+        console.log("Profile Image URL from Master Sheet Column H:", masterImageUrl);
+        
+        if (masterImageUrl) {
+          const displayableUrl = getDisplayableImageUrl(masterImageUrl);
+          console.log("Converted Thumbnail URL from Master Sheet:", displayableUrl);
+          setUserProfileImage(displayableUrl);
+          return; // Exit early since we found image in master sheet
+        }
       }
 
-      // Fetch from WhatsApp sheet for profile image
+      // If no image found in master sheet, try WhatsApp sheet
       const whatsappResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp`);
       
       if (!whatsappResponse.ok) {
@@ -114,8 +125,11 @@ const fetchUserProfileFromSheets = async (username) => {
 
       if (whatsappUserRow) {
         const imageUrl = getCellValue(whatsappUserRow, 7); // Column H (index 7) - Image URL
+        console.log("Profile Image URL from WhatsApp Sheet Column H:", imageUrl);
+        
         if (imageUrl) {
           const displayableUrl = getDisplayableImageUrl(imageUrl);
+          console.log("Converted Thumbnail URL from WhatsApp Sheet:", displayableUrl);
           setUserProfileImage(displayableUrl);
         }
       }
@@ -125,56 +139,55 @@ const fetchUserProfileFromSheets = async (username) => {
   };
 
 const getDisplayableImageUrl = (url) => {
-    if (!url) return null;
+  if (!url) return null;
 
-    try {
-      const directMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-      if (directMatch && directMatch[1]) {
-        return `https://drive.google.com/thumbnail?id=${directMatch[1]}&sz=w400`;
-      }
-      
-      const ucMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-      if (ucMatch && ucMatch[1]) {
-        return `https://drive.google.com/thumbnail?id=${ucMatch[1]}&sz=w400`;
-      }
-      
-      const openMatch = url.match(/open\?id=([a-zA-Z0-9_-]+)/);
-      if (openMatch && openMatch[1]) {
-        return `https://drive.google.com/thumbnail?id=${openMatch[1]}&sz=w400`;
-      }
-      
-      if (url.includes("thumbnail?id=")) {
-        return url;
-      }
-
-      const anyIdMatch = url.match(/([a-zA-Z0-9_-]{25,})/);
-      if (anyIdMatch && anyIdMatch[1]) {
-        return `https://drive.google.com/thumbnail?id=${anyIdMatch[1]}&sz=w400`;
-      }
-      
-      const cacheBuster = Date.now();
-      return url.includes("?") ? `${url}&cb=${cacheBuster}` : `${url}?cb=${cacheBuster}`;
-    } catch (e) {
-      console.error("Error processing image URL:", url, e);
-      return url; // Return original URL as fallback
+  try {
+    const ucExportMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (ucExportMatch && ucExportMatch[1]) {
+      return `https://drive.google.com/thumbnail?id=${ucExportMatch[1]}&sz=w150`;
     }
-  };
+    
+    const directMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (directMatch && directMatch[1]) {
+      return `https://drive.google.com/thumbnail?id=${directMatch[1]}&sz=w150`;
+    }
+    
+    const openMatch = url.match(/open\?id=([a-zA-Z0-9_-]+)/);
+    if (openMatch && openMatch[1]) {
+      return `https://drive.google.com/thumbnail?id=${openMatch[1]}&sz=w150`;
+    }
+    
+    if (url.includes("thumbnail?id=")) {
+      return url;
+    }
 
-  // Add useEffect to fetch user profile data on component mount
-  // useEffect(() => {
-  //   fetchUserProfileData();
-  // }, []);
+    const anyIdMatch = url.match(/([a-zA-Z0-9_-]{25,})/);
+    if (anyIdMatch && anyIdMatch[1]) {
+      return `https://drive.google.com/thumbnail?id=${anyIdMatch[1]}&sz=w150`;
+    }
+    
+    const cacheBuster = Date.now();
+    return url.includes("?") ? `${url}&cb=${cacheBuster}` : `${url}?cb=${cacheBuster}`;
+  } catch (e) {
+    console.error("Error processing image URL:", url, e);
+    return url; // Return original URL as fallback
+  }
+};
 
-  // Helper function to format date from ISO format to DD/MM/YYYY
+useEffect(() => {
+  const username = sessionStorage.getItem('username');
+  if (username) {
+    fetchUserProfileFromSheets(username);
+  }
+}, []);
+
   const formatLocalDate = (isoDate) => {
     if (!isoDate) return "";
     const date = new Date(isoDate);
     return formatDateToDDMMYYYY(date);
   };
 
-  // Function to filter tasks by date range
   const filterTasksByDateRange = () => {
-    // Validate dates
     if (!dateRange.startDate || !dateRange.endDate) {
       alert("Please select both start and end dates");
       return;
@@ -981,33 +994,28 @@ const getDisplayableImageUrl = (url) => {
             </h1>
           </div>
           
-          {/* NEW: Profile section with image */}
           <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="font-semibold text-gray-800">
-                {sessionStorage.getItem('username')?.toUpperCase() || 'User'}
-              </div>
-              {userEmail && (
-                <div className="text-sm text-gray-600">{userEmail}</div>
-              )}
-            </div>
-            
             <div className="relative">
               {userProfileImage ? (
-                <img 
-                  src={userProfileImage} 
-                  alt="Profile" 
-                  className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
-                  onError={(e) => {
-                    // If image fails to load, show fallback
-                    e.target.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600">
-                  <User className="h-6 w-6 text-white" />
-                </div>
-              )}
+  <img 
+    src={userProfileImage} 
+    alt="Profile" 
+    className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
+    style={{ 
+      backgroundColor: '#f3f4f6', // Light background while loading
+      objectPosition: 'center' 
+    }}
+    onError={(e) => {
+      // If thumbnail fails, try the direct view URL as fallback
+      const originalUrl = userProfileImage.replace('thumbnail?', 'uc?export=view&').replace('&sz=w150', '');
+      e.target.src = originalUrl;
+    }}
+  />
+) : (
+  <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600">
+    <User className="h-6 w-6 text-white" />
+  </div>
+)}
             </div>
             
             <select
