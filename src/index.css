@@ -7,3 +7,23 @@
 .gradient-bg:hover {
     background: linear-gradient(to right, #7E22CE, #BE185D);
 }
+
+/* Improve scrolling performance for large tables */
+.h-\[calc\(100vh-250px\)\] {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Ensure smooth scrolling */
+.h-\[calc\(100vh-250px\)\]::-webkit-scrollbar {
+  width: 8px;
+}
+
+.h-\[calc\(100vh-250px\)\]::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.h-\[calc\(100vh-250px\)\]::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}

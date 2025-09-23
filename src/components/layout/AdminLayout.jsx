@@ -182,13 +182,6 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       active: location.pathname === "/dashboard/traning-video",
       showFor: ["admin", "user"] //  show both
     },
-    {
-      href: "/dashboard/profile-photo",
-      label: "Profile Photo",
-      icon: Video,
-      active: location.pathname === "/dashboard/profile-photo",
-      showFor: ["admin", "user"] //  show both
-    },
   ]
 
   const getAccessibleDepartments = () => {

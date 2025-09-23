@@ -944,22 +944,41 @@ const filteredAccountData = useMemo(() => {
     setRemarksData((prev) => ({ ...prev, [id]: value }))
   }, [])
 
-const handleTableScroll = useCallback((e) => {
+    const handleTableScroll = useCallback((e) => {
   const scrollTop = e.target.scrollTop;
   const itemHeight = 60; // approximate row height
   const containerHeight = e.target.clientHeight;
   
   // Calculate visible range with buffer
-  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 10); // Add buffer above
+  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5); // Buffer above
   const end = Math.min(
-    start + Math.ceil(containerHeight / itemHeight) + 20, // Add buffer below
+    start + Math.ceil(containerHeight / itemHeight) + 10, // Buffer below
     filteredAccountData.length
   );
 
   setVisibleRange({ start, end });
 }, [filteredAccountData.length]);
 
-  // Add this to get visible data
+// Add this useEffect to reset visible range when data changes
+useEffect(() => {
+  setVisibleRange({ start: 0, end: 50 });
+}, [filteredAccountData.length]);
+
+// const handleTableScroll = useCallback((e) => {
+//   const scrollTop = e.target.scrollTop;
+//   const itemHeight = 60; // approximate row height
+//   const containerHeight = e.target.clientHeight;
+  
+//   // Calculate visible range with buffer
+//   const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 10); // Add buffer above
+//   const end = Math.min(
+//     start + Math.ceil(containerHeight / itemHeight) + 20, // Add buffer below
+//     filteredAccountData.length
+//   );
+
+//   setVisibleRange({ start, end });
+// }, [filteredAccountData.length]);
+
   const visibleAccountData = useMemo(() => {
   return filteredAccountData.slice(visibleRange.start, visibleRange.end);
 }, [filteredAccountData, visibleRange.start, visibleRange.end]);
@@ -1818,50 +1837,52 @@ const handleTableScroll = useCallback((e) => {
                   </tr>
                 </thead>
                 {/* // Replace the tbody section in tasks table with this: */}
-                <tbody className="bg-white divide-y divide-gray-200">
-  {/* Top spacer - fixed height calculation */}
+               <tbody className="bg-white divide-y divide-gray-200">
+  {/* Top spacer */}
   {visibleRange.start > 0 && (
     <tr>
       <td 
         colSpan={14} 
         style={{ height: visibleRange.start * 60 }}
-        className="p-0 m-0"
+        className="p-0 m-0 border-none"
       />
     </tr>
   )}
 
-  {visibleAccountData.length > 0 ? (
-    visibleAccountData.map((account) => (
-      <MemoizedTaskRow
-        key={account._id}
-        account={account}
-        isSelected={selectedItems.has(account._id)}
-        additionalData={additionalData[account._id]}
-        remarksData={remarksData[account._id]}
-        onCheckboxClick={handleCheckboxClick}
-        onAdditionalDataChange={handleAdditionalDataChange}
-        onRemarksChange={handleRemarksChange}
-        onImageUpload={handleImageUpload}
+  {/* Visible rows only */}
+  {visibleAccountData.map((account) => (
+    <MemoizedTaskRow
+      key={account._id}
+      account={account}
+      isSelected={selectedItems.has(account._id)}
+      additionalData={additionalData[account._id]}
+      remarksData={remarksData[account._id]}
+      onCheckboxClick={handleCheckboxClick}
+      onAdditionalDataChange={handleAdditionalDataChange}
+      onRemarksChange={handleRemarksChange}
+      onImageUpload={handleImageUpload}
+    />
+  ))}
+
+  {/* Bottom spacer */}
+  {visibleRange.end < filteredAccountData.length && (
+    <tr>
+      <td 
+        colSpan={14} 
+        style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}
+        className="p-0 m-0 border-none"
       />
-    ))
-  ) : (
+    </tr>
+  )}
+
+  {/* Empty state */}
+  {filteredAccountData.length === 0 && (
     <tr>
       <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
         {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
           ? "No tasks matching your filters"
           : "No tasks found for today, tomorrow, or past due dates"}
       </td>
-    </tr>
-  )}
-
-  {/* Bottom spacer - fixed height calculation */}
-  {visibleRange.end < filteredAccountData.length && (
-    <tr>
-      <td 
-        colSpan={14} 
-        style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}
-        className="p-0 m-0"
-      />
     </tr>
   )}
 </tbody>

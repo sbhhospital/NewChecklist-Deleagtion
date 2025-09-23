@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { BarChart3, CheckCircle2, Clock, ListTodo, Users, AlertTriangle, Filter } from 'lucide-react'
+import { BarChart3, CheckCircle2, Clock, ListTodo, Users, AlertTriangle, Filter, User } from 'lucide-react'
 import AdminLayout from "../../components/layout/AdminLayout.jsx"
 import {
   BarChart,
@@ -24,7 +24,8 @@ export default function AdminDashboard() {
   const [filterStaff, setFilterStaff] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("overview")
-  const [userName, setUserName] = useState("");
+  const [userProfileImage, setUserProfileImage] = useState(null)
+  const [userEmail, setUserEmail] = useState("")
 
   // State for department data
   const [departmentData, setDepartmentData] = useState({
@@ -62,37 +63,107 @@ export default function AdminDashboard() {
     completionRate: 0
   });
 
-  useEffect(() => {
-  const fetchUserName = async () => {
-    const username = sessionStorage.getItem('username');
-    if (username) {
-      try {
-        const response = await fetch(
-          `https://script.google.com/macros/s/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/exec?username=${encodeURIComponent(username)}`
-        );
-        const data = await response.json();
-        if (data.success && data.email) {
-          setUserName(data.email.split('@')[0]); // Extract name from email
-        } else {
-          setUserName(username); // Fallback to username
-        }
-      } catch (error) {
-        console.error("Error fetching user name:", error);
-        setUserName(username); // Fallback to username
+const fetchUserProfileFromSheets = async (username) => {
+    try {
+      // Fetch from master sheet for email
+      const masterResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=master`);
+      
+      if (!masterResponse.ok) {
+        throw new Error(`Failed to fetch master sheet data: ${masterResponse.status}`);
       }
+
+      const masterText = await masterResponse.text();
+      const masterJsonStart = masterText.indexOf('{');
+      const masterJsonEnd = masterText.lastIndexOf('}');
+      const masterJsonString = masterText.substring(masterJsonStart, masterJsonEnd + 1);
+      const masterData = JSON.parse(masterJsonString);
+
+      // Find user in master sheet (Column C = Username, Column F = Email)
+      const userRow = masterData.table.rows.find((row, index) => {
+        if (index === 0) return false; // Skip header row
+        const rowUsername = getCellValue(row, 2); // Column C (index 2) - Username
+        return rowUsername && rowUsername.toLowerCase() === username.toLowerCase();
+      });
+
+      if (userRow) {
+        const email = getCellValue(userRow, 5); // Column F (index 5) - Email
+        if (email) {
+          setUserEmail(email);
+        }
+      }
+
+      // Fetch from WhatsApp sheet for profile image
+      const whatsappResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp`);
+      
+      if (!whatsappResponse.ok) {
+        throw new Error(`Failed to fetch Whatsapp sheet data: ${whatsappResponse.status}`);
+      }
+
+      const whatsappText = await whatsappResponse.text();
+      const whatsappJsonStart = whatsappText.indexOf('{');
+      const whatsappJsonEnd = whatsappText.lastIndexOf('}');
+      const whatsappJsonString = whatsappText.substring(whatsappJsonStart, whatsappJsonEnd + 1);
+      const whatsappData = JSON.parse(whatsappJsonString);
+
+      // Find the row with matching username in Column C (index 2)
+      const whatsappUserRow = whatsappData.table.rows.find((row, index) => {
+        if (index === 0) return false; // Skip header row
+        const rowUsername = getCellValue(row, 2); // Column C (index 2) - Username
+        return rowUsername && rowUsername.toLowerCase() === username.toLowerCase();
+      });
+
+      if (whatsappUserRow) {
+        const imageUrl = getCellValue(whatsappUserRow, 7); // Column H (index 7) - Image URL
+        if (imageUrl) {
+          const displayableUrl = getDisplayableImageUrl(imageUrl);
+          setUserProfileImage(displayableUrl);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching from sheets:", error);
     }
   };
 
-  fetchUserName();
-}, []);
+const getDisplayableImageUrl = (url) => {
+    if (!url) return null;
 
-// Add this function to get the appropriate greeting based on time of day
-const getGreeting = () => {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-};
+    try {
+      const directMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (directMatch && directMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${directMatch[1]}&sz=w400`;
+      }
+      
+      const ucMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (ucMatch && ucMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${ucMatch[1]}&sz=w400`;
+      }
+      
+      const openMatch = url.match(/open\?id=([a-zA-Z0-9_-]+)/);
+      if (openMatch && openMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${openMatch[1]}&sz=w400`;
+      }
+      
+      if (url.includes("thumbnail?id=")) {
+        return url;
+      }
+
+      const anyIdMatch = url.match(/([a-zA-Z0-9_-]{25,})/);
+      if (anyIdMatch && anyIdMatch[1]) {
+        return `https://drive.google.com/thumbnail?id=${anyIdMatch[1]}&sz=w400`;
+      }
+      
+      const cacheBuster = Date.now();
+      return url.includes("?") ? `${url}&cb=${cacheBuster}` : `${url}?cb=${cacheBuster}`;
+    } catch (e) {
+      console.error("Error processing image URL:", url, e);
+      return url; // Return original URL as fallback
+    }
+  };
+
+  // Add useEffect to fetch user profile data on component mount
+  // useEffect(() => {
+  //   fetchUserProfileData();
+  // }, []);
 
   // Helper function to format date from ISO format to DD/MM/YYYY
   const formatLocalDate = (isoDate) => {
@@ -221,10 +292,10 @@ const getGreeting = () => {
 
   // Safe access to cell value
   const getCellValue = (row, index) => {
-    if (!row || !row.c || index >= row.c.length) return null
-    const cell = row.c[index]
-    return cell && 'v' in cell ? cell.v : null
-  }
+    if (!row || !row.c || index >= row.c.length) return null;
+    const cell = row.c[index];
+    return cell && 'v' in cell ? cell.v : null;
+  };
 
   // Parse Google Sheets Date format into a proper date string
   const parseGoogleSheetsDate = (dateStr) => {
@@ -894,27 +965,63 @@ const getGreeting = () => {
     );
   };
 
-  return (
+   return (
     <AdminLayout>
       <div className="space-y-6">
+        {/* MODIFIED: Updated header section to include profile image */}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-  <div>
-    <h1 className="text-2xl font-bold tracking-tight text-purple-500"> {getGreeting()}, {userName.toUpperCase()} Welcome On Board </h1>
-  </div>
-  <div className="flex items-center gap-2">
-    {/* Dashboard Type Selection */}
-    <select
-      value={dashboardType}
-      onChange={(e) => {
-        setDashboardType(e.target.value);
-      }}
-      className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-    >
-      <option value="checklist">Checklist</option>
-      <option value="delegation">Delegation</option>
-    </select>
-  </div>
-</div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-purple-500">
+              {(() => {
+                const hour = new Date().getHours();
+                if (hour < 12) return `Good Morning, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
+                if (hour < 18) return `Good Afternoon, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
+                return `Good Evening, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
+              })()}
+            </h1>
+          </div>
+          
+          {/* NEW: Profile section with image */}
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="font-semibold text-gray-800">
+                {sessionStorage.getItem('username')?.toUpperCase() || 'User'}
+              </div>
+              {userEmail && (
+                <div className="text-sm text-gray-600">{userEmail}</div>
+              )}
+            </div>
+            
+            <div className="relative">
+              {userProfileImage ? (
+                <img 
+                  src={userProfileImage} 
+                  alt="Profile" 
+                  className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
+                  onError={(e) => {
+                    // If image fails to load, show fallback
+                    e.target.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600">
+                  <User className="h-6 w-6 text-white" />
+                </div>
+              )}
+            </div>
+            
+            <select
+              value={dashboardType}
+              onChange={(e) => {
+                setDashboardType(e.target.value);
+              }}
+              className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="checklist">Checklist</option>
+              <option value="delegation">Delegation</option>
+            </select>
+          </div>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-all bg-white">

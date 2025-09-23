@@ -13,7 +13,6 @@ import "./index.css"
 import QuickTask from "./pages/QuickTask"
 import License from "./pages/License"
 import TrainingVideo from "./pages/TrainingVideo"
-import ProfilePhoto from "./pages/admin/ProfilePhoto"
 // Auth wrapper component to protect routes
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const username = sessionStorage.getItem("username")
@@ -133,15 +132,6 @@ function App() {
           element={
             <ProtectedRoute>
               <TrainingVideo />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/dashboard/profile-photo"
-          element={
-            <ProtectedRoute>
-              <ProfilePhoto />
             </ProtectedRoute>
           }
         />
