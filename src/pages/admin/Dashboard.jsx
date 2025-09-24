@@ -227,7 +227,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
     const base64Data = await convertToBase64(selectedFile);
     
     // Upload to Google Drive and update sheet in one call
-    const uploadResponse = await fetch('https://script.google.com/macros/s/AKfycbwvMYHcJZr8cYF-dM_nB0-WM-cKyDpMLFx6GzW5SryoWzZnAK5V7TP_8pKGfAGUmCVd/exec', {
+    const uploadResponse = await fetch('https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -237,7 +237,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
         base64Data: base64Data,
         fileName: `profile_${username}_${Date.now()}.${selectedFile.name.split('.').pop()}`,
         mimeType: selectedFile.type,
-        folderId: '1Jxb5aE-VymJfVkMTvPELt8yRgslSFNXd',
+        folderId: '1Jxb5aE-VymJfVkMTvPELt8yRgslSFNXd', // Your specified folder ID
         username: username
       })
     });
