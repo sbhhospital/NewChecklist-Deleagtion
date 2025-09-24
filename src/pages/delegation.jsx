@@ -108,9 +108,15 @@ function DelegationDataPage() {
     return `${day}/${month}/${year}`;
   }, []);
 
-  const isTaskDisabled = useCallback((status) => {
+  const isTaskDisabled = useCallback((status, userRole) => {
+  if (userRole === "admin") {
+    // Admin can update "Verify Pending" tasks, but not "Done" tasks
+    return status === "Done";
+  } else {
+    // Regular users cannot update "Done" or "Verify Pending" tasks
     return status === "Done" || status === "Verify Pending";
-  }, []);
+  }
+}, []);
 
   // NEW: Function to create a proper date object for Google Sheets
   const createGoogleSheetsDate = useCallback((date) => {
@@ -825,41 +831,41 @@ const sortDateWise = useCallback(
     [handleSelectItem]
   );
 
-  const handleSelectAllItems = useCallback(
-    (e) => {
-      e.stopPropagation();
-      const checked = e.target.checked;
+const handleSelectAllItems = useCallback(
+  (e) => {
+    e.stopPropagation();
+    const checked = e.target.checked;
 
-      if (checked) {
-        // Create a new Set with currently selected items
-        const newSelected = new Set(selectedItems);
+    if (checked) {
+      // Create a new Set with currently selected items
+      const newSelected = new Set(selectedItems);
 
-        // Add only enabled items to the selection
-        filteredAccountData.forEach((item) => {
-          if (!isTaskDisabled(item["col20"])) {
-            newSelected.add(item._id);
-          }
-        });
+      // Add only enabled items to the selection (based on user role)
+      filteredAccountData.forEach((item) => {
+        if (!isTaskDisabled(item["col20"], userRole)) {
+          newSelected.add(item._id);
+        }
+      });
 
-        setSelectedItems(newSelected);
+      setSelectedItems(newSelected);
 
-        // Update status for enabled items only
-        const newStatusData = {};
-        newSelected.forEach((id) => {
-          newStatusData[id] = "Done";
-        });
-        setStatusData((prev) => ({ ...prev, ...newStatusData }));
-      } else {
-        // Remove all items from selection
-        setSelectedItems(new Set());
-        setAdditionalData({});
-        setRemarksData({});
-        setStatusData({});
-        setNextTargetDate({});
-      }
-    },
-    [filteredAccountData, isTaskDisabled, selectedItems]
-  );
+      // Update status for enabled items only
+      const newStatusData = {};
+      newSelected.forEach((id) => {
+        newStatusData[id] = "Done";
+      });
+      setStatusData((prev) => ({ ...prev, ...newStatusData }));
+    } else {
+      // Remove all items from selection
+      setSelectedItems(new Set());
+      setAdditionalData({});
+      setRemarksData({});
+      setStatusData({});
+      setNextTargetDate({});
+    }
+  },
+  [filteredAccountData, isTaskDisabled, selectedItems, userRole]
+);
 
   const handleImageUpload = useCallback(async (id, e) => {
     const file = e.target.files[0];
@@ -914,178 +920,260 @@ const sortDateWise = useCallback(
     resetFilters();
   }, [resetFilters]);
 
-  const handleSubmit = async () => {
-    const selectedItemsArray = Array.from(selectedItems);
+const handleSubmit = async () => {
+  const selectedItemsArray = Array.from(selectedItems);
 
-    if (selectedItemsArray.length === 0) {
-      alert("Please select at least one item to submit");
-      return;
-    }
+  if (selectedItemsArray.length === 0) {
+    alert("Please select at least one item to submit");
+    return;
+  }
 
-    const missingStatus = selectedItemsArray.filter((id) => !statusData[id]);
-    if (missingStatus.length > 0) {
-      alert(
-        `Please select a status for all selected items. ${missingStatus.length} item(s) are missing status.`
-      );
-      return;
-    }
-
-    const missingNextDate = selectedItemsArray.filter(
-      (id) => statusData[id] === "Extend date" && !nextTargetDate[id]
+  const missingStatus = selectedItemsArray.filter((id) => !statusData[id]);
+  if (missingStatus.length > 0) {
+    alert(
+      `Please select a status for all selected items. ${missingStatus.length} item(s) are missing status.`
     );
-    if (missingNextDate.length > 0) {
-      alert(
-        `Please select a next target date for all items with "Extend date" status. ${missingNextDate.length} item(s) are missing target date.`
-      );
-      return;
-    }
+    return;
+  }
 
-    const missingRequiredImages = selectedItemsArray.filter((id) => {
+  const missingNextDate = selectedItemsArray.filter(
+    (id) => statusData[id] === "Extend date" && !nextTargetDate[id]
+  );
+  if (missingNextDate.length > 0) {
+    alert(
+      `Please select a next target date for all items with "Extend date" status. ${missingNextDate.length} item(s) are missing target date.`
+    );
+    return;
+  }
+
+  const missingRequiredImages = selectedItemsArray.filter((id) => {
+    const item = accountData.find((account) => account._id === id);
+    const requiresAttachment =
+      item["col9"] && item["col9"].toUpperCase() === "YES";
+    return requiresAttachment && !item.image;
+  });
+
+  if (missingRequiredImages.length > 0) {
+    alert(
+      `Please upload images for all required attachments. ${missingRequiredImages.length} item(s) are missing required images.`
+    );
+    return;
+  }
+
+  setIsSubmitting(true);
+
+  try {
+    const today = new Date();
+    const dateForSubmission = formatDateForGoogleSheets(today);
+
+    // Separate tasks by type: Verify Pending vs Regular tasks
+    const verifyPendingTasks = [];
+    const regularTasks = [];
+
+    selectedItemsArray.forEach((id) => {
       const item = accountData.find((account) => account._id === id);
-      const requiresAttachment =
-        item["col9"] && item["col9"].toUpperCase() === "YES";
-      return requiresAttachment && !item.image;
+      const isVerifyPending = item["col20"] === "Verify Pending";
+      
+      if (isVerifyPending) {
+        verifyPendingTasks.push({ id, item });
+      } else {
+        regularTasks.push({ id, item });
+      }
     });
 
-    if (missingRequiredImages.length > 0) {
-      alert(
-        `Please upload images for all required attachments. ${missingRequiredImages.length} item(s) are missing required images.`
-      );
-      return;
+    // Process Verify Pending tasks (update existing records in DELEGATION DONE)
+    if (verifyPendingTasks.length > 0) {
+      await processVerifyPendingTasks(verifyPendingTasks, statusData);
     }
 
-    setIsSubmitting(true);
+    // Process Regular tasks (create new records in DELEGATION DONE)
+    if (regularTasks.length > 0) {
+      await processRegularTasks(regularTasks, dateForSubmission, remarksData, nextTargetDate, statusData);
+    }
 
-    try {
-      const today = new Date();
-      // UPDATED: Use the new function to format date properly for Google Sheets
-      const dateForSubmission = formatDateForGoogleSheets(today);
+    // Update local state - remove submitted items
+    setAccountData((prev) =>
+      prev.filter((item) => !selectedItems.has(item._id))
+    );
 
-      // Process submissions in batches for better performance
-      const batchSize = 5;
-      for (let i = 0; i < selectedItemsArray.length; i += batchSize) {
-        const batch = selectedItemsArray.slice(i, i + batchSize);
+    const successMessage = [];
+    if (verifyPendingTasks.length > 0) {
+      successMessage.push(`marked ${verifyPendingTasks.length} Verify Pending tasks as Done`);
+    }
+    if (regularTasks.length > 0) {
+      successMessage.push(`submitted ${regularTasks.length} regular tasks`);
+    }
 
-        await Promise.all(
-          batch.map(async (id) => {
-            const item = accountData.find((account) => account._id === id);
-            let imageUrl = "";
+    setSuccessMessage(
+      `Successfully ${successMessage.join(' and ')}!`
+    );
+    setSelectedItems(new Set());
+    setAdditionalData({});
+    setRemarksData({});
+    setStatusData({});
+    setNextTargetDate({});
 
-            if (item.image instanceof File) {
-              try {
-                const base64Data = await fileToBase64(item.image);
+    setTimeout(() => {
+      fetchSheetData();
+    }, 2000);
+  } catch (error) {
+    console.error("Submission error:", error);
+    alert("Failed to submit task records: " + error.message);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
-                const uploadFormData = new FormData();
-                uploadFormData.append("action", "uploadFile");
-                uploadFormData.append("base64Data", base64Data);
-                uploadFormData.append(
-                  "fileName",
-                  `task_${item["col1"]}_${Date.now()}.${item.image.name
-                    .split(".")
-                    .pop()}`
-                );
-                uploadFormData.append("mimeType", item.image.type);
-                uploadFormData.append("folderId", CONFIG.DRIVE_FOLDER_ID);
-
-                const uploadResponse = await fetch(CONFIG.APPS_SCRIPT_URL, {
-                  method: "POST",
-                  body: uploadFormData,
-                });
-
-                const uploadResult = await uploadResponse.json();
-                if (uploadResult.success) {
-                  imageUrl = uploadResult.fileUrl;
-                }
-              } catch (uploadError) {
-                console.error("Error uploading image:", uploadError);
-              }
-            }
-
-            // UPDATED: Use properly formatted date for submission
-            // Format the next target date properly if it exists
-            let formattedNextTargetDate = "";
-            let nextTargetDateForGoogleSheets = null;
-
-            if (nextTargetDate[id]) {
-              const convertedDate = convertToGoogleSheetsDate(
-                nextTargetDate[id]
-              );
-              formattedNextTargetDate = convertedDate.formatted;
-              nextTargetDateForGoogleSheets = convertedDate.dateObject;
-            }
-
-            // Updated to include username in column H and task description in column I when submitting to history
-            const newRowData = [
-              dateForSubmission.formatted, // Use formatted date string
-              item["col1"] || "",
-              statusData[id] || "",
-              formattedNextTargetDate, // Use properly formatted next target date
-              remarksData[id] || "",
-              imageUrl,
-              "", // Column G
-              username, // Column H - Store the logged-in username
-              item["col5"] || "", // Column I - Task description from col5
-              item["col3"] || "", // Column J - Given By from original task
-            ];
-
-            const insertFormData = new FormData();
-            insertFormData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
-            insertFormData.append("action", "insert");
-            insertFormData.append("rowData", JSON.stringify(newRowData));
-
-            // UPDATED: Add comprehensive date format hints for Google Sheets
-            insertFormData.append("dateFormat", "DD/MM/YYYY");
-            insertFormData.append("timestampColumn", "0"); // Column A - Timestamp
-            insertFormData.append("nextTargetDateColumn", "3"); // Column D - Next Target Date
-
-            // Add additional metadata for proper date handling
-            const dateMetadata = {
-              columns: {
-                0: { type: "date", format: "DD/MM/YYYY" }, // Timestamp
-                3: { type: "date", format: "DD/MM/YYYY" }, // Next Target Date
-              },
-            };
-            insertFormData.append("dateMetadata", JSON.stringify(dateMetadata));
-
-            // If we have a proper date object for next target date, send it separately
-            if (nextTargetDateForGoogleSheets) {
-              insertFormData.append(
-                "nextTargetDateObject",
-                nextTargetDateForGoogleSheets.toISOString()
-              );
-            }
-
-            return fetch(CONFIG.APPS_SCRIPT_URL, {
-              method: "POST",
-              body: insertFormData,
-            });
-          })
+// NEW: Process Verify Pending tasks (update existing records)
+const processVerifyPendingTasks = async (tasks, statusData) => {
+  const batchSize = 5;
+  
+  for (let i = 0; i < tasks.length; i += batchSize) {
+    const batch = tasks.slice(i, i + batchSize);
+    
+    await Promise.all(
+      batch.map(async ({ id, item }) => {
+        // For Verify Pending tasks, we need to find the existing record in history
+        // and update its Admin Done column (Column P) to "Done"
+        const existingHistoryItem = historyData.find(
+          history => history["col1"] === item["col1"] // Match by Task ID
         );
-      }
+        
+        if (!existingHistoryItem) {
+          throw new Error(`No existing record found for Verify Pending task: ${item["col1"]}`);
+        }
+        
+        const updateData = {
+          taskId: item["col1"],
+          rowIndex: existingHistoryItem._rowIndex,
+          adminDoneStatus: "Done"
+        };
+        
+        const formData = new FormData();
+        formData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
+        formData.append("action", "updateAdminDone");
+        formData.append("rowData", JSON.stringify([updateData]));
+        
+        const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || "Failed to update Verify Pending task");
+        }
+        
+        return result;
+      })
+    );
+  }
+};
 
-      setAccountData((prev) =>
-        prev.filter((item) => !selectedItems.has(item._id))
-      );
+// NEW: Process Regular tasks (create new records)
+const processRegularTasks = async (tasks, dateForSubmission, remarksData, nextTargetDate, statusData) => {
+  const batchSize = 5;
+  
+  for (let i = 0; i < tasks.length; i += batchSize) {
+    const batch = tasks.slice(i, i + batchSize);
+    
+    await Promise.all(
+      batch.map(async ({ id, item }) => {
+        let imageUrl = "";
 
-      setSuccessMessage(
-        `Successfully processed ${selectedItemsArray.length} task records! Data submitted to ${CONFIG.TARGET_SHEET_NAME} sheet.`
-      );
-      setSelectedItems(new Set());
-      setAdditionalData({});
-      setRemarksData({});
-      setStatusData({});
-      setNextTargetDate({});
+        if (item.image instanceof File) {
+          try {
+            const base64Data = await fileToBase64(item.image);
 
-      setTimeout(() => {
-        fetchSheetData();
-      }, 2000);
-    } catch (error) {
-      console.error("Submission error:", error);
-      alert("Failed to submit task records: " + error.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+            const uploadFormData = new FormData();
+            uploadFormData.append("action", "uploadFile");
+            uploadFormData.append("base64Data", base64Data);
+            uploadFormData.append(
+              "fileName",
+              `task_${item["col1"]}_${Date.now()}.${item.image.name
+                .split(".")
+                .pop()}`
+            );
+            uploadFormData.append("mimeType", item.image.type);
+            uploadFormData.append("folderId", CONFIG.DRIVE_FOLDER_ID);
+
+            const uploadResponse = await fetch(CONFIG.APPS_SCRIPT_URL, {
+              method: "POST",
+              body: uploadFormData,
+            });
+
+            const uploadResult = await uploadResponse.json();
+            if (uploadResult.success) {
+              imageUrl = uploadResult.fileUrl;
+            }
+          } catch (uploadError) {
+            console.error("Error uploading image:", uploadError);
+          }
+        }
+
+        // Format the next target date properly if it exists
+        let formattedNextTargetDate = "";
+        let nextTargetDateForGoogleSheets = null;
+
+        if (nextTargetDate[id]) {
+          const convertedDate = convertToGoogleSheetsDate(
+            nextTargetDate[id]
+          );
+          formattedNextTargetDate = convertedDate.formatted;
+          nextTargetDateForGoogleSheets = convertedDate.dateObject;
+        }
+
+        // Create new row for regular tasks
+        const newRowData = [
+          dateForSubmission.formatted,
+          item["col1"] || "",
+          statusData[id] || "",
+          formattedNextTargetDate,
+          remarksData[id] || "",
+          imageUrl,
+          "", // Column G
+          username, // Column H - Store the logged-in username
+          item["col5"] || "", // Column I - Task description from col5
+          item["col3"] || "", // Column J - Given By from original task
+        ];
+
+        const insertFormData = new FormData();
+        insertFormData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
+        insertFormData.append("action", "insert");
+        insertFormData.append("rowData", JSON.stringify(newRowData));
+
+        // Add date formatting hints
+        insertFormData.append("dateFormat", "DD/MM/YYYY");
+        insertFormData.append("timestampColumn", "0");
+        insertFormData.append("nextTargetDateColumn", "3");
+
+        const dateMetadata = {
+          columns: {
+            0: { type: "date", format: "DD/MM/YYYY" },
+            3: { type: "date", format: "DD/MM/YYYY" },
+          },
+        };
+        insertFormData.append("dateMetadata", JSON.stringify(dateMetadata));
+
+        if (nextTargetDateForGoogleSheets) {
+          insertFormData.append(
+            "nextTargetDateObject",
+            nextTargetDateForGoogleSheets.toISOString()
+          );
+        }
+
+        return fetch(CONFIG.APPS_SCRIPT_URL, {
+          method: "POST",
+          body: insertFormData,
+        });
+      })
+    );
+  }
+};
 
   const handleEditRemarks = async (id, currentRemarks, historyItem) => {
     try {
@@ -1207,59 +1295,63 @@ const sortDateWise = useCallback(
     );
   };
 
-  // NEW: Admin Done submission handler - Store "Done" text instead of timestamp
-  const confirmMarkDone = async () => {
-    setConfirmationModal({ isOpen: false, itemCount: 0 });
-    setMarkingAsDone(true);
+const confirmMarkDone = async () => {
+  setConfirmationModal({ isOpen: false, itemCount: 0 });
+  setMarkingAsDone(true);
 
-    try {
-      const submissionData = selectedHistoryItems.map((historyItem) => ({
-        taskId: historyItem["col1"],
-        rowIndex: historyItem._rowIndex,
-        adminDoneStatus: "Done",
-      }));
+  try {
+    const submissionData = selectedHistoryItems.map((historyItem) => ({
+      taskId: historyItem["col1"],
+      rowIndex: historyItem._rowIndex,
+      adminDoneStatus: "Done",
+    }));
 
-      const formData = new FormData();
-      formData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
-      formData.append("action", "updateAdminDone");
-      formData.append("rowData", JSON.stringify(submissionData));
+    const formData = new FormData();
+    formData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
+    formData.append("action", "updateAdminDone");
+    formData.append("rowData", JSON.stringify(submissionData));
 
-      const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: "POST",
-        body: formData,
-      });
+    const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: "POST",
+      body: formData,
+    });
 
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
+    if (!response.ok)
+      throw new Error(`HTTP error! status: ${response.status}`);
 
-      const result = await response.json();
-      if (result.success) {
-        // Update local state to reflect the changes without refetching
-        setHistoryData((prev) =>
-          prev.map((item) => {
-            if (
-              selectedHistoryItems.some((selected) => selected._id === item._id)
-            ) {
-              return { ...item, col15: "Done" };
-            }
-            return item;
-          })
-        );
+    const result = await response.json();
+    if (result.success) {
+      // Update local state to reflect the changes without refetching
+      setHistoryData((prev) =>
+        prev.map((item) => {
+          if (
+            selectedHistoryItems.some((selected) => selected._id === item._id)
+          ) {
+            return { ...item, col15: "Done" };
+          }
+          return item;
+        })
+      );
 
-        setSuccessMessage(
-          `Successfully marked ${selectedHistoryItems.length} items as Admin Done!`
-        );
-        setSelectedHistoryItems([]);
-      } else {
-        throw new Error(result.error || "Failed to mark items as Admin Done");
-      }
-    } catch (error) {
-      console.error("Error marking tasks as Admin Done:", error);
-      setSuccessMessage(`Failed to mark tasks as Admin Done: ${error.message}`);
-    } finally {
-      setMarkingAsDone(false);
+      setSuccessMessage(
+        `Successfully marked ${selectedHistoryItems.length} items as Admin Done!`
+      );
+      setSelectedHistoryItems([]);
+      
+      // Refresh the data to ensure sync with sheet
+      setTimeout(() => {
+        fetchSheetData();
+      }, 1000);
+    } else {
+      throw new Error(result.error || "Failed to mark items as Admin Done");
     }
-  };
+  } catch (error) {
+    console.error("Error marking tasks as Admin Done:", error);
+    setSuccessMessage(`Failed to mark tasks as Admin Done: ${error.message}`);
+  } finally {
+    setMarkingAsDone(false);
+  }
+};
 
   return (
     <AdminLayout>
@@ -1469,8 +1561,9 @@ const sortDateWise = useCallback(
             </h2>
             <p className="text-purple-600 text-sm">
               {showHistory
-                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${userRole === "admin" ? "all" : "your"
-                } tasks`
+                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${
+                    userRole === "admin" ? "all" : "your"
+                  } tasks`
                 : CONFIG.PAGE_CONFIG.description}
             </p>
           </div>
@@ -1570,9 +1663,9 @@ const sortDateWise = useCallback(
                                   (item) => !isItemAdminDone(item)
                                 ).length > 0 &&
                                 selectedHistoryItems.length ===
-                                filteredHistoryData.filter(
-                                  (item) => !isItemAdminDone(item)
-                                ).length
+                                  filteredHistoryData.filter(
+                                    (item) => !isItemAdminDone(item)
+                                  ).length
                               }
                               onChange={(e) => {
                                 const unprocessedItems =
@@ -1644,8 +1737,9 @@ const sortDateWise = useCallback(
                         return (
                           <tr
                             key={history._id}
-                            className={`hover:bg-gray-50 ${isAdminDone ? "opacity-70 bg-gray-100" : ""
-                              }`}
+                            className={`hover:bg-gray-50 ${
+                              isAdminDone ? "opacity-70 bg-gray-100" : ""
+                            }`}
                           >
                             <td className="px-3 py-4 min-w-[80px]">
                               {editingRemarks[history._id] ? (
@@ -1705,10 +1799,11 @@ const sortDateWise = useCallback(
                                 <div className="flex flex-col items-center">
                                   <input
                                     type="checkbox"
-                                    className={`h-4 w-4 rounded border-gray-300 ${isAdminDone
-                                      ? "text-green-600 bg-green-100"
-                                      : "text-green-600 focus:ring-green-500"
-                                      }`}
+                                    className={`h-4 w-4 rounded border-gray-300 ${
+                                      isAdminDone
+                                        ? "text-green-600 bg-green-100"
+                                        : "text-green-600 focus:ring-green-500"
+                                    }`}
                                     checked={isAdminDone || isSelected}
                                     disabled={isAdminDone}
                                     onChange={() => {
@@ -1716,19 +1811,20 @@ const sortDateWise = useCallback(
                                         setSelectedHistoryItems((prev) =>
                                           isSelected
                                             ? prev.filter(
-                                              (item) =>
-                                                item._id !== history._id
-                                            )
+                                                (item) =>
+                                                  item._id !== history._id
+                                              )
                                             : [...prev, history]
                                         );
                                       }
                                     }}
                                   />
                                   <span
-                                    className={`text-xs mt-1 text-center break-words ${isAdminDone
-                                      ? "text-green-600"
-                                      : "text-gray-400"
-                                      }`}
+                                    className={`text-xs mt-1 text-center break-words ${
+                                      isAdminDone
+                                        ? "text-green-600"
+                                        : "text-gray-400"
+                                    }`}
                                   >
                                     {isAdminDone ? "Done" : "Mark Done"}
                                   </span>
@@ -1775,12 +1871,13 @@ const sortDateWise = useCallback(
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${history["col2"] === "Done"
-                                  ? "bg-green-100 text-green-800"
-                                  : history["col2"] === "Extend date"
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  history["col2"] === "Done"
+                                    ? "bg-green-100 text-green-800"
+                                    : history["col2"] === "Extend date"
                                     ? "bg-yellow-100 text-yellow-800"
                                     : "bg-gray-100 text-gray-800"
-                                  }`}
+                                }`}
                               >
                                 {history["col2"] || "—"}
                               </span>
@@ -1798,7 +1895,6 @@ const sortDateWise = useCallback(
                                 {history["col4"] || "—"}
                               </div>
                             </td> */}
-
 
                             <td className="px-6 py-4 whitespace-nowrap">
                               {history["col5"] ? (
@@ -1892,10 +1988,17 @@ const sortDateWise = useCallback(
                         className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                         checked={
                           // Check if all enabled items are selected
-                          filteredAccountData.filter(item => !isTaskDisabled(item["col20"])).length > 0 &&
-                          filteredAccountData.filter(item =>
-                            !isTaskDisabled(item["col20"]) && selectedItems.has(item._id)
-                          ).length === filteredAccountData.filter(item => !isTaskDisabled(item["col20"])).length
+                          filteredAccountData.filter(
+                            (item) => !isTaskDisabled(item["col20"], userRole)
+                          ).length > 0 &&
+                          filteredAccountData.filter(
+                            (item) =>
+                              !isTaskDisabled(item["col20"], userRole) &&
+                              selectedItems.has(item._id)
+                          ).length ===
+                            filteredAccountData.filter(
+                              (item) => !isTaskDisabled(item["col20"], userRole)
+                            ).length
                         }
                         onChange={handleSelectAllItems}
                       />
@@ -1913,7 +2016,10 @@ const sortDateWise = useCallback(
                       Department
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-purple-50" : ""}`}>
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-purple-50" : ""
+                      }`}
+                    >
                       Remarks
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1926,32 +2032,37 @@ const sortDateWise = useCallback(
                       Task Description
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-yellow-50" : ""
-                        }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-yellow-50" : ""
+                      }`}
                     >
                       Old Deadline Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-green-50" : ""
-                        }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-green-50" : ""
+                      }`}
                     >
                       New Deadline Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-blue-50" : ""
-                        }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-blue-50" : ""
+                      }`}
                     >
                       Status
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-indigo-50" : ""
-                        }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-indigo-50" : ""
+                      }`}
                     >
                       Next Target Date
                     </th>
                     <th
-                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-orange-50" : ""
-                        }`}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                        !accountData["col17"] ? "bg-orange-50" : ""
+                      }`}
                     >
                       Upload Image
                     </th>
@@ -1966,11 +2077,13 @@ const sortDateWise = useCallback(
                       return (
                         <tr
                           key={account._id}
-                          className={`${isSelected ? "bg-purple-50" : ""
-                            } hover:bg-gray-50 ${rowColorClass} ${isTaskDisabled(account["col20"])
+                          className={`${
+                            isSelected ? "bg-purple-50" : ""
+                          } hover:bg-gray-50 ${rowColorClass} ${
+                            isTaskDisabled(account["col20"], userRole)
                               ? "opacity-50 bg-gray-100 cursor-not-allowed"
                               : ""
-                            }`}
+                          }`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <input
@@ -1980,7 +2093,10 @@ const sortDateWise = useCallback(
                               onChange={(e) =>
                                 handleCheckboxClick(e, account._id)
                               }
-                              disabled={isTaskDisabled(account["col20"])}
+                              disabled={isTaskDisabled(
+                                account["col20"],
+                                userRole
+                              )}
                             />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -2008,13 +2124,17 @@ const sortDateWise = useCallback(
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-purple-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-purple-50" : ""
+                            }`}
                           >
                             <input
                               type="text"
                               placeholder="Enter remarks"
-                              disabled={!isSelected}
+                              disabled={
+                                !isSelected ||
+                                isTaskDisabled(account["col20"], userRole)
+                              }
                               value={remarksData[account._id] || ""}
                               onChange={(e) =>
                                 setRemarksData((prev) => ({
@@ -2044,27 +2164,33 @@ const sortDateWise = useCallback(
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-yellow-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-yellow-50" : ""
+                            }`}
                           >
                             <div className="text-sm text-gray-900">
                               {formatDateForDisplay(account["col6"])}
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-green-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-green-50" : ""
+                            }`}
                           >
                             <div className="text-sm text-gray-900">
                               {formatDateForDisplay(account["col10"])}
                             </div>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-blue-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-blue-50" : ""
+                            }`}
                           >
                             <select
-                              disabled={!isSelected}
+                              disabled={
+                                !isSelected ||
+                                isTaskDisabled(account["col20"], userRole)
+                              }
                               value={statusData[account._id] || ""}
                               onChange={(e) =>
                                 handleStatusChange(account._id, e.target.value)
@@ -2077,30 +2203,32 @@ const sortDateWise = useCallback(
                             </select>
                           </td>
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-indigo-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-indigo-50" : ""
+                            }`}
                           >
                             <input
                               type="date"
                               disabled={
                                 !isSelected ||
-                                statusData[account._id] !== "Extend date"
+                                statusData[account._id] !== "Extend date" ||
+                                isTaskDisabled(account["col20"], userRole)
                               }
                               value={
                                 nextTargetDate[account._id]
                                   ? (() => {
-                                    const dateStr =
-                                      nextTargetDate[account._id];
-                                    if (dateStr && dateStr.includes("/")) {
-                                      const [day, month, year] =
-                                        dateStr.split("/");
-                                      return `${year}-${month.padStart(
-                                        2,
-                                        "0"
-                                      )}-${day.padStart(2, "0")}`;
-                                    }
-                                    return dateStr;
-                                  })()
+                                      const dateStr =
+                                        nextTargetDate[account._id];
+                                      if (dateStr && dateStr.includes("/")) {
+                                        const [day, month, year] =
+                                          dateStr.split("/");
+                                        return `${year}-${month.padStart(
+                                          2,
+                                          "0"
+                                        )}-${day.padStart(2, "0")}`;
+                                      }
+                                      return dateStr;
+                                    })()
                                   : ""
                               }
                               onChange={(e) => {
@@ -2122,8 +2250,9 @@ const sortDateWise = useCallback(
                           </td>
 
                           <td
-                            className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-orange-50" : ""
-                              }`}
+                            className={`px-6 py-4 whitespace-nowrap ${
+                              !account["col17"] ? "bg-orange-50" : ""
+                            }`}
                           >
                             {account.image ? (
                               <div className="flex items-center">
@@ -2156,10 +2285,11 @@ const sortDateWise = useCallback(
                               </div>
                             ) : (
                               <label
-                                className={`flex items-center cursor-pointer ${account["col9"]?.toUpperCase() === "YES"
-                                  ? "text-red-600 font-medium"
-                                  : "text-purple-600"
-                                  } hover:text-purple-800`}
+                                className={`flex items-center cursor-pointer ${
+                                  account["col9"]?.toUpperCase() === "YES"
+                                    ? "text-red-600 font-medium"
+                                    : "text-purple-600"
+                                } hover:text-purple-800`}
                               >
                                 <Upload className="h-4 w-4 mr-1" />
                                 <span className="text-xs">
@@ -2177,7 +2307,10 @@ const sortDateWise = useCallback(
                                   onChange={(e) =>
                                     handleImageUpload(account._id, e)
                                   }
-                                  disabled={!isSelected}
+                                  disabled={
+                                    !isSelected ||
+                                    isTaskDisabled(account["col20"], userRole)
+                                  }
                                 />
                               </label>
                             )}

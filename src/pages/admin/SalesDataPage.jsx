@@ -537,7 +537,6 @@ function AccountDataPage() {
     }
   };
 
-  // Memoized filtered data with enhanced filtering for both pages
 const filteredAccountData = useMemo(() => {
   if (!accountData.length) return []
 
@@ -588,7 +587,7 @@ const filteredAccountData = useMemo(() => {
     });
   }
 
-  // Sort by status (Pending first) and then by Task Start Date (latest first)
+  // Sort by status (Pending first) and then by Task Start Date (oldest first for Pending)
   return filtered.sort((a, b) => {
     // First sort by status: Pending comes first
     const statusA = getTaskStatus(a["col10"], a["col15"]);
@@ -597,7 +596,21 @@ const filteredAccountData = useMemo(() => {
     if (statusA === "Pending" && statusB !== "Pending") return -1;
     if (statusA !== "Pending" && statusB === "Pending") return 1;
     
-    // Then sort by Task Start Date (Column G/col6) - latest first
+    // For pending tasks: sort by Task Start Date (Column G/col6) - oldest first
+    if (statusA === "Pending" && statusB === "Pending") {
+      const dateStrA = a["col6"] || "";
+      const dateStrB = b["col6"] || "";
+      const dateA = parseDateFromDDMMYYYY(dateStrA);
+      const dateB = parseDateFromDDMMYYYY(dateStrB);
+      
+      if (!dateA && !dateB) return 0;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      
+      return dateA.getTime() - dateB.getTime(); // Ascending order (oldest first for pending)
+    }
+    
+    // For non-pending tasks: sort by Task Start Date (Column G/col6) - latest first
     const dateStrA = a["col6"] || "";
     const dateStrB = b["col6"] || "";
     const dateA = parseDateFromDDMMYYYY(dateStrA);
@@ -607,7 +620,7 @@ const filteredAccountData = useMemo(() => {
     if (!dateA) return 1;
     if (!dateB) return -1;
     
-    return dateB.getTime() - dateA.getTime(); // Descending order (latest first)
+    return dateB.getTime() - dateA.getTime(); // Descending order (latest first for non-pending)
   });
 }, [accountData, debouncedSearchTerm, searchTerm, selectedStatus, selectedMembers, startDate, endDate, parseDateFromDDMMYYYY]);
 

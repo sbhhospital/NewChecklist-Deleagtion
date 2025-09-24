@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { BarChart3, CheckCircle2, Clock, ListTodo, Users, AlertTriangle, Filter, User } from 'lucide-react'
+import { BarChart3, CheckCircle2, Clock, ListTodo, Users, AlertTriangle, Filter, User, Edit3, Upload, X } from 'lucide-react'
 import AdminLayout from "../../components/layout/AdminLayout.jsx"
 import {
   BarChart,
@@ -26,6 +26,10 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("overview")
   const [userProfileImage, setUserProfileImage] = useState(null)
   const [userEmail, setUserEmail] = useState("")
+  const [showImageUploadModal, setShowImageUploadModal] = useState(false);
+const [selectedFile, setSelectedFile] = useState(null);
+const [uploadingImage, setUploadingImage] = useState(false);
+const [showLinkInputModal, setShowLinkInputModal] = useState(false);
 
   // State for department data
   const [departmentData, setDepartmentData] = useState({
@@ -180,6 +184,87 @@ useEffect(() => {
     fetchUserProfileFromSheets(username);
   }
 }, []);
+
+const handleFileSelect = (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
+    setSelectedFile(file);
+  }
+};
+
+const convertToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+  });
+};
+
+const uploadImageAndUpdateWhatsApp = async () => {
+  if (!selectedFile) {
+    alert('Please select an image first');
+    return;
+  }
+
+  try {
+    setUploadingImage(true);
+    const username = sessionStorage.getItem('username');
+    
+    if (!username) {
+      throw new Error('Username not found');
+    }
+
+    // Convert file to base64
+    const base64Data = await convertToBase64(selectedFile);
+    
+    // Upload to Google Drive and update sheet in one call
+    const uploadResponse = await fetch('https://script.google.com/macros/s/AKfycbwvMYHcJZr8cYF-dM_nB0-WM-cKyDpMLFx6GzW5SryoWzZnAK5V7TP_8pKGfAGUmCVd/exec', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        action: 'uploadProfilePhoto',
+        base64Data: base64Data,
+        fileName: `profile_${username}_${Date.now()}.${selectedFile.name.split('.').pop()}`,
+        mimeType: selectedFile.type,
+        folderId: '1Jxb5aE-VymJfVkMTvPELt8yRgslSFNXd',
+        username: username
+      })
+    });
+
+    const uploadResult = await uploadResponse.json();
+    
+    if (!uploadResult.success) {
+      throw new Error(uploadResult.error || 'Upload failed');
+    }
+
+    // Update local state with the new image
+    const displayableUrl = getDisplayableImageUrl(uploadResult.fileUrl);
+    setUserProfileImage(displayableUrl);
+    
+    // Close modal and reset
+    setShowImageUploadModal(false);
+    setSelectedFile(null);
+    
+    alert('Profile image uploaded and updated successfully!');
+    
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    alert('Failed to upload image. Please try again.');
+  } finally {
+    setUploadingImage(false);
+  }
+};
 
   const formatLocalDate = (isoDate) => {
     if (!isoDate) return "";
@@ -995,40 +1080,56 @@ useEffect(() => {
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="relative">
-              {userProfileImage ? (
-  <img 
-    src={userProfileImage} 
-    alt="Profile" 
-    className="w-10 h-10 rounded-full object-cover border-2 border-purple-500"
-    style={{ 
-      backgroundColor: '#f3f4f6', // Light background while loading
-      objectPosition: 'center' 
-    }}
-    onError={(e) => {
-      // If thumbnail fails, try the direct view URL as fallback
-      const originalUrl = userProfileImage.replace('thumbnail?', 'uc?export=view&').replace('&sz=w150', '');
-      e.target.src = originalUrl;
-    }}
-  />
-) : (
-  <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600">
-    <User className="h-6 w-6 text-white" />
+  <div className="relative group">
+    {userProfileImage ? (
+      <div className="relative">
+        <img 
+          src={userProfileImage} 
+          alt="Profile" 
+          className="w-15 h-15 rounded-full object-cover border-2 border-purple-500 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+          style={{ 
+            width: '60px',
+            height: '60px',
+            backgroundColor: '#f3f4f6',
+            objectPosition: 'center' 
+          }}
+          onClick={() => setShowImageUploadModal(true)}
+          onError={(e) => {
+            const originalUrl = userProfileImage.replace('thumbnail?', 'uc?export=view&').replace('&sz=w150', '');
+            e.target.src = originalUrl;
+          }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
+             onClick={() => setShowImageUploadModal(true)}>
+          <Edit3 className="h-5 w-5 text-white" />
+        </div>
+      </div>
+    ) : (
+      <div className="relative group">
+        <div className="w-15 h-15 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+             style={{ width: '60px', height: '60px' }}
+             onClick={() => setShowLinkInputModal(true)}>
+          <User className="h-6 w-6 text-white" />
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
+             onClick={() => setShowLinkInputModal(true)}>
+          <Edit3 className="h-5 w-5 text-white" />
+        </div>
+      </div>
+    )}
   </div>
-)}
-            </div>
-            
-            <select
-              value={dashboardType}
-              onChange={(e) => {
-                setDashboardType(e.target.value);
-              }}
-              className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-            >
-              <option value="checklist">Checklist</option>
-              <option value="delegation">Delegation</option>
-            </select>
-          </div>
+  
+  <select
+    value={dashboardType}
+    onChange={(e) => {
+      setDashboardType(e.target.value);
+    }}
+    className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+  >
+    <option value="checklist">Checklist</option>
+    <option value="delegation">Delegation</option>
+  </select>
+</div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1706,6 +1807,79 @@ useEffect(() => {
           )}
         </div>
       </div>
+      {showImageUploadModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Upload Profile Image</h3>
+        <button
+          onClick={() => {
+            setShowImageUploadModal(false);
+            setSelectedFile(null);
+          }}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+      
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Select Image File
+          </label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Supported formats: JPG, PNG, GIF (Max 10MB)
+          </p>
+        </div>
+
+        {selectedFile && (
+          <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+            <Upload className="h-5 w-5 text-purple-600" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
+              <p className="text-xs text-gray-500">
+                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex space-x-3 pt-4">
+          <button
+            onClick={() => {
+              setShowImageUploadModal(false);
+              setSelectedFile(null);
+            }}
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={uploadImageAndUpdateWhatsApp}
+            disabled={!selectedFile || uploadingImage}
+            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+          >
+            {uploadingImage ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Uploading...
+              </>
+            ) : (
+              'Upload Image'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
     </AdminLayout>
   )
 }
