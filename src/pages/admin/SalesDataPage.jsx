@@ -235,6 +235,8 @@ function AccountDataPage() {
   const [nameSearchTerm, setNameSearchTerm] = useState("") // Search term for name dropdown
   const [editingRemarks, setEditingRemarks] = useState({});
   const [tempRemarks, setTempRemarks] = useState({});
+  const [displayLimit, setDisplayLimit] = useState(50)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
 
   // Admin history selection states
@@ -957,25 +959,41 @@ const filteredAccountData = useMemo(() => {
     setRemarksData((prev) => ({ ...prev, [id]: value }))
   }, [])
 
-    const handleTableScroll = useCallback((e) => {
+const handleTableScroll = useCallback((e) => {
   const scrollTop = e.target.scrollTop;
+  const scrollHeight = e.target.scrollHeight;
+  const clientHeight = e.target.clientHeight;
   const itemHeight = 60; // approximate row height
-  const containerHeight = e.target.clientHeight;
   
-  // Calculate visible range with buffer
-  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5); // Buffer above
+  // Calculate visible range with buffer (keep existing logic)
+  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5);
   const end = Math.min(
-    start + Math.ceil(containerHeight / itemHeight) + 10, // Buffer below
-    filteredAccountData.length
+    start + Math.ceil(clientHeight / itemHeight) + 10,
+    Math.min(filteredAccountData.length, displayLimit) // Use displayLimit instead of full length
   );
 
   setVisibleRange({ start, end });
-}, [filteredAccountData.length]);
+
+  // Infinite scroll logic - load more when near bottom
+  const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+  if (scrollPercentage > 0.8 && // When 80% scrolled
+      displayLimit < filteredAccountData.length && // More data available
+      !isLoadingMore) { // Not already loading
+    setIsLoadingMore(true);
+    
+    // Simulate loading delay (remove this setTimeout in production if not needed)
+    setTimeout(() => {
+      setDisplayLimit(prev => Math.min(prev + 50, filteredAccountData.length));
+      setIsLoadingMore(false);
+    }, 300);
+  }
+}, [filteredAccountData.length, displayLimit, isLoadingMore]);
 
 // Add this useEffect to reset visible range when data changes
 useEffect(() => {
+  setDisplayLimit(50);
   setVisibleRange({ start: 0, end: 50 });
-}, [filteredAccountData.length]);
+}, [debouncedSearchTerm, selectedStatus, selectedMembers, startDate, endDate]);
 
 // const handleTableScroll = useCallback((e) => {
 //   const scrollTop = e.target.scrollTop;
@@ -992,9 +1010,10 @@ useEffect(() => {
 //   setVisibleRange({ start, end });
 // }, [filteredAccountData.length]);
 
-  const visibleAccountData = useMemo(() => {
-  return filteredAccountData.slice(visibleRange.start, visibleRange.end);
-}, [filteredAccountData, visibleRange.start, visibleRange.end]);
+const visibleAccountData = useMemo(() => {
+  const limitedData = filteredAccountData.slice(0, displayLimit);
+  return limitedData.slice(visibleRange.start, visibleRange.end);
+}, [filteredAccountData, displayLimit, visibleRange.start, visibleRange.end]);
 
   const handleImageUpload = useCallback(async (id, e) => {
     const file = e.target.files[0]
@@ -1878,13 +1897,25 @@ useEffect(() => {
   ))}
 
   {/* Bottom spacer */}
-  {visibleRange.end < filteredAccountData.length && (
+  {visibleRange.end < Math.min(filteredAccountData.length, displayLimit) && (
     <tr>
       <td 
         colSpan={14} 
-        style={{ height: (filteredAccountData.length - visibleRange.end) * 60 }}
+        style={{ height: (Math.min(filteredAccountData.length, displayLimit) - visibleRange.end) * 60 }}
         className="p-0 m-0 border-none"
       />
+    </tr>
+  )}
+
+  {/* Loading indicator */}
+  {isLoadingMore && (
+    <tr>
+      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-purple-500 mr-2"></div>
+          Loading more tasks...
+        </div>
+      </td>
     </tr>
   )}
 

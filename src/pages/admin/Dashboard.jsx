@@ -67,6 +67,18 @@ const [showLinkInputModal, setShowLinkInputModal] = useState(false);
     completionRate: 0
   });
 
+  const getUserRole = () => {
+  return sessionStorage.getItem('role') || 'user'; // Default to 'user' if not set
+};
+
+const isAdminUser = () => {
+  return getUserRole() === 'admin';
+};
+
+const isRegularUser = () => {
+  return getUserRole() === 'user';
+};
+
 const fetchUserProfileFromSheets = async (username) => {
     try {
       // Fetch from master sheet for email
@@ -455,98 +467,77 @@ const uploadImageAndUpdateWhatsApp = async () => {
 
   // Modified fetch function to support both checklist and delegation
   const fetchDepartmentData = async () => {
-    // For delegation mode, always use "DELEGATION" sheet
-    // For checklist mode, use "Checklist" as default sheet
-    const sheetName = dashboardType === "delegation" ? "DELEGATION" : "Checklist";
+  const sheetName = dashboardType === "delegation" ? "DELEGATION" : "Checklist";
+  const userRole = getUserRole();
+  const username = sessionStorage.getItem('username');
 
-    try {
-      // Debug: Log which sheet we're fetching
-      //console.log(`Fetching data for dashboard type: ${dashboardType}, sheet: ${sheetName}`);
+  try {
+    const response = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${sheetName}`);
 
-      const response = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${sheetName}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${sheetName} sheet data: ${response.status}`);
+    }
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${sheetName} sheet data: ${response.status}`);
-      }
+    const text = await response.text();
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    const jsonString = text.substring(jsonStart, jsonEnd + 1);
+    const data = JSON.parse(jsonString);
 
-      const text = await response.text();
-      const jsonStart = text.indexOf('{');
-      const jsonEnd = text.lastIndexOf('}');
-      const jsonString = text.substring(jsonStart, jsonEnd + 1);
-      const data = JSON.parse(jsonString);
+    // Initialize counters
+    let totalTasks = 0;
+    let completedTasks = 0;
+    let pendingTasks = 0;
+    let overdueTasks = 0;
+    let completedRatingOne = 0;
+    let completedRatingTwo = 0;
+    let completedRatingThreePlus = 0;
 
-      // Debug: Log the fetched data structure
-      //console.log(`Fetched data from ${sheetName}:`, {
-      //   totalRows: data.table.rows.length,
-      //   firstFewRows: data.table.rows.slice(0, 3).map((row, idx) => ({
-      //     rowIndex: idx,
-      //     rowData: row.c ? row.c.map(cell => cell?.v) : row
-      //   }))
-      // });
+    // Monthly data for bar chart
+    const monthlyData = {
+      Jan: { completed: 0, pending: 0 },
+      Feb: { completed: 0, pending: 0 },
+      Mar: { completed: 0, pending: 0 },
+      Apr: { completed: 0, pending: 0 },
+      May: { completed: 0, pending: 0 },
+      Jun: { completed: 0, pending: 0 },
+      Jul: { completed: 0, pending: 0 },
+      Aug: { completed: 0, pending: 0 },
+      Sep: { completed: 0, pending: 0 },
+      Oct: { completed: 0, pending: 0 },
+      Nov: { completed: 0, pending: 0 },
+      Dec: { completed: 0, pending: 0 }
+    };
 
-      // Get current user details
-      const username = sessionStorage.getItem('username');
-      const userRole = sessionStorage.getItem('role');
+    const statusData = { Completed: 0, Pending: 0, Overdue: 0 };
+    const staffTrackingMap = new Map();
 
-      // Initialize counters
-      let totalTasks = 0;
-      let completedTasks = 0;
-      let pendingTasks = 0;
-      let overdueTasks = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
 
-      // Add new counters for delegation mode
-      let completedRatingOne = 0;
-      let completedRatingTwo = 0;
-      let completedRatingThreePlus = 0;
-
-      // Monthly data for bar chart
-      const monthlyData = {
-        Jan: { completed: 0, pending: 0 },
-        Feb: { completed: 0, pending: 0 },
-        Mar: { completed: 0, pending: 0 },
-        Apr: { completed: 0, pending: 0 },
-        May: { completed: 0, pending: 0 },
-        Jun: { completed: 0, pending: 0 },
-        Jul: { completed: 0, pending: 0 },
-        Aug: { completed: 0, pending: 0 },
-        Sep: { completed: 0, pending: 0 },
-        Oct: { completed: 0, pending: 0 },
-        Nov: { completed: 0, pending: 0 },
-        Dec: { completed: 0, pending: 0 }
-      };
-
-      // Status data for pie chart
-      const statusData = {
-        Completed: 0,
-        Pending: 0,
-        Overdue: 0
-      };
-
-      // Staff tracking map
-      const staffTrackingMap = new Map();
-
-      // Get today's date for comparison (only used for checklist mode)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Get tomorrow's date for comparison (only used for checklist mode)
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-
-      // Process row data
-      const processedRows = data.table.rows.map((row, rowIndex) => {
-        // Skip header row
+    const processedRows = data.table.rows
+      .map((row, rowIndex) => {
         if (rowIndex === 0) return null;
+
+        const assignedTo = getCellValue(row, 4) || "Unassigned";
+        const taskId = getCellValue(row, 1);
+
+        if (
+          isRegularUser() &&
+          assignedTo.toLowerCase() !== username.toLowerCase()
+        ) {
+          return null; // Skip this task entirely for regular users
+        }
 
         // Debug: Log row processing for first few rows
         if (rowIndex <= 5) {
           //console.log(`Processing row ${rowIndex + 1} (sheet row ${rowIndex + 1}):`, row);
         }
-
-        // For non-admin users, filter by username in Column E (index 4) - "Name"
-        const assignedTo = getCellValue(row, 4) || 'Unassigned';
-        const isUserMatch = userRole === 'admin' ||
+        const isUserMatch =
+          userRole === "admin" ||
           assignedTo.toLowerCase() === username.toLowerCase();
 
         // Debug: Log user matching for first few rows
@@ -556,12 +547,10 @@ const uploadImageAndUpdateWhatsApp = async () => {
 
         // If not a match and not admin, skip this row
         if (!isUserMatch) {
-          if (rowIndex <= 5) //console.log(`Row ${rowIndex + 1}: Skipped due to user mismatch`);
+          if (rowIndex <= 5)
+            //console.log(`Row ${rowIndex + 1}: Skipped due to user mismatch`);
             return null;
         }
-
-        // Check column B for valid task row - "Task ID"
-        const taskId = getCellValue(row, 1); // Column B (index 1)
 
         // Debug: Log task ID for first few rows
         if (rowIndex <= 5) {
@@ -569,9 +558,14 @@ const uploadImageAndUpdateWhatsApp = async () => {
         }
 
         // More lenient validation - allow any non-empty value as task ID
-        if (taskId === null || taskId === undefined || taskId === '' ||
-          (typeof taskId === 'string' && taskId.trim() === '')) {
-          if (rowIndex <= 5) //console.log(`Row ${rowIndex + 1}: Skipped due to empty/null task ID`);
+        if (
+          taskId === null ||
+          taskId === undefined ||
+          taskId === "" ||
+          (typeof taskId === "string" && taskId.trim() === "")
+        ) {
+          if (rowIndex <= 5)
+            //console.log(`Row ${rowIndex + 1}: Skipped due to empty/null task ID`);
             return null;
         }
 
@@ -580,7 +574,9 @@ const uploadImageAndUpdateWhatsApp = async () => {
 
         // Get task start date from Column G (index 6) - "Task Start Date"
         let taskStartDateValue = getCellValue(row, 6);
-        const taskStartDate = taskStartDateValue ? parseGoogleSheetsDate(String(taskStartDateValue)) : '';
+        const taskStartDate = taskStartDateValue
+          ? parseGoogleSheetsDate(String(taskStartDateValue))
+          : "";
 
         // Debug: Log task start date for first few rows
         if (rowIndex <= 5) {
@@ -590,9 +586,15 @@ const uploadImageAndUpdateWhatsApp = async () => {
         // UPDATED: Different date filtering logic for delegation vs checklist
         if (dashboardType === "delegation") {
           // For DELEGATION mode: Process ALL tasks with valid task IDs, no date filtering
-          if (!taskId || taskId === null || taskId === undefined || taskId === '' ||
-            (typeof taskId === 'string' && taskId.trim() === '')) {
-            if (rowIndex <= 5) //console.log(`Row ${rowIndex + 1}: Skipped due to invalid task ID in delegation mode`);
+          if (
+            !taskId ||
+            taskId === null ||
+            taskId === undefined ||
+            taskId === "" ||
+            (typeof taskId === "string" && taskId.trim() === "")
+          ) {
+            if (rowIndex <= 5)
+              //console.log(`Row ${rowIndex + 1}: Skipped due to invalid task ID in delegation mode`);
               return null;
           }
         } else {
@@ -605,7 +607,8 @@ const uploadImageAndUpdateWhatsApp = async () => {
 
           // Process tasks that have a valid start date and are due up to tomorrow (include tomorrow's tasks)
           if (!taskStartDateObj || taskStartDateObj > tomorrow) {
-            if (rowIndex <= 5) //console.log(`Row ${rowIndex + 1}: Skipped due to invalid/far future date (beyond tomorrow)`);
+            if (rowIndex <= 5)
+              //console.log(`Row ${rowIndex + 1}: Skipped due to invalid/far future date (beyond tomorrow)`);
               return null; // Skip tasks beyond tomorrow
           }
         }
@@ -620,7 +623,9 @@ const uploadImageAndUpdateWhatsApp = async () => {
           completionDateValue = getCellValue(row, 10);
         }
 
-        completionDate = completionDateValue ? parseGoogleSheetsDate(String(completionDateValue)) : '';
+        completionDate = completionDateValue
+          ? parseGoogleSheetsDate(String(completionDateValue))
+          : "";
 
         // Debug: Log completion date for first few rows
         if (rowIndex <= 5) {
@@ -634,25 +639,25 @@ const uploadImageAndUpdateWhatsApp = async () => {
             totalTasks: 0,
             completedTasks: 0,
             pendingTasks: 0,
-            progress: 0
+            progress: 0,
           });
         }
 
         // Get additional task details
-        const taskDescription = getCellValue(row, 5) || 'Untitled Task'; // Column F - "Task Description"
-        const frequency = getCellValue(row, 7) || 'one-time'; // Column H - "Freq"
+        const taskDescription = getCellValue(row, 5) || "Untitled Task"; // Column F - "Task Description"
+        const frequency = getCellValue(row, 7) || "one-time"; // Column H - "Freq"
 
         // UPDATED: Determine task status for display purposes - restored overdue logic for delegation
-        let status = 'pending';
+        let status = "pending";
 
-        if (completionDate && completionDate !== '') {
-          status = 'completed';
+        if (completionDate && completionDate !== "") {
+          status = "completed";
         } else if (isDateInPast(taskStartDate) && !isDateToday(taskStartDate)) {
           // For both modes: past dates (excluding today) = overdue
-          status = 'overdue';
+          status = "overdue";
         } else {
           // For both modes: today or future dates = pending
-          status = 'pending';
+          status = "pending";
         }
 
         // Debug: Log status determination for first few rows
@@ -668,7 +673,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
           taskStartDate,
           dueDate: taskStartDate, // Keep for compatibility
           status,
-          frequency
+          frequency,
         };
 
         // Debug: Log task object for first few rows
@@ -685,7 +690,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
           // For DELEGATION mode: Count ALL valid tasks, no date restrictions
           totalTasks++;
 
-          if (status === 'completed') {
+          if (status === "completed") {
             completedTasks++;
             staffData.completedTasks++;
             statusData.Completed++;
@@ -703,7 +708,9 @@ const uploadImageAndUpdateWhatsApp = async () => {
             // Update monthly data for completed tasks
             const completedMonth = parseDateFromDDMMYYYY(completionDate);
             if (completedMonth) {
-              const monthName = completedMonth.toLocaleString('default', { month: 'short' });
+              const monthName = completedMonth.toLocaleString("default", {
+                month: "short",
+              });
               if (monthlyData[monthName]) {
                 monthlyData[monthName].completed++;
               }
@@ -723,7 +730,9 @@ const uploadImageAndUpdateWhatsApp = async () => {
             statusData.Pending++;
 
             // Update monthly data for pending tasks
-            const monthName = (dashboardType === "delegation" ? new Date() : today).toLocaleString('default', { month: 'short' });
+            const monthName = (
+              dashboardType === "delegation" ? new Date() : today
+            ).toLocaleString("default", { month: "short" });
             if (monthlyData[monthName]) {
               monthlyData[monthName].pending++;
             }
@@ -736,7 +745,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
           if (shouldCountInStats) {
             totalTasks++;
 
-            if (status === 'completed') {
+            if (status === "completed") {
               completedTasks++;
               staffData.completedTasks++;
               statusData.Completed++;
@@ -744,7 +753,9 @@ const uploadImageAndUpdateWhatsApp = async () => {
               // Update monthly data for completed tasks
               const completedMonth = parseDateFromDDMMYYYY(completionDate);
               if (completedMonth) {
-                const monthName = completedMonth.toLocaleString('default', { month: 'short' });
+                const monthName = completedMonth.toLocaleString("default", {
+                  month: "short",
+                });
                 if (monthlyData[monthName]) {
                   monthlyData[monthName].completed++;
                 }
@@ -763,16 +774,20 @@ const uploadImageAndUpdateWhatsApp = async () => {
               statusData.Pending++;
 
               // Update monthly data for pending tasks
-              const monthName = today.toLocaleString('default', { month: 'short' });
+              const monthName = today.toLocaleString("default", {
+                month: "short",
+              });
               if (monthlyData[monthName]) {
                 monthlyData[monthName].pending++;
               }
             }
           }
         }
+        const hasAccess = isAdminUser() || assignedTo.toLowerCase() === username.toLowerCase();
 
         return taskObj;
-      }).filter(task => task !== null);
+      })
+      .filter((task) => task !== null);
 
       // Debug: Log processing summary
       //console.log(`Processing summary for ${sheetName}:`);
@@ -786,6 +801,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
       //console.log(`  Completed Rating 1: ${completedRatingOne}`);
       //console.log(`  Completed Rating 2: ${completedRatingTwo}`);
       //console.log(`  Completed Rating 3+: ${completedRatingThreePlus}`);
+      
 
       // Calculate completion rate
       const completionRate = totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(1) : 0;
@@ -804,22 +820,29 @@ const uploadImageAndUpdateWhatsApp = async () => {
         { name: "Overdue", value: statusData.Overdue, color: "#ef4444" }
       ];
 
-      // Process staff tracking map
-      const staffMembers = Array.from(staffTrackingMap.values()).map(staff => {
-        const progress = staff.totalTasks > 0
-          ? Math.round((staff.completedTasks / staff.totalTasks) * 100)
-          : 0;
+      const filteredStaffMembers = isAdminUser() 
+  ? Array.from(staffTrackingMap.values()) // Admin sees all staff
+  : Array.from(staffTrackingMap.values()).filter(staff => 
+      staff.name.toLowerCase() === username.toLowerCase()
+    ); // Regular users see only themselves
 
-        return {
-          id: staff.name.replace(/\s+/g, '-').toLowerCase(),
-          name: staff.name,
-          email: `${staff.name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-          totalTasks: staff.totalTasks,
-          completedTasks: staff.completedTasks,
-          pendingTasks: staff.pendingTasks,
-          progress
-        };
-      });
+// Update the staff members processing:
+const staffMembers = filteredStaffMembers.map((staff) => {
+  const progress =
+    staff.totalTasks > 0
+      ? Math.round((staff.completedTasks / staff.totalTasks) * 100)
+      : 0;
+
+  return {
+    id: staff.name.replace(/\s+/g, "-").toLowerCase(),
+    name: staff.name,
+    email: `${staff.name.toLowerCase().replace(/\s+/g, ".")}@example.com`,
+    totalTasks: staff.totalTasks,
+    completedTasks: staff.completedTasks,
+    pendingTasks: staff.pendingTasks,
+    progress,
+  };
+});
 
       // Update department data state
       setDepartmentData({
@@ -1064,822 +1087,1105 @@ const uploadImageAndUpdateWhatsApp = async () => {
   };
 
    return (
-    <AdminLayout>
-      <div className="space-y-6">
-        {/* MODIFIED: Updated header section to include profile image */}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-purple-500">
-              {(() => {
-                const hour = new Date().getHours();
-                if (hour < 12) return `Good Morning, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
-                if (hour < 18) return `Good Afternoon, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
-                return `Good Evening, ${sessionStorage.getItem('username')?.toUpperCase() || 'User'}! Welcome On Board`;
-              })()}
-            </h1>
-          </div>
-          
-          <div className="flex items-center gap-4">
-  <div className="relative group">
-    {userProfileImage ? (
-      <div className="relative">
-        <img 
-          src={userProfileImage} 
-          alt="Profile" 
-          className="w-15 h-15 rounded-full object-cover border-2 border-purple-500 cursor-pointer transition-all duration-200 group-hover:brightness-75"
-          style={{ 
-            width: '60px',
-            height: '60px',
-            backgroundColor: '#f3f4f6',
-            objectPosition: 'center' 
-          }}
-          onClick={() => setShowImageUploadModal(true)}
-          onError={(e) => {
-            const originalUrl = userProfileImage.replace('thumbnail?', 'uc?export=view&').replace('&sz=w150', '');
-            e.target.src = originalUrl;
-          }}
-        />
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
-             onClick={() => setShowImageUploadModal(true)}>
-          <Edit3 className="h-5 w-5 text-white" />
-        </div>
-      </div>
-    ) : (
-      <div className="relative group">
-        <div className="w-15 h-15 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600 cursor-pointer transition-all duration-200 group-hover:brightness-75"
-             style={{ width: '60px', height: '60px' }}
-             onClick={() => setShowLinkInputModal(true)}>
-          <User className="h-6 w-6 text-white" />
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
-             onClick={() => setShowLinkInputModal(true)}>
-          <Edit3 className="h-5 w-5 text-white" />
-        </div>
-      </div>
-    )}
-  </div>
-  
-  <select
-    value={dashboardType}
-    onChange={(e) => {
-      setDashboardType(e.target.value);
-    }}
-    className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-  >
-    <option value="checklist">Checklist</option>
-    <option value="delegation">Delegation</option>
-  </select>
-</div>
-        </div>
+     <AdminLayout>
+       <div className="space-y-6">
+         {/* MODIFIED: Updated header section to include profile image */}
+         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+           <div>
+             <h1 className="text-2xl font-bold tracking-tight text-purple-500">
+               {(() => {
+                 const hour = new Date().getHours();
+                 if (hour < 12)
+                   return `Good Morning, ${
+                     sessionStorage.getItem("username")?.toUpperCase() || "User"
+                   }! Welcome On Board`;
+                 if (hour < 18)
+                   return `Good Afternoon, ${
+                     sessionStorage.getItem("username")?.toUpperCase() || "User"
+                   }! Welcome On Board`;
+                 return `Good Evening, ${
+                   sessionStorage.getItem("username")?.toUpperCase() || "User"
+                 }! Welcome On Board`;
+               })()}
+             </h1>
+           </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-all bg-white">
-            <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-tr-lg p-4">
-              <h3 className="text-sm font-medium text-blue-700">Total Tasks</h3>
-              <ListTodo className="h-4 w-4 text-blue-500" />
-            </div>
-            <div className="p-4">
-              <div className="text-3xl font-bold text-blue-700">{departmentData.totalTasks}</div>
-              <p className="text-xs text-blue-600">
-                {dashboardType === "delegation"
-                  ? "All tasks in delegation sheet"
-                  : "Total tasks in checklist (up to today)"
-                }
-              </p>
-            </div>
-          </div>
+           <div className="flex items-center gap-4">
+             <div className="relative group">
+               {userProfileImage ? (
+                 <div className="relative">
+                   <img
+                     src={userProfileImage}
+                     alt="Profile"
+                     className="w-15 h-15 rounded-full object-cover border-2 border-purple-500 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+                     style={{
+                       width: "60px",
+                       height: "60px",
+                       backgroundColor: "#f3f4f6",
+                       objectPosition: "center",
+                     }}
+                     onClick={() => setShowImageUploadModal(true)}
+                     onError={(e) => {
+                       const originalUrl = userProfileImage
+                         .replace("thumbnail?", "uc?export=view&")
+                         .replace("&sz=w150", "");
+                       e.target.src = originalUrl;
+                     }}
+                   />
+                   <div
+                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
+                     onClick={() => setShowImageUploadModal(true)}
+                   >
+                     <Edit3 className="h-5 w-5 text-white" />
+                   </div>
+                 </div>
+               ) : (
+                 <div className="relative group">
+                   <div
+                     className="w-15 h-15 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+                     style={{ width: "60px", height: "60px" }}
+                     onClick={() => setShowLinkInputModal(true)}
+                   >
+                     <User className="h-6 w-6 text-white" />
+                   </div>
+                   <div
+                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
+                     onClick={() => setShowLinkInputModal(true)}
+                   >
+                     <Edit3 className="h-5 w-5 text-white" />
+                   </div>
+                 </div>
+               )}
+             </div>
 
-          <div className="rounded-lg border border-l-4 border-l-green-500 shadow-md hover:shadow-lg transition-all bg-white">
-            <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-green-50 to-green-100 rounded-tr-lg p-4">
-              <h3 className="text-sm font-medium text-green-700">
-                {dashboardType === "delegation" ? "Completed Once" : "Completed Tasks"}
-              </h3>
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            </div>
-            <div className="p-4">
-              <div className="text-3xl font-bold text-green-700">
-                {dashboardType === "delegation" ? departmentData.completedRatingOne : departmentData.completedTasks}
-              </div>
-              <p className="text-xs text-green-600">
-                {dashboardType === "delegation" ? "Tasks completed once" : "Total completed till date"}
-              </p>
-            </div>
-          </div>
+             <select
+               value={dashboardType}
+               onChange={(e) => {
+                 setDashboardType(e.target.value);
+               }}
+               className="w-[140px] rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+             >
+               <option value="checklist">Checklist</option>
+               <option value="delegation">Delegation</option>
+             </select>
+           </div>
+         </div>
 
-          <div className="rounded-lg border border-l-4 border-l-amber-500 shadow-md hover:shadow-lg transition-all bg-white">
-            <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-amber-50 to-amber-100 rounded-tr-lg p-4">
-              <h3 className="text-sm font-medium text-amber-700">
-                {dashboardType === "delegation" ? "Completed Twice" : "Pending Tasks"}
-              </h3>
-              {dashboardType === "delegation" ? (
-                <CheckCircle2 className="h-4 w-4 text-amber-500" />
-              ) : (
-                <Clock className="h-4 w-4 text-amber-500" />
-              )}
-            </div>
-            <div className="p-4">
-              <div className="text-3xl font-bold text-amber-700">
-                {dashboardType === "delegation" ? departmentData.completedRatingTwo : departmentData.pendingTasks}
-              </div>
-              <p className="text-xs text-amber-600">
-                {dashboardType === "delegation" ? "Tasks completed twice" : "Including today + overdue"}
-              </p>
-            </div>
-          </div>
+         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+           <div className="rounded-lg border border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-all bg-white">
+             <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-tr-lg p-4">
+               <h3 className="text-sm font-medium text-blue-700">
+                 Total Tasks
+               </h3>
+               <ListTodo className="h-4 w-4 text-blue-500" />
+             </div>
+             <div className="p-4">
+               <div className="text-3xl font-bold text-blue-700">
+                 {departmentData.totalTasks}
+               </div>
+               <p className="text-purple-600 text-sm">
+                 {dashboardType === "delegation"
+                   ? `${
+                       isAdminUser()
+                         ? "All tasks in delegation sheet"
+                         : "Your tasks in delegation sheet"
+                     }`
+                   : `${
+                       isAdminUser()
+                         ? "Total tasks in checklist (up to today)"
+                         : "Your tasks in checklist (up to today)"
+                     }`}
+               </p>
+             </div>
+           </div>
 
-          <div className="rounded-lg border border-l-4 border-l-red-500 shadow-md hover:shadow-lg transition-all bg-white">
-            <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-red-50 to-red-100 rounded-tr-lg p-4">
-              <h3 className="text-sm font-medium text-red-700">
-                {dashboardType === "delegation" ? "Completed 3+ Times" : "Overdue Tasks"}
-              </h3>
-              {dashboardType === "delegation" ? (
-                <CheckCircle2 className="h-4 w-4 text-red-500" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-red-500" />
-              )}
-            </div>
-            <div className="p-4">
-              <div className="text-3xl font-bold text-red-700">
-                {dashboardType === "delegation" ? departmentData.completedRatingThreePlus : departmentData.overdueTasks}
-              </div>
-              <p className="text-xs text-red-600">
-                {dashboardType === "delegation" ? "Tasks completed 3+ times" : "Past due (excluding today)"}
-              </p>
-            </div>
-          </div>
-        </div>
+           <div className="rounded-lg border border-l-4 border-l-green-500 shadow-md hover:shadow-lg transition-all bg-white">
+             <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-green-50 to-green-100 rounded-tr-lg p-4">
+               <h3 className="text-sm font-medium text-green-700">
+                 {dashboardType === "delegation"
+                   ? "Completed Once"
+                   : "Completed Tasks"}
+               </h3>
+               <CheckCircle2 className="h-4 w-4 text-green-500" />
+             </div>
+             <div className="p-4">
+               <div className="text-3xl font-bold text-green-700">
+                 {dashboardType === "delegation"
+                   ? departmentData.completedRatingOne
+                   : departmentData.completedTasks}
+               </div>
+               <p className="text-xs text-green-600">
+                 {dashboardType === "delegation"
+                   ? "Tasks completed once"
+                   : "Total completed till date"}
+               </p>
+             </div>
+           </div>
 
-        {/* Task Navigation Tabs - Restored to 3 tabs for both modes */}
-        <div className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div className="grid grid-cols-3">
-            <button
-              className={`py-3 text-center font-medium transition-colors ${taskView === "recent" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              onClick={() => setTaskView("recent")}
-            >
-              {dashboardType === "delegation" ? "Today Tasks" : "Recent Tasks"}
-            </button>
-            <button
-              className={`py-3 text-center font-medium transition-colors ${taskView === "upcoming" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              onClick={() => setTaskView("upcoming")}
-            >
-              {dashboardType === "delegation" ? "Future Tasks" : "Upcoming Tasks"}
-            </button>
-            <button
-              className={`py-3 text-center font-medium transition-colors ${taskView === "overdue" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              onClick={() => setTaskView("overdue")}
-            >
-              Overdue Tasks
-            </button>
-          </div>
+           <div className="rounded-lg border border-l-4 border-l-amber-500 shadow-md hover:shadow-lg transition-all bg-white">
+             <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-amber-50 to-amber-100 rounded-tr-lg p-4">
+               <h3 className="text-sm font-medium text-amber-700">
+                 {dashboardType === "delegation"
+                   ? "Completed Twice"
+                   : "Pending Tasks"}
+               </h3>
+               {dashboardType === "delegation" ? (
+                 <CheckCircle2 className="h-4 w-4 text-amber-500" />
+               ) : (
+                 <Clock className="h-4 w-4 text-amber-500" />
+               )}
+             </div>
+             <div className="p-4">
+               <div className="text-3xl font-bold text-amber-700">
+                 {dashboardType === "delegation"
+                   ? departmentData.completedRatingTwo
+                   : departmentData.pendingTasks}
+               </div>
+               <p className="text-xs text-amber-600">
+                 {dashboardType === "delegation"
+                   ? "Tasks completed twice"
+                   : "Including today + overdue"}
+               </p>
+             </div>
+           </div>
 
-          <div className="p-4">
-            <div className="flex flex-col gap-4 md:flex-row mb-4">
-              <div className="flex-1 space-y-2">
-                <label htmlFor="search" className="flex items-center text-purple-700">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Search Tasks
-                </label>
-                <input
-                  id="search"
-                  placeholder="Search by task title or ID"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                />
-              </div>
-              <div className="space-y-2 md:w-[180px]">
-                <label htmlFor="staff-filter" className="flex items-center text-purple-700">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filter by Staff
-                </label>
-                <select
-                  id="staff-filter"
-                  value={filterStaff}
-                  onChange={(e) => setFilterStaff(e.target.value)}
-                  className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                >
-                  <option value="all">All Staff</option>
-                  {departmentData.staffMembers.map((staff) => (
-                    <option key={staff.id} value={staff.name}>
-                      {staff.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+           <div className="rounded-lg border border-l-4 border-l-red-500 shadow-md hover:shadow-lg transition-all bg-white">
+             <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-red-50 to-red-100 rounded-tr-lg p-4">
+               <h3 className="text-sm font-medium text-red-700">
+                 {dashboardType === "delegation"
+                   ? "Completed 3+ Times"
+                   : "Overdue Tasks"}
+               </h3>
+               {dashboardType === "delegation" ? (
+                 <CheckCircle2 className="h-4 w-4 text-red-500" />
+               ) : (
+                 <AlertTriangle className="h-4 w-4 text-red-500" />
+               )}
+             </div>
+             <div className="p-4">
+               <div className="text-3xl font-bold text-red-700">
+                 {dashboardType === "delegation"
+                   ? departmentData.completedRatingThreePlus
+                   : departmentData.overdueTasks}
+               </div>
+               <p className="text-xs text-red-600">
+                 {dashboardType === "delegation"
+                   ? "Tasks completed 3+ times"
+                   : "Past due (excluding today)"}
+               </p>
+             </div>
+           </div>
+         </div>
 
-            {getTasksByView(taskView).length === 0 ? (
-              <div className="text-center p-8 text-gray-500">
-                <p>No tasks found matching your filters.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto" style={{ maxHeight: "400px", overflowY: "auto" }}>
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50 sticky top-0 z-10">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Task ID
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Task Description
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Assigned To
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Task Start Date
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Frequency
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {getTasksByView(taskView).map((task) => (
-                      <tr key={task.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{task.id}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{task.title}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{task.assignedTo}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{task.taskStartDate}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getFrequencyColor(task.frequency)}`}
-                          >
-                            {task.frequency.charAt(0).toUpperCase() + task.frequency.slice(1)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+         {/* Task Navigation Tabs - Restored to 3 tabs for both modes */}
+         <div className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
+           <div className="grid grid-cols-3">
+             <button
+               className={`py-3 text-center font-medium transition-colors ${
+                 taskView === "recent"
+                   ? "bg-blue-600 text-white"
+                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+               }`}
+               onClick={() => setTaskView("recent")}
+             >
+               {dashboardType === "delegation" ? "Today Tasks" : "Recent Tasks"}
+             </button>
+             <button
+               className={`py-3 text-center font-medium transition-colors ${
+                 taskView === "upcoming"
+                   ? "bg-blue-600 text-white"
+                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+               }`}
+               onClick={() => setTaskView("upcoming")}
+             >
+               {dashboardType === "delegation"
+                 ? "Future Tasks"
+                 : "Upcoming Tasks"}
+             </button>
+             <button
+               className={`py-3 text-center font-medium transition-colors ${
+                 taskView === "overdue"
+                   ? "bg-blue-600 text-white"
+                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+               }`}
+               onClick={() => setTaskView("overdue")}
+             >
+               Overdue Tasks
+             </button>
+           </div>
 
-        <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
-          <div className="rounded-lg border border-l-4 border-l-indigo-500 shadow-md hover:shadow-lg transition-all bg-white">
-            <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-tr-lg p-4">
-              <h3 className="text-sm font-medium text-indigo-700">Task Completion Rate</h3>
-              <BarChart3 className="h-4 w-4 text-indigo-500" />
-            </div>
-            <div className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-3xl font-bold text-indigo-700">{departmentData.completionRate}%</div>
-                <div className="flex items-center space-x-2">
-                  <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
-                  <span className="text-xs text-gray-600">Completed: {departmentData.completedTasks}</span>
-                  <span className="inline-block w-3 h-3 bg-amber-500 rounded-full"></span>
-                  <span className="text-xs text-gray-600">Total: {departmentData.totalTasks}</span>
-                </div>
-              </div>
-              <div className="w-full h-2 bg-gray-200 rounded-full mt-2">
-                <div
-                  className="h-full bg-gradient-to-r from-green-500 to-amber-500 rounded-full"
-                  style={{ width: `${departmentData.completionRate}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
+           <div className="p-4">
+             <div className="flex flex-col gap-4 md:flex-row mb-4">
+               <div className="flex-1 space-y-2">
+                 <label
+                   htmlFor="search"
+                   className="flex items-center text-purple-700"
+                 >
+                   <Filter className="h-4 w-4 mr-2" />
+                   Search Tasks
+                 </label>
+                 <input
+                   id="search"
+                   placeholder="Search by task title or ID"
+                   value={searchQuery}
+                   onChange={(e) => setSearchQuery(e.target.value)}
+                   className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                 />
+               </div>
+               <div className="space-y-2 md:w-[180px]">
+                 <label
+                   htmlFor="staff-filter"
+                   className="flex items-center text-purple-700"
+                 >
+                   <Filter className="h-4 w-4 mr-2" />
+                   Filter by Staff
+                 </label>
+                 <select
+                   id="staff-filter"
+                   value={filterStaff}
+                   onChange={(e) => setFilterStaff(e.target.value)}
+                   className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                 >
+                   <option value="all">All Staff</option>
+                   {/* Role-based filtering for dropdown options */}
+                   {departmentData.staffMembers
+                     .filter(
+                       (staff) =>
+                         isAdminUser() ||
+                         staff.name.toLowerCase() ===
+                           sessionStorage.getItem("username")?.toLowerCase()
+                     )
+                     .map((staff) => (
+                       <option key={staff.id} value={staff.name}>
+                         {staff.name}
+                       </option>
+                     ))}
+                 </select>
+               </div>
+             </div>
 
-        {/* Tabs */}
-        <div className="space-y-4">
-          <div className="bg-purple-100 rounded-md p-1 flex space-x-1">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`flex-1 py-2 text-center rounded-md transition-colors ${activeTab === "overview" ? "bg-purple-600 text-white" : "text-purple-700 hover:bg-purple-200"
-                }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab("mis")}
-              className={`flex-1 py-2 text-center rounded-md transition-colors ${activeTab === "mis" ? "bg-purple-600 text-white" : "text-purple-700 hover:bg-purple-200"
-                }`}
-            >
-              MIS Report
-            </button>
-            <button
-              onClick={() => setActiveTab("staff")}
-              className={`flex-1 py-2 text-center rounded-md transition-colors ${activeTab === "staff" ? "bg-purple-600 text-white" : "text-purple-700 hover:bg-purple-200"
-                }`}
-            >
-              Staff Performance
-            </button>
-          </div>
+             {getTasksByView(taskView).length === 0 ? (
+               <div className="text-center p-8 text-gray-500">
+                 <p>No tasks found matching your filters.</p>
+               </div>
+             ) : (
+               <div
+                 className="overflow-x-auto"
+                 style={{ maxHeight: "400px", overflowY: "auto" }}
+               >
+                 <table className="min-w-full divide-y divide-gray-200">
+                   <thead className="bg-gray-50 sticky top-0 z-10">
+                     <tr>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Task ID
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Task Description
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Assigned To
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Task Start Date
+                       </th>
+                       <th
+                         scope="col"
+                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                       >
+                         Frequency
+                       </th>
+                     </tr>
+                   </thead>
+                   <tbody className="bg-white divide-y divide-gray-200">
+                     {getTasksByView(taskView).map((task) => (
+                       <tr key={task.id} className="hover:bg-gray-50">
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                           {task.id}
+                         </td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                           {task.title}
+                         </td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                           {task.assignedTo}
+                         </td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                           {task.taskStartDate}
+                         </td>
+                         <td className="px-6 py-4 whitespace-nowrap">
+                           <span
+                             className={`px-2 py-1 rounded-full text-xs font-medium ${getFrequencyColor(
+                               task.frequency
+                             )}`}
+                           >
+                             {task.frequency.charAt(0).toUpperCase() +
+                               task.frequency.slice(1)}
+                           </span>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+             )}
+           </div>
+         </div>
 
-          {activeTab === "overview" && (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                <div className="lg:col-span-4 rounded-lg border border-purple-200 shadow-md bg-white">
-                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                    <h3 className="text-purple-700 font-medium">Tasks Overview</h3>
-                    <p className="text-purple-600 text-sm">Task completion rate over time</p>
-                  </div>
-                  <div className="p-4 pl-2">
-                    <TasksOverviewChart />
-                  </div>
-                </div>
-                <div className="lg:col-span-3 rounded-lg border border-purple-200 shadow-md bg-white">
-                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                    <h3 className="text-purple-700 font-medium">Task Status</h3>
-                    <p className="text-purple-600 text-sm">Distribution of tasks by status</p>
-                  </div>
-                  <div className="p-4">
-                    <TasksCompletionChart />
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-purple-200 shadow-md bg-white">
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                  <h3 className="text-purple-700 font-medium">Staff Task Summary</h3>
-                  <p className="text-purple-600 text-sm">Overview of tasks assigned to each staff member</p>
-                </div>
-                <div className="p-4">
-                  <StaffTasksTable />
-                </div>
-              </div>
-            </div>
-          )}
+         <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
+           <div className="rounded-lg border border-l-4 border-l-indigo-500 shadow-md hover:shadow-lg transition-all bg-white">
+             <div className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-tr-lg p-4">
+               <h3 className="text-sm font-medium text-indigo-700">
+                 Task Completion Rate
+               </h3>
+               <BarChart3 className="h-4 w-4 text-indigo-500" />
+             </div>
+             <div className="p-4">
+               <div className="flex items-center justify-between">
+                 <div className="text-3xl font-bold text-indigo-700">
+                   {departmentData.completionRate}%
+                 </div>
+                 <div className="flex items-center space-x-2">
+                   <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                   <span className="text-xs text-gray-600">
+                     Completed: {departmentData.completedTasks}
+                   </span>
+                   <span className="inline-block w-3 h-3 bg-amber-500 rounded-full"></span>
+                   <span className="text-xs text-gray-600">
+                     Total: {departmentData.totalTasks}
+                   </span>
+                 </div>
+               </div>
+               <div className="w-full h-2 bg-gray-200 rounded-full mt-2">
+                 <div
+                   className="h-full bg-gradient-to-r from-green-500 to-amber-500 rounded-full"
+                   style={{ width: `${departmentData.completionRate}%` }}
+                 ></div>
+               </div>
+             </div>
+           </div>
+         </div>
 
-          {/* UPDATED: Modified MIS Report section for delegation mode */}
-          {activeTab === "mis" && (
-            <div className="rounded-lg border border-purple-200 shadow-md bg-white">
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                <h3 className="text-purple-700 font-medium">MIS Report</h3>
-                <p className="text-purple-600 text-sm">
-                  {dashboardType === "delegation"
-                    ? "Detailed delegation analytics - all tasks from sheet data"
-                    : "Detailed task analytics and performance metrics"
-                  }
-                </p>
-              </div>
-              <div className="p-4">
-                <div className="space-y-8">
-                  {/* UPDATED: Only show date range selection for checklist mode */}
-                  {dashboardType !== "delegation" && (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                      <div className="space-y-2 lg:col-span-1">
-                        <label htmlFor="start-date" className="flex items-center text-purple-700 text-sm font-medium">
-                          Start Date
-                        </label>
-                        <input
-                          id="start-date"
-                          type="date"
-                          value={dateRange.startDate}
-                          onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                          className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        />
-                      </div>
-                      <div className="space-y-2 lg:col-span-1">
-                        <label htmlFor="end-date" className="flex items-center text-purple-700 text-sm font-medium">
-                          End Date
-                        </label>
-                        <input
-                          id="end-date"
-                          type="date"
-                          value={dateRange.endDate}
-                          onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                          className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        />
-                      </div>
-                      <div className="space-y-2 lg:col-span-2 flex items-end">
-                        <button
-                          onClick={filterTasksByDateRange}
-                          className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded transition-colors"
-                        >
-                          Apply Filter
-                        </button>
-                      </div>
-                    </div>
-                  )}
+         {/* Tabs */}
+         <div className="space-y-4">
+           <div className="bg-purple-100 rounded-md p-1 flex space-x-1">
+             <button
+               onClick={() => setActiveTab("overview")}
+               className={`flex-1 py-2 text-center rounded-md transition-colors ${
+                 activeTab === "overview"
+                   ? "bg-purple-600 text-white"
+                   : "text-purple-700 hover:bg-purple-200"
+               }`}
+             >
+               Overview
+             </button>
+             <button
+               onClick={() => setActiveTab("mis")}
+               className={`flex-1 py-2 text-center rounded-md transition-colors ${
+                 activeTab === "mis"
+                   ? "bg-purple-600 text-white"
+                   : "text-purple-700 hover:bg-purple-200"
+               }`}
+             >
+               MIS Report
+             </button>
+             <button
+               onClick={() => setActiveTab("staff")}
+               className={`flex-1 py-2 text-center rounded-md transition-colors ${
+                 activeTab === "staff"
+                   ? "bg-purple-600 text-white"
+                   : "text-purple-700 hover:bg-purple-200"
+               }`}
+             >
+               Staff Performance
+             </button>
+           </div>
 
-                  {/* UPDATED: Overall stats with different displays for delegation vs checklist */}
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-purple-600">Total Tasks Assigned</div>
-                      <div className="text-3xl font-bold text-purple-700">
-                        {dashboardType === "delegation"
-                          ? departmentData.totalTasks
-                          : (dateRange.filtered ? filteredDateStats.totalTasks : departmentData.totalTasks)
-                        }
-                      </div>
-                      {dashboardType === "delegation" ? (
-                        <p className="text-xs text-purple-600">All tasks from delegation sheet</p>
-                      ) : (
-                        dateRange.filtered && (
-                          <p className="text-xs text-purple-600">
-                            For period: {formatLocalDate(dateRange.startDate)} - {formatLocalDate(dateRange.endDate)}
-                          </p>
-                        )
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-purple-600">Tasks Completed</div>
-                      <div className="text-3xl font-bold text-purple-700">
-                        {dashboardType === "delegation"
-                          ? departmentData.completedTasks
-                          : (dateRange.filtered ? filteredDateStats.completedTasks : departmentData.completedTasks)
-                        }
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-purple-600">
-                        {dashboardType === "delegation" ? "Tasks Pending" : "Tasks Pending/Overdue"}
-                      </div>
-                      <div className="text-3xl font-bold text-purple-700">
-                        {dashboardType === "delegation"
-                          ? departmentData.pendingTasks
-                          : (dateRange.filtered
-                            ? `${filteredDateStats.pendingTasks} / ${filteredDateStats.overdueTasks}`
-                            : `${departmentData.pendingTasks} / ${departmentData.overdueTasks}`
-                          )
-                        }
-                      </div>
-                      <div className="text-xs text-purple-600">
-                        {dashboardType === "delegation"
-                          ? "All incomplete tasks"
-                          : "Pending (all incomplete) / Overdue (past dates only)"
-                        }
-                      </div>
-                    </div>
-                  </div>
+           {activeTab === "overview" && (
+             <div className="space-y-4">
+               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+                 <div className="lg:col-span-4 rounded-lg border border-purple-200 shadow-md bg-white">
+                   <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                     <h3 className="text-purple-700 font-medium">
+                       Tasks Overview
+                     </h3>
+                     <p className="text-purple-600 text-sm">
+                       Task completion rate over time
+                     </p>
+                   </div>
+                   <div className="p-4 pl-2">
+                     <TasksOverviewChart />
+                   </div>
+                 </div>
+                 <div className="lg:col-span-3 rounded-lg border border-purple-200 shadow-md bg-white">
+                   <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                     <h3 className="text-purple-700 font-medium">
+                       Task Status
+                     </h3>
+                     <p className="text-purple-600 text-sm">
+                       Distribution of tasks by status
+                     </p>
+                   </div>
+                   <div className="p-4">
+                     <TasksCompletionChart />
+                   </div>
+                 </div>
+               </div>
+               <div className="rounded-lg border border-purple-200 shadow-md bg-white">
+                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                   <h3 className="text-purple-700 font-medium">
+                     Staff Task Summary
+                   </h3>
+                   <p className="text-purple-600 text-sm">
+                     Overview of tasks assigned to each staff member
+                   </p>
+                 </div>
+                 <div className="p-4">
+                   <StaffTasksTable />
+                 </div>
+               </div>
+             </div>
+           )}
 
-                  {/* UPDATED: Additional breakdown - only for checklist with date filtering */}
-                  {dashboardType !== "delegation" && dateRange.filtered && (
-                    <div className="rounded-lg border border-purple-100 p-4 bg-gray-50">
-                      <h4 className="text-lg font-medium text-purple-700 mb-4">Detailed Date Range Breakdown</h4>
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <div className="bg-white p-3 rounded-lg border border-amber-200">
-                          <div className="text-sm font-medium text-amber-700">Pending Tasks</div>
-                          <div className="text-2xl font-bold text-amber-600">{filteredDateStats.pendingTasks}</div>
-                          <div className="text-xs text-amber-600 mt-1">All incomplete tasks (including overdue + today)</div>
-                        </div>
-                        <div className="bg-white p-3 rounded-lg border border-red-200">
-                          <div className="text-sm font-medium text-red-700">Overdue Tasks</div>
-                          <div className="text-2xl font-bold text-red-600">{filteredDateStats.overdueTasks}</div>
-                          <div className="text-xs text-red-600 mt-1">Past due dates only (excluding today)</div>
-                        </div>
-                        <div className="bg-white p-3 rounded-lg border border-green-200">
-                          <div className="text-sm font-medium text-green-700">Completed Once</div>
-                          <div className="text-2xl font-bold text-green-600">{departmentData.completedRatingOne}</div>
-                          <div className="text-xs text-green-600 mt-1">Tasks with rating 1</div>
-                        </div>
-                        <div className="bg-white p-3 rounded-lg border border-amber-200">
-                          <div className="text-sm font-medium text-amber-700">Completed Twice</div>
-                          <div className="text-2xl font-bold text-amber-600">{departmentData.completedRatingTwo}</div>
-                          <div className="text-xs text-amber-600 mt-1">Tasks with rating 2</div>
-                        </div>
-                        <div className="bg-white p-3 rounded-lg border border-red-200">
-                          <div className="text-sm font-medium text-red-700">Completed 3+ Times</div>
-                          <div className="text-2xl font-bold text-red-600">{departmentData.completedRatingThreePlus}</div>
-                          <div className="text-xs text-red-600 mt-1">Tasks with rating 3 or higher</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+           {/* UPDATED: Modified MIS Report section for delegation mode */}
+           {activeTab === "mis" && (
+             <div className="rounded-lg border border-purple-200 shadow-md bg-white">
+               <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                 <h3 className="text-purple-700 font-medium">MIS Report</h3>
+                 <p className="text-purple-600 text-sm">
+  {dashboardType === "delegation"
+    ? `${isAdminUser() 
+        ? "Detailed delegation analytics - all tasks from sheet data" 
+        : "Detailed delegation analytics - your tasks only"}`
+    : `${isAdminUser() 
+        ? "Detailed task analytics and performance metrics" 
+        : "Your task analytics and performance metrics"}`
+  }
+</p>
+               </div>
+               <div className="p-4">
+                 <div className="space-y-8">
+                   {/* UPDATED: Only show date range selection for checklist mode */}
+                   {dashboardType !== "delegation" && (
+                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                       <div className="space-y-2 lg:col-span-1">
+                         <label
+                           htmlFor="start-date"
+                           className="flex items-center text-purple-700 text-sm font-medium"
+                         >
+                           Start Date
+                         </label>
+                         <input
+                           id="start-date"
+                           type="date"
+                           value={dateRange.startDate}
+                           onChange={(e) =>
+                             setDateRange((prev) => ({
+                               ...prev,
+                               startDate: e.target.value,
+                             }))
+                           }
+                           className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                         />
+                       </div>
+                       <div className="space-y-2 lg:col-span-1">
+                         <label
+                           htmlFor="end-date"
+                           className="flex items-center text-purple-700 text-sm font-medium"
+                         >
+                           End Date
+                         </label>
+                         <input
+                           id="end-date"
+                           type="date"
+                           value={dateRange.endDate}
+                           onChange={(e) =>
+                             setDateRange((prev) => ({
+                               ...prev,
+                               endDate: e.target.value,
+                             }))
+                           }
+                           className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                         />
+                       </div>
+                       <div className="space-y-2 lg:col-span-2 flex items-end">
+                         <button
+                           onClick={filterTasksByDateRange}
+                           className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded transition-colors"
+                         >
+                           Apply Filter
+                         </button>
+                       </div>
+                     </div>
+                   )}
 
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-purple-700">Department Performance</h3>
-                    <div className="grid gap-4 md:grid-cols-1">
-                      <div className="rounded-lg border border-purple-200 bg-white p-4">
-                        <h4 className="text-sm font-medium text-purple-700 mb-2">Completion Rate</h4>
-                        <div className="flex items-center gap-4">
-                          <div className="text-2xl font-bold text-purple-700">
-                            {dashboardType === "delegation"
-                              ? departmentData.completionRate
-                              : (dateRange.filtered ? filteredDateStats.completionRate : departmentData.completionRate)
-                            }%
-                          </div>
-                          <div className="flex-1">
-                            <div className="w-full h-6 bg-gray-200 rounded-full">
-                              <div
-                                className="h-full rounded-full flex items-center justify-end px-3 text-xs font-medium text-white"
-                                style={{
-                                  width: `${dashboardType === "delegation"
-                                    ? departmentData.completionRate
-                                    : (dateRange.filtered ? filteredDateStats.completionRate : departmentData.completionRate)
-                                    }%`,
-                                  background: `linear-gradient(to right, #10b981 ${(dashboardType === "delegation"
-                                    ? departmentData.completionRate
-                                    : (dateRange.filtered ? filteredDateStats.completionRate : departmentData.completionRate)
-                                  ) * 0.8}%, #f59e0b ${(dashboardType === "delegation"
-                                    ? departmentData.completionRate
-                                    : (dateRange.filtered ? filteredDateStats.completionRate : departmentData.completionRate)
-                                  ) * 0.8}%)`
-                                }}
-                              >
-                                {dashboardType === "delegation"
-                                  ? departmentData.completionRate
-                                  : (dateRange.filtered ? filteredDateStats.completionRate : departmentData.completionRate)
-                                }%
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-xs text-purple-600 mt-2">
-                          {dashboardType === "delegation" ?
-                            `${departmentData.completedTasks} of ${departmentData.totalTasks} tasks completed in delegation mode (all sheet data)` :
-                            `${dateRange.filtered ? filteredDateStats.completedTasks : departmentData.completedTasks} of ${dateRange.filtered ? filteredDateStats.totalTasks : departmentData.totalTasks} tasks completed in checklist mode`
-                          }
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+                   {/* UPDATED: Overall stats with different displays for delegation vs checklist */}
+                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                     <div className="space-y-2">
+                       <div className="text-sm font-medium text-purple-600">
+                         Total Tasks Assigned
+                       </div>
+                       <div className="text-3xl font-bold text-purple-700">
+                         {dashboardType === "delegation"
+                           ? departmentData.totalTasks
+                           : dateRange.filtered
+                           ? filteredDateStats.totalTasks
+                           : departmentData.totalTasks}
+                       </div>
+                       {dashboardType === "delegation" ? (
+                         <p className="text-xs text-purple-600">
+                           All tasks from delegation sheet
+                         </p>
+                       ) : (
+                         dateRange.filtered && (
+                           <p className="text-xs text-purple-600">
+                             For period: {formatLocalDate(dateRange.startDate)}{" "}
+                             - {formatLocalDate(dateRange.endDate)}
+                           </p>
+                         )
+                       )}
+                     </div>
+                     <div className="space-y-2">
+                       <div className="text-sm font-medium text-purple-600">
+                         Tasks Completed
+                       </div>
+                       <div className="text-3xl font-bold text-purple-700">
+                         {dashboardType === "delegation"
+                           ? departmentData.completedTasks
+                           : dateRange.filtered
+                           ? filteredDateStats.completedTasks
+                           : departmentData.completedTasks}
+                       </div>
+                     </div>
+                     <div className="space-y-2">
+                       <div className="text-sm font-medium text-purple-600">
+                         {dashboardType === "delegation"
+                           ? "Tasks Pending"
+                           : "Tasks Pending/Overdue"}
+                       </div>
+                       <div className="text-3xl font-bold text-purple-700">
+                         {dashboardType === "delegation"
+                           ? departmentData.pendingTasks
+                           : dateRange.filtered
+                           ? `${filteredDateStats.pendingTasks} / ${filteredDateStats.overdueTasks}`
+                           : `${departmentData.pendingTasks} / ${departmentData.overdueTasks}`}
+                       </div>
+                       <div className="text-xs text-purple-600">
+                         {dashboardType === "delegation"
+                           ? "All incomplete tasks"
+                           : "Pending (all incomplete) / Overdue (past dates only)"}
+                       </div>
+                     </div>
+                   </div>
 
-          {activeTab === "staff" && (
-            <div className="rounded-lg border border-purple-200 shadow-md bg-white">
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                <h3 className="text-purple-700 font-medium">Staff Performance</h3>
-                <p className="text-purple-600 text-sm">
-                  {dashboardType === "delegation"
-                    ? "Task completion rates by staff member (all delegation sheet data)"
-                    : "Task completion rates by staff member (tasks up to today only)"
-                  }
-                </p>
-              </div>
-              <div className="p-4">
-                <div className="space-y-8">
-                  {departmentData.staffMembers.length > 0 ? (
-                    <>
-                      {(() => {
-                        // Sort staff members by performance (high to low)
-                        const sortedStaffMembers = [...departmentData.staffMembers]
-                          .filter(staff => staff.totalTasks > 0)
-                          .sort((a, b) => b.progress - a.progress);
+                   {/* UPDATED: Additional breakdown - only for checklist with date filtering */}
+                   {dashboardType !== "delegation" && dateRange.filtered && (
+                     <div className="rounded-lg border border-purple-100 p-4 bg-gray-50">
+                       <h4 className="text-lg font-medium text-purple-700 mb-4">
+                         Detailed Date Range Breakdown
+                       </h4>
+                       <div className="grid gap-4 md:grid-cols-3">
+                         <div className="bg-white p-3 rounded-lg border border-amber-200">
+                           <div className="text-sm font-medium text-amber-700">
+                             Pending Tasks
+                           </div>
+                           <div className="text-2xl font-bold text-amber-600">
+                             {filteredDateStats.pendingTasks}
+                           </div>
+                           <div className="text-xs text-amber-600 mt-1">
+                             All incomplete tasks (including overdue + today)
+                           </div>
+                         </div>
+                         <div className="bg-white p-3 rounded-lg border border-red-200">
+                           <div className="text-sm font-medium text-red-700">
+                             Overdue Tasks
+                           </div>
+                           <div className="text-2xl font-bold text-red-600">
+                             {filteredDateStats.overdueTasks}
+                           </div>
+                           <div className="text-xs text-red-600 mt-1">
+                             Past due dates only (excluding today)
+                           </div>
+                         </div>
+                         <div className="bg-white p-3 rounded-lg border border-green-200">
+                           <div className="text-sm font-medium text-green-700">
+                             Completed Once
+                           </div>
+                           <div className="text-2xl font-bold text-green-600">
+                             {departmentData.completedRatingOne}
+                           </div>
+                           <div className="text-xs text-green-600 mt-1">
+                             Tasks with rating 1
+                           </div>
+                         </div>
+                         <div className="bg-white p-3 rounded-lg border border-amber-200">
+                           <div className="text-sm font-medium text-amber-700">
+                             Completed Twice
+                           </div>
+                           <div className="text-2xl font-bold text-amber-600">
+                             {departmentData.completedRatingTwo}
+                           </div>
+                           <div className="text-xs text-amber-600 mt-1">
+                             Tasks with rating 2
+                           </div>
+                         </div>
+                         <div className="bg-white p-3 rounded-lg border border-red-200">
+                           <div className="text-sm font-medium text-red-700">
+                             Completed 3+ Times
+                           </div>
+                           <div className="text-2xl font-bold text-red-600">
+                             {departmentData.completedRatingThreePlus}
+                           </div>
+                           <div className="text-xs text-red-600 mt-1">
+                             Tasks with rating 3 or higher
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
 
-                        return (
-                          <>
-                            {/* High performers section (70% or above) */}
-                            <div className="rounded-md border border-green-200">
-                              <div className="p-4 bg-gradient-to-r from-green-50 to-green-100 border-b border-green-200">
-                                <h3 className="text-lg font-medium text-green-700">Top Performers</h3>
-                                <p className="text-sm text-green-600">
-                                  {dashboardType === "delegation"
-                                    ? "Staff with high task completion rates (all delegation data)"
-                                    : "Staff with high task completion rates (tasks up to today only)"
-                                  }
-                                </p>
-                              </div>
-                              <div className="p-4">
-                                <div className="space-y-4">
-                                  {sortedStaffMembers
-                                    .filter(staff => staff.progress >= 70)
-                                    .map((staff) => (
-                                      <div
-                                        key={staff.id}
-                                        className="flex items-center justify-between p-3 border border-green-100 rounded-md bg-green-50"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center">
-                                            <span className="text-sm font-medium text-white">{staff.name.charAt(0)}</span>
-                                          </div>
-                                          <div>
-                                            <p className="font-medium text-green-700">{staff.name}</p>
-                                            <p className="text-xs text-green-600">{staff.completedTasks} of {staff.totalTasks} tasks completed</p>
-                                          </div>
-                                        </div>
-                                        <div className="text-lg font-bold text-green-600">{staff.progress}%</div>
-                                      </div>
-                                    ))
-                                  }
-                                  {sortedStaffMembers.filter(staff => staff.progress >= 70).length === 0 && (
-                                    <div className="text-center p-4 text-gray-500">
-                                      <p>No staff members with high completion rates found.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                   <div className="space-y-4">
+                     <h3 className="text-lg font-medium text-purple-700">
+                       Department Performance
+                     </h3>
+                     <div className="grid gap-4 md:grid-cols-1">
+                       <div className="rounded-lg border border-purple-200 bg-white p-4">
+                         <h4 className="text-sm font-medium text-purple-700 mb-2">
+                           Completion Rate
+                         </h4>
+                         <div className="flex items-center gap-4">
+                           <div className="text-2xl font-bold text-purple-700">
+                             {dashboardType === "delegation"
+                               ? departmentData.completionRate
+                               : dateRange.filtered
+                               ? filteredDateStats.completionRate
+                               : departmentData.completionRate}
+                             %
+                           </div>
+                           <div className="flex-1">
+                             <div className="w-full h-6 bg-gray-200 rounded-full">
+                               <div
+                                 className="h-full rounded-full flex items-center justify-end px-3 text-xs font-medium text-white"
+                                 style={{
+                                   width: `${
+                                     dashboardType === "delegation"
+                                       ? departmentData.completionRate
+                                       : dateRange.filtered
+                                       ? filteredDateStats.completionRate
+                                       : departmentData.completionRate
+                                   }%`,
+                                   background: `linear-gradient(to right, #10b981 ${
+                                     (dashboardType === "delegation"
+                                       ? departmentData.completionRate
+                                       : dateRange.filtered
+                                       ? filteredDateStats.completionRate
+                                       : departmentData.completionRate) * 0.8
+                                   }%, #f59e0b ${
+                                     (dashboardType === "delegation"
+                                       ? departmentData.completionRate
+                                       : dateRange.filtered
+                                       ? filteredDateStats.completionRate
+                                       : departmentData.completionRate) * 0.8
+                                   }%)`,
+                                 }}
+                               >
+                                 {dashboardType === "delegation"
+                                   ? departmentData.completionRate
+                                   : dateRange.filtered
+                                   ? filteredDateStats.completionRate
+                                   : departmentData.completionRate}
+                                 %
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                         <p className="text-xs text-purple-600 mt-2">
+                           {dashboardType === "delegation"
+                             ? `${departmentData.completedTasks} of ${departmentData.totalTasks} tasks completed in delegation mode (all sheet data)`
+                             : `${
+                                 dateRange.filtered
+                                   ? filteredDateStats.completedTasks
+                                   : departmentData.completedTasks
+                               } of ${
+                                 dateRange.filtered
+                                   ? filteredDateStats.totalTasks
+                                   : departmentData.totalTasks
+                               } tasks completed in checklist mode`}
+                         </p>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           )}
 
-                            {/* Mid performers section (40-69%) */}
-                            <div className="rounded-md border border-yellow-200">
-                              <div className="p-4 bg-gradient-to-r from-yellow-50 to-yellow-100 border-b border-yellow-200">
-                                <h3 className="text-lg font-medium text-yellow-700">Average Performers</h3>
-                                <p className="text-sm text-yellow-600">
-                                  {dashboardType === "delegation"
-                                    ? "Staff with moderate task completion rates (all delegation data)"
-                                    : "Staff with moderate task completion rates (tasks up to today only)"
-                                  }
-                                </p>
-                              </div>
-                              <div className="p-4">
-                                <div className="space-y-4">
-                                  {sortedStaffMembers
-                                    .filter(staff => staff.progress >= 40 && staff.progress < 70)
-                                    .map((staff) => (
-                                      <div
-                                        key={staff.id}
-                                        className="flex items-center justify-between p-3 border border-yellow-100 rounded-md bg-yellow-50"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-yellow-500 to-amber-500 flex items-center justify-center">
-                                            <span className="text-sm font-medium text-white">{staff.name.charAt(0)}</span>
-                                          </div>
-                                          <div>
-                                            <p className="font-medium text-yellow-700">{staff.name}</p>
-                                            <p className="text-xs text-yellow-600">{staff.completedTasks} of {staff.totalTasks} tasks completed</p>
-                                          </div>
-                                        </div>
-                                        <div className="text-lg font-bold text-yellow-600">{staff.progress}%</div>
-                                      </div>
-                                    ))
-                                  }
-                                  {sortedStaffMembers.filter(staff => staff.progress >= 40 && staff.progress < 70).length === 0 && (
-                                    <div className="text-center p-4 text-gray-500">
-                                      <p>No staff members with moderate completion rates found.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+           {activeTab === "staff" && (
+             <div className="rounded-lg border border-purple-200 shadow-md bg-white">
+               <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                 <h3 className="text-purple-700 font-medium">
+                   Staff Performance
+                 </h3>
+                 <p className="text-purple-600 text-sm">
+  {dashboardType === "delegation"
+    ? `${isAdminUser() 
+        ? "Task completion rates by staff member (all delegation sheet data)" 
+        : "Your task completion rate (delegation sheet data)"}`
+    : `${isAdminUser() 
+        ? "Task completion rates by staff member (tasks up to today only)" 
+        : "Your task completion rate (tasks up to today only)"}`
+  }
+</p>
+               </div>
+               <div className="p-4">
+                 <div className="space-y-8">
+                   {departmentData.staffMembers.length > 0 ? (
+                     <>
+                       {(() => {
+                         // Sort staff members by performance (high to low)
+                         const sortedStaffMembers = [
+                           ...departmentData.staffMembers,
+                         ]
+                           .filter((staff) => staff.totalTasks > 0)
+                           .sort((a, b) => b.progress - a.progress);
 
-                            {/* Low performers section (below 40%) */}
-                            <div className="rounded-md border border-red-200">
-                              <div className="p-4 bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200">
-                                <h3 className="text-lg font-medium text-red-700">Needs Improvement</h3>
-                                <p className="text-sm text-red-600">
-                                  {dashboardType === "delegation"
-                                    ? "Staff with lower task completion rates (all delegation data)"
-                                    : "Staff with lower task completion rates (tasks up to today only)"
-                                  }
-                                </p>
-                              </div>
-                              <div className="p-4">
-                                <div className="space-y-4">
-                                  {sortedStaffMembers
-                                    .filter(staff => staff.progress < 40)
-                                    .map((staff) => (
-                                      <div
-                                        key={staff.id}
-                                        className="flex items-center justify-between p-3 border border-red-100 rounded-md bg-red-50"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-red-500 to-pink-500 flex items-center justify-center">
-                                            <span className="text-sm font-medium text-white">{staff.name.charAt(0)}</span>
-                                          </div>
-                                          <div>
-                                            <p className="font-medium text-red-700">{staff.name}</p>
-                                            <p className="text-xs text-red-600">{staff.completedTasks} of {staff.totalTasks} tasks completed</p>
-                                          </div>
-                                        </div>
-                                        <div className="text-lg font-bold text-red-600">{staff.progress}%</div>
-                                      </div>
-                                    ))
-                                  }
-                                  {sortedStaffMembers.filter(staff => staff.progress < 40).length === 0 && (
-                                    <div className="text-center p-4 text-gray-500">
-                                      <p>No staff members with low completion rates found.</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                         return (
+                           <>
+                             {/* High performers section (70% or above) */}
+                             <div className="rounded-md border border-green-200">
+                               <div className="p-4 bg-gradient-to-r from-green-50 to-green-100 border-b border-green-200">
+                                 <h3 className="text-lg font-medium text-green-700">
+                                   Top Performers
+                                 </h3>
+                                 <p className="text-sm text-green-600">
+                                   {dashboardType === "delegation"
+                                     ? "Staff with high task completion rates (all delegation data)"
+                                     : "Staff with high task completion rates (tasks up to today only)"}
+                                 </p>
+                               </div>
+                               <div className="p-4">
+                                 <div className="space-y-4">
+                                   {sortedStaffMembers
+                                     .filter((staff) => staff.progress >= 70)
+                                     .map((staff) => (
+                                       <div
+                                         key={staff.id}
+                                         className="flex items-center justify-between p-3 border border-green-100 rounded-md bg-green-50"
+                                       >
+                                         <div className="flex items-center gap-2">
+                                           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center">
+                                             <span className="text-sm font-medium text-white">
+                                               {staff.name.charAt(0)}
+                                             </span>
+                                           </div>
+                                           <div>
+                                             <p className="font-medium text-green-700">
+                                               {staff.name}
+                                             </p>
+                                             <p className="text-xs text-green-600">
+                                               {staff.completedTasks} of{" "}
+                                               {staff.totalTasks} tasks
+                                               completed
+                                             </p>
+                                           </div>
+                                         </div>
+                                         <div className="text-lg font-bold text-green-600">
+                                           {staff.progress}%
+                                         </div>
+                                       </div>
+                                     ))}
+                                   {sortedStaffMembers.filter(
+                                     (staff) => staff.progress >= 70
+                                   ).length === 0 && (
+                                     <div className="text-center p-4 text-gray-500">
+                                       <p>
+                                         No staff members with high completion
+                                         rates found.
+                                       </p>
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             </div>
 
-                            {/* No assigned tasks section */}
-                            {departmentData.staffMembers.filter(staff => staff.totalTasks === 0).length > 0 && (
-                              <div className="rounded-md border border-gray-200">
-                                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-                                  <h3 className="text-lg font-medium text-gray-700">No Tasks Assigned</h3>
-                                  <p className="text-sm text-gray-600">
-                                    {dashboardType === "delegation"
-                                      ? "Staff with no tasks in delegation sheet"
-                                      : "Staff with no tasks assigned for current period"
-                                    }
-                                  </p>
-                                </div>
-                                <div className="p-4">
-                                  <div className="space-y-4">
-                                    {departmentData.staffMembers
-                                      .filter(staff => staff.totalTasks === 0)
-                                      .map((staff) => (
-                                        <div
-                                          key={staff.id}
-                                          className="flex items-center justify-between p-3 border border-gray-100 rounded-md bg-gray-50"
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            <div className="h-10 w-10 rounded-full bg-gradient-to-r from-gray-500 to-gray-600 flex items-center justify-center">
-                                              <span className="text-sm font-medium text-white">{staff.name.charAt(0)}</span>
-                                            </div>
-                                            <div>
-                                              <p className="font-medium text-gray-700">{staff.name}</p>
-                                              <p className="text-xs text-gray-600">
-                                                {dashboardType === "delegation"
-                                                  ? "No tasks in delegation sheet"
-                                                  : "No tasks assigned up to today"
-                                                }
-                                              </p>
-                                            </div>
-                                          </div>
-                                          <div className="text-lg font-bold text-gray-600">N/A</div>
-                                        </div>
-                                      ))
-                                    }
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </>
-                  ) : (
-                    <div className="text-center p-8 text-gray-500">
-                      <p>
-                        {dashboardType === "delegation"
-                          ? "No delegation data available."
-                          : "Loading staff data..."
-                        }
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {showImageUploadModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Upload Profile Image</h3>
-        <button
-          onClick={() => {
-            setShowImageUploadModal(false);
-            setSelectedFile(null);
-          }}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          <X className="h-6 w-6" />
-        </button>
-      </div>
-      
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select Image File
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileSelect}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Supported formats: JPG, PNG, GIF (Max 10MB)
-          </p>
-        </div>
+                             {/* Mid performers section (40-69%) */}
+                             <div className="rounded-md border border-yellow-200">
+                               <div className="p-4 bg-gradient-to-r from-yellow-50 to-yellow-100 border-b border-yellow-200">
+                                 <h3 className="text-lg font-medium text-yellow-700">
+                                   Average Performers
+                                 </h3>
+                                 <p className="text-sm text-yellow-600">
+                                   {dashboardType === "delegation"
+                                     ? "Staff with moderate task completion rates (all delegation data)"
+                                     : "Staff with moderate task completion rates (tasks up to today only)"}
+                                 </p>
+                               </div>
+                               <div className="p-4">
+                                 <div className="space-y-4">
+                                   {sortedStaffMembers
+                                     .filter(
+                                       (staff) =>
+                                         staff.progress >= 40 &&
+                                         staff.progress < 70
+                                     )
+                                     .map((staff) => (
+                                       <div
+                                         key={staff.id}
+                                         className="flex items-center justify-between p-3 border border-yellow-100 rounded-md bg-yellow-50"
+                                       >
+                                         <div className="flex items-center gap-2">
+                                           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-yellow-500 to-amber-500 flex items-center justify-center">
+                                             <span className="text-sm font-medium text-white">
+                                               {staff.name.charAt(0)}
+                                             </span>
+                                           </div>
+                                           <div>
+                                             <p className="font-medium text-yellow-700">
+                                               {staff.name}
+                                             </p>
+                                             <p className="text-xs text-yellow-600">
+                                               {staff.completedTasks} of{" "}
+                                               {staff.totalTasks} tasks
+                                               completed
+                                             </p>
+                                           </div>
+                                         </div>
+                                         <div className="text-lg font-bold text-yellow-600">
+                                           {staff.progress}%
+                                         </div>
+                                       </div>
+                                     ))}
+                                   {sortedStaffMembers.filter(
+                                     (staff) =>
+                                       staff.progress >= 40 &&
+                                       staff.progress < 70
+                                   ).length === 0 && (
+                                     <div className="text-center p-4 text-gray-500">
+                                       <p>
+                                         No staff members with moderate
+                                         completion rates found.
+                                       </p>
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             </div>
 
-        {selectedFile && (
-          <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-            <Upload className="h-5 w-5 text-purple-600" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-              <p className="text-xs text-gray-500">
-                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-              </p>
-            </div>
-          </div>
-        )}
+                             {/* Low performers section (below 40%) */}
+                             <div className="rounded-md border border-red-200">
+                               <div className="p-4 bg-gradient-to-r from-red-50 to-red-100 border-b border-red-200">
+                                 <h3 className="text-lg font-medium text-red-700">
+                                   Needs Improvement
+                                 </h3>
+                                 <p className="text-sm text-red-600">
+                                   {dashboardType === "delegation"
+                                     ? "Staff with lower task completion rates (all delegation data)"
+                                     : "Staff with lower task completion rates (tasks up to today only)"}
+                                 </p>
+                               </div>
+                               <div className="p-4">
+                                 <div className="space-y-4">
+                                   {sortedStaffMembers
+                                     .filter((staff) => staff.progress < 40)
+                                     .map((staff) => (
+                                       <div
+                                         key={staff.id}
+                                         className="flex items-center justify-between p-3 border border-red-100 rounded-md bg-red-50"
+                                       >
+                                         <div className="flex items-center gap-2">
+                                           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-red-500 to-pink-500 flex items-center justify-center">
+                                             <span className="text-sm font-medium text-white">
+                                               {staff.name.charAt(0)}
+                                             </span>
+                                           </div>
+                                           <div>
+                                             <p className="font-medium text-red-700">
+                                               {staff.name}
+                                             </p>
+                                             <p className="text-xs text-red-600">
+                                               {staff.completedTasks} of{" "}
+                                               {staff.totalTasks} tasks
+                                               completed
+                                             </p>
+                                           </div>
+                                         </div>
+                                         <div className="text-lg font-bold text-red-600">
+                                           {staff.progress}%
+                                         </div>
+                                       </div>
+                                     ))}
+                                   {sortedStaffMembers.filter(
+                                     (staff) => staff.progress < 40
+                                   ).length === 0 && (
+                                     <div className="text-center p-4 text-gray-500">
+                                       <p>
+                                         No staff members with low completion
+                                         rates found.
+                                       </p>
+                                     </div>
+                                   )}
+                                 </div>
+                               </div>
+                             </div>
 
-        <div className="flex space-x-3 pt-4">
-          <button
-            onClick={() => {
-              setShowImageUploadModal(false);
-              setSelectedFile(null);
-            }}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={uploadImageAndUpdateWhatsApp}
-            disabled={!selectedFile || uploadingImage}
-            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-          >
-            {uploadingImage ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Uploading...
-              </>
-            ) : (
-              'Upload Image'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-    </AdminLayout>
-  )
+                             {/* No assigned tasks section */}
+                             {departmentData.staffMembers.filter(
+                               (staff) => staff.totalTasks === 0
+                             ).length > 0 && (
+                               <div className="rounded-md border border-gray-200">
+                                 <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
+                                   <h3 className="text-lg font-medium text-gray-700">
+                                     No Tasks Assigned
+                                   </h3>
+                                   <p className="text-sm text-gray-600">
+                                     {dashboardType === "delegation"
+                                       ? "Staff with no tasks in delegation sheet"
+                                       : "Staff with no tasks assigned for current period"}
+                                   </p>
+                                 </div>
+                                 <div className="p-4">
+                                   <div className="space-y-4">
+                                     {departmentData.staffMembers
+                                       .filter(
+                                         (staff) => staff.totalTasks === 0
+                                       )
+                                       .map((staff) => (
+                                         <div
+                                           key={staff.id}
+                                           className="flex items-center justify-between p-3 border border-gray-100 rounded-md bg-gray-50"
+                                         >
+                                           <div className="flex items-center gap-2">
+                                             <div className="h-10 w-10 rounded-full bg-gradient-to-r from-gray-500 to-gray-600 flex items-center justify-center">
+                                               <span className="text-sm font-medium text-white">
+                                                 {staff.name.charAt(0)}
+                                               </span>
+                                             </div>
+                                             <div>
+                                               <p className="font-medium text-gray-700">
+                                                 {staff.name}
+                                               </p>
+                                               <p className="text-xs text-gray-600">
+                                                 {dashboardType === "delegation"
+                                                   ? "No tasks in delegation sheet"
+                                                   : "No tasks assigned up to today"}
+                                               </p>
+                                             </div>
+                                           </div>
+                                           <div className="text-lg font-bold text-gray-600">
+                                             N/A
+                                           </div>
+                                         </div>
+                                       ))}
+                                   </div>
+                                 </div>
+                               </div>
+                             )}
+                           </>
+                         );
+                       })()}
+                     </>
+                   ) : (
+                     <div className="text-center p-8 text-gray-500">
+                       <p>
+                         {dashboardType === "delegation"
+                           ? "No delegation data available."
+                           : "Loading staff data..."}
+                       </p>
+                     </div>
+                   )}
+                 </div>
+               </div>
+             </div>
+           )}
+         </div>
+       </div>
+       {showImageUploadModal && (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+             <div className="flex justify-between items-center mb-4">
+               <h3 className="text-lg font-semibold text-gray-900">
+                 Upload Profile Image
+               </h3>
+               <button
+                 onClick={() => {
+                   setShowImageUploadModal(false);
+                   setSelectedFile(null);
+                 }}
+                 className="text-gray-400 hover:text-gray-600"
+               >
+                 <X className="h-6 w-6" />
+               </button>
+             </div>
+
+             <div className="space-y-4">
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   Select Image File
+                 </label>
+                 <input
+                   type="file"
+                   accept="image/*"
+                   onChange={handleFileSelect}
+                   className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                 />
+                 <p className="text-xs text-gray-500 mt-1">
+                   Supported formats: JPG, PNG, GIF (Max 10MB)
+                 </p>
+               </div>
+
+               {selectedFile && (
+                 <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                   <Upload className="h-5 w-5 text-purple-600" />
+                   <div className="flex-1">
+                     <p className="text-sm font-medium text-gray-900">
+                       {selectedFile.name}
+                     </p>
+                     <p className="text-xs text-gray-500">
+                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                     </p>
+                   </div>
+                 </div>
+               )}
+
+               <div className="flex space-x-3 pt-4">
+                 <button
+                   onClick={() => {
+                     setShowImageUploadModal(false);
+                     setSelectedFile(null);
+                   }}
+                   className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   onClick={uploadImageAndUpdateWhatsApp}
+                   disabled={!selectedFile || uploadingImage}
+                   className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                 >
+                   {uploadingImage ? (
+                     <>
+                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                       Uploading...
+                     </>
+                   ) : (
+                     "Upload Image"
+                   )}
+                 </button>
+               </div>
+             </div>
+           </div>
+         </div>
+       )}
+     </AdminLayout>
+   );
 }
