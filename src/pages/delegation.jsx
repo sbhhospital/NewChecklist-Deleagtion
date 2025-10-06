@@ -11,20 +11,15 @@ import {
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 
-// Configuration object - Move all configurations here
 const CONFIG = {
-  // Google Apps Script URL
   APPS_SCRIPT_URL:
     "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
 
-  // Google Drive folder ID for file uploads
   DRIVE_FOLDER_ID: "1aNvrucZButW0c4RwMBGDJiJ-wbOlpQIb",
 
-  // Sheet names
   SOURCE_SHEET_NAME: "DELEGATION",
   TARGET_SHEET_NAME: "DELEGATION DONE",
 
-  // Page configuration
   PAGE_CONFIG: {
     title: "DELEGATION Tasks",
     historyTitle: "DELEGATION Task History",
@@ -34,7 +29,6 @@ const CONFIG = {
   },
 };
 
-// Debounce hook for search optimization
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -78,14 +72,12 @@ function DelegationDataPage() {
     end: "",
   });
 
-  // NEW: Admin history selection states
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([]);
   const [markingAsDone, setMarkingAsDone] = useState(false);
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false,
     itemCount: 0,
   });
-  // NEW: Store delegation data for submission status lookup
   const [delegationData, setDelegationData] = useState([]);
 
   const [statusCounts, setStatusCounts] = useState({
@@ -98,7 +90,6 @@ function DelegationDataPage() {
   const [editingRemarks, setEditingRemarks] = useState({});
   const [tempRemarks, setTempRemarks] = useState({});
 
-  // Debounced search term for better performance
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   const formatDateToDDMMYYYY = useCallback((date) => {
@@ -110,45 +101,33 @@ function DelegationDataPage() {
 
   const isTaskDisabled = useCallback((status, userRole) => {
   if (userRole === "admin") {
-    // Admin can update "Verify Pending" tasks, but not "Done" tasks
     return status === "Done";
   } else {
-    // Regular users cannot update "Done" or "Verify Pending" tasks
     return status === "Done" || status === "Verify Pending";
   }
 }, []);
 
-  // NEW: Function to create a proper date object for Google Sheets
   const createGoogleSheetsDate = useCallback((date) => {
-    // Return a Date object that Google Sheets can properly interpret
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }, []);
 
-  // NEW: Function to format date for Google Sheets submission
   const formatDateForGoogleSheets = useCallback((date) => {
-    // Create a properly formatted date string that Google Sheets will recognize as a date
     const day = date.getDate().toString().padStart(2, "0");
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const year = date.getFullYear();
 
-    // Return in format that Google Sheets recognizes as date: DD/MM/YYYY
-    // But we'll also include the raw date object for better compatibility
     return {
       formatted: `${day}/${month}/${year}`,
       dateObject: new Date(year, date.getMonth(), date.getDate()),
-      // ISO format as fallback
       iso: date.toISOString().split("T")[0],
-      // Special format for Google Sheets API
       googleSheetsValue: `=DATE(${year},${month},${day})`,
     };
   }, []);
 
-  // NEW: Function to convert DD/MM/YYYY string to Google Sheets date format
   const convertToGoogleSheetsDate = useCallback(
     (dateString) => {
       if (!dateString || typeof dateString !== "string") return "";
 
-      // If already in DD/MM/YYYY format
       if (dateString.includes("/")) {
         const [day, month, year] = dateString.split("/");
         const date = new Date(year, month - 1, day);
@@ -157,7 +136,6 @@ function DelegationDataPage() {
         }
       }
 
-      // If in YYYY-MM-DD format (from HTML date input)
       if (dateString.includes("-")) {
         const [year, month, day] = dateString.split("-");
         const date = new Date(year, month - 1, day);
@@ -193,7 +171,6 @@ function DelegationDataPage() {
         "Verify Pending": 0,
       };
 
-      // First filter by name if a name filter is applied
       let filteredData = accountData;
       if (nameFilter) {
         filteredData = accountData.filter(
@@ -202,7 +179,6 @@ function DelegationDataPage() {
       }
 
       filteredData.forEach((item) => {
-        // Only count tasks assigned to the logged-in user if not admin
         if (userRole !== "admin" && item["col4"] !== username) return;
 
         const status = item["col20"];
@@ -213,7 +189,7 @@ function DelegationDataPage() {
 
       setStatusCounts(counts);
     }
-  }, [accountData, userRole, username, nameFilter]); // Added nameFilter dependency
+  }, [accountData, userRole, username, nameFilter]);
 
   useEffect(() => {
     const role = sessionStorage.getItem("role");
@@ -226,12 +202,10 @@ function DelegationDataPage() {
     (dateStr) => {
       if (!dateStr) return "";
 
-      // If it's already in DD/MM/YYYY format, return as is
       if (
         typeof dateStr === "string" &&
         dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)
       ) {
-        // Ensure proper padding for DD/MM/YYYY format
         const parts = dateStr.split("/");
         if (parts.length === 3) {
           const day = parts[0].padStart(2, "0");
@@ -242,7 +216,6 @@ function DelegationDataPage() {
         return dateStr;
       }
 
-      // Handle Google Sheets Date() format
       if (typeof dateStr === "string" && dateStr.startsWith("Date(")) {
         const match = /Date\((\d+),(\d+),(\d+)\)/.exec(dateStr);
         if (match) {
@@ -255,7 +228,6 @@ function DelegationDataPage() {
         }
       }
 
-      // Handle other date formats
       try {
         const date = new Date(dateStr);
         if (!isNaN(date.getTime())) {
@@ -265,7 +237,6 @@ function DelegationDataPage() {
         console.error("Error parsing date:", error);
       }
 
-      // If all else fails, return the original string
       return dateStr;
     },
     [formatDateToDDMMYYYY]
@@ -275,7 +246,6 @@ function DelegationDataPage() {
     (dateStr) => {
       if (!dateStr) return "—";
 
-      // If it's already in proper DD/MM/YYYY format, return as is
       if (
         typeof dateStr === "string" &&
         dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)
@@ -283,7 +253,6 @@ function DelegationDataPage() {
         return dateStr;
       }
 
-      // Try to parse and reformat
       return parseGoogleSheetsDate(dateStr) || "—";
     },
     [parseGoogleSheetsDate]
@@ -303,21 +272,17 @@ const sortDateWise = useCallback(
     const dateA = parseDateFromDDMMYYYY(dateStrA);
     const dateB = parseDateFromDDMMYYYY(dateStrB);
     
-    // Get status for both items
     const statusA = a["col20"] || "";
     const statusB = b["col20"] || "";
     
-    // Prioritize pending status
     const isPendingA = statusA === "Pending";
     const isPendingB = statusB === "Pending";
     
     if (isPendingA && !isPendingB) return -1; // A (pending) comes first
     if (!isPendingA && isPendingB) return 1;  // B (pending) comes first
-    // If both are pending or both are not pending, sort by date (newest first)
     if (!dateA) return 1;
     if (!dateB) return -1;
     
-    // For descending order (newest first)
     return dateB.getTime() - dateA.getTime();
   },
   [parseDateFromDDMMYYYY]
@@ -329,7 +294,6 @@ const sortDateWise = useCallback(
     setEndDate("");
   }, []);
 
-  // Get color based on data from column R
   const getRowColor = useCallback((colorCode) => {
     if (!colorCode) return "bg-white";
 
@@ -348,10 +312,8 @@ const sortDateWise = useCallback(
     }
   }, []);
 
-  // Helper function to check if item is admin done
   const isItemAdminDone = useCallback(
     (historyItem) => {
-      // Check column P (col15) for admin done status
       const adminDoneValue = historyItem["col15"];
       return (
         !isEmpty(adminDoneValue) &&
@@ -362,7 +324,6 @@ const sortDateWise = useCallback(
     [isEmpty]
   );
 
-  // NEW: Function to get submission status based on delegation data
   const getSubmissionStatus = useCallback(
     (taskId) => {
       if (!taskId)
@@ -389,14 +350,12 @@ const sortDateWise = useCallback(
       const isDelayNotNull = !isEmpty(delayValue);
 
       if (isActualNotNull && isDelayNotNull) {
-        // Both Actual and Delay are NOT NULL - Late Submitted (Red)
         return {
           status: "Late Submitted",
           color: "bg-red-100",
           textColor: "text-red-800",
         };
       } else if (isActualNotNull && isEmpty(delayValue)) {
-        // Actual is NOT NULL and Delay is NULL - On time (Green)
         return {
           status: "On time",
           color: "bg-green-100",
@@ -404,7 +363,6 @@ const sortDateWise = useCallback(
         };
       }
 
-      // Default case
       return { status: "—", color: "bg-gray-100", textColor: "text-gray-800" };
     },
     [delegationData, isEmpty]
@@ -420,7 +378,6 @@ const sortDateWise = useCallback(
   );
 
 
-  // Optimized filtered data with debounced search
   const filteredAccountData = useMemo(() => {
     const filtered = debouncedSearchTerm
       ? accountData.filter(
@@ -443,11 +400,9 @@ const sortDateWise = useCallback(
 
     return filtered
       .filter((account) => {
-        // Name filter - apply if a name is selected
         if (nameFilter && account["col4"].toLowerCase() !== nameFilter.toLowerCase()) {
           return false;
         }
-        // Date range filter
         if (dateRange.start || dateRange.end) {
           const taskDate = parseDateFromDDMMYYYY(
             formatDateForDisplay(account["col6"])
@@ -467,7 +422,6 @@ const sortDateWise = useCallback(
           }
         }
 
-        // Status filter - apply if a status is selected (and it's not "All Status")
         if (
           statusFilter &&
           statusFilter !== "All Status" &&

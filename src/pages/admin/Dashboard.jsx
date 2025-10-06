@@ -466,7 +466,7 @@ const uploadImageAndUpdateWhatsApp = async () => {
   }
 
   // Modified fetch function to support both checklist and delegation
-  const fetchDepartmentData = async () => {
+const fetchDepartmentData = async () => {
   const sheetName = dashboardType === "delegation" ? "DELEGATION" : "Checklist";
   const userRole = getUserRole();
   const username = sessionStorage.getItem('username');
@@ -632,6 +632,10 @@ const uploadImageAndUpdateWhatsApp = async () => {
           //console.log(`Row ${rowIndex + 1}: completionDateValue="${completionDateValue}", parsed="${completionDate}"`);
         }
 
+        // NEW: Get status from Column U (index 20) and rating from Column R (index 17) for delegation mode
+        const statusColumnU = dashboardType === "delegation" ? getCellValue(row, 20) : null;
+        const ratingColumnR = dashboardType === "delegation" ? getCellValue(row, 17) : null;
+
         // Track staff details
         if (!staffTrackingMap.has(assignedTo)) {
           staffTrackingMap.set(assignedTo, {
@@ -690,18 +694,18 @@ const uploadImageAndUpdateWhatsApp = async () => {
           // For DELEGATION mode: Count ALL valid tasks, no date restrictions
           totalTasks++;
 
-          if (status === "completed") {
+          // NEW LOGIC: Count based on Column U status and Column R rating
+          if (statusColumnU === "Done") {
             completedTasks++;
             staffData.completedTasks++;
             statusData.Completed++;
 
-            // For delegation mode, count by rating
-            const ratingValue = getCellValue(row, 17); // Column R - "Pending Color Code"
-            if (ratingValue === 1) {
+            // Count by rating from Column R
+            if (ratingColumnR === 1) {
               completedRatingOne++;
-            } else if (ratingValue === 2) {
+            } else if (ratingColumnR === 2) {
               completedRatingTwo++;
-            } else if (ratingValue > 2) {
+            } else if (ratingColumnR >= 3) {
               completedRatingThreePlus++;
             }
 
@@ -1117,7 +1121,7 @@ const staffMembers = filteredStaffMembers.map((staff) => {
                    <img
                      src={userProfileImage}
                      alt="Profile"
-                     className="w-15 h-15 rounded-full object-cover border-2 border-purple-500 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+                     className="w-15 h-15 rounded-full object-cover border-2 border-gray-50 cursor-pointer transition-all duration-200 group-hover:brightness-75 shadow-md"
                      style={{
                        width: "60px",
                        height: "60px",

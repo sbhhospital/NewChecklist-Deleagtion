@@ -421,237 +421,310 @@ export default function QuickTask() {
     }
 
     return (
-        <AdminLayout>
-            <div className="sticky top-0 z-30 bg-white pb-4 border-b border-gray-200">
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-purple-700 pl-3">
-                            {CONFIG.PAGE_CONFIG.title}
-                        </h1>
-                        <p className="text-purple-600 text-sm pl-3">
-                            {currentUser && `Welcome ${currentUser}`}
-                        </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-5 w-full sm:w-auto">
-                        <div className="flex border border-purple-200 rounded-md overflow-hidden self-start">
-                            <button
-                                className={`px-4 py-2 text-sm font-medium ${activeTab === 'checklist' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 hover:bg-purple-50'}`}
-                                onClick={() => setActiveTab('checklist')}
-                            >
-                                Checklist
-                            </button>
-                            <button
-                                className={`px-4 py-2 text-sm font-medium ${activeTab === 'delegation' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 hover:bg-purple-50'}`}
-                                onClick={() => setActiveTab('delegation')}
-                            >
-                                Delegation
-                            </button>
-                        </div>
-
-                        <div className="relative flex-1 min-w-[200px]">
-                            <Search className="absolute left-3 top-7 transform -translate-y-1/2 text-gray-400" size={18} />
-                            <input
-                                type="text"
-                                placeholder="Search tasks..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-purple-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                disabled={loading || delegationLoading}
-                            />
-                        </div>
-
-                        <div className="flex gap-2">
-                            <div className="relative">
-                                <button
-                                    onClick={() => toggleDropdown('name')}
-                                    className="flex items-center gap-2 px-3 py-2 border border-purple-200 rounded-md bg-white text-sm text-gray-700 hover:bg-gray-50"
-                                >
-                                    <Filter className="h-4 w-4" />
-                                    {nameFilter || 'Filter by Name'}
-                                    <ChevronDown size={16} className={`transition-transform ${dropdownOpen.name ? 'rotate-180' : ''}`} />
-                                </button>
-                                {dropdownOpen.name && (
-                                    <div className="absolute z-50 mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 max-h-60 overflow-auto">
-                                        <div className="py-1">
-                                            <button
-                                                onClick={clearNameFilter}
-                                                className={`block w-full text-left px-4 py-2 text-sm ${!nameFilter ? 'bg-purple-100 text-purple-900' : 'text-gray-700 hover:bg-gray-100'}`}
-                                            >
-                                                All Names
-                                            </button>
-                                            {currentNames.map(name => (
-                                                <button
-                                                    key={name}
-                                                    onClick={() => handleNameFilterSelect(name)}
-                                                    className={`block w-full text-left px-4 py-2 text-sm ${nameFilter === name ? 'bg-purple-100 text-purple-900' : 'text-gray-700 hover:bg-gray-100'}`}
-                                                >
-                                                    {name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="relative">
-                                <button
-                                    onClick={() => toggleDropdown('frequency')}
-                                    className="flex items-center gap-2 px-3 py-2 border border-purple-200 rounded-md bg-white text-sm text-gray-700 hover:bg-gray-50"
-                                >
-                                    <Filter className="h-4 w-4" />
-                                    {freqFilter || 'Filter by Frequency'}
-                                    <ChevronDown size={16} className={`transition-transform ${dropdownOpen.frequency ? 'rotate-180' : ''}`} />
-                                </button>
-                                {dropdownOpen.frequency && (
-                                    <div className="absolute z-50 mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 max-h-60 overflow-auto">
-                                        <div className="py-1">
-                                            <button
-                                                onClick={clearFrequencyFilter}
-                                                className={`block w-full text-left px-4 py-2 text-sm ${!freqFilter ? 'bg-purple-100 text-purple-900' : 'text-gray-700 hover:bg-gray-100'}`}
-                                            >
-                                                All Frequencies
-                                            </button>
-                                            {currentFrequencies.map(freq => (
-                                                <button
-                                                    key={freq}
-                                                    onClick={() => handleFrequencyFilterSelect(freq)}
-                                                    className={`block w-full text-left px-4 py-2 text-sm ${freqFilter === freq ? 'bg-purple-100 text-purple-900' : 'text-gray-700 hover:bg-gray-100'}`}
-                                                >
-                                                    {freq}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+      <AdminLayout>
+        <div className="sticky top-0 z-30 bg-white pb-4 border-b border-gray-200">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-purple-700 pl-3">
+                {CONFIG.PAGE_CONFIG.title}
+              </h1>
+              <p className="text-purple-600 text-sm pl-3">
+                {currentUser && `Welcome ${currentUser}`}
+              </p>
             </div>
 
-            {currentUser && (
-                <>
-                    {activeTab === 'checklist' ? (
-                        <div className="mt-4 rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
-                            <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-                                <h2 className="text-purple-700 font-medium">
-                                    {userRole === 'admin' ? 'All Unique Tasks' : 'My Unique Tasks'}
-                                </h2>
-                                <p className="text-purple-600 text-sm">
-                                    {userRole === 'admin' ? 'Showing all unique tasks from checklist' : CONFIG.PAGE_CONFIG.description}
-                                </p>
-                            </div>
+            <div className="flex flex-col sm:flex-row gap-5 w-full sm:w-auto">
+              <div className="flex border border-purple-200 rounded-md overflow-hidden self-start">
+                <button
+                  className={`px-4 py-2 text-sm font-medium transition-colors duration-300 ${
+                    activeTab === "checklist"
+                      ? "bg-purple-600 text-white"
+                      : "bg-white text-purple-600 hover:bg-purple-50"
+                  }`}
+                  onClick={() => setActiveTab("checklist")}
+                >
+                  Checklist
+                </button>
+                <button
+                  className={`px-4 py-2 text-sm font-medium transition-colors duration-300 ${
+                    activeTab === "delegation"
+                      ? "bg-purple-600 text-white"
+                      : "bg-white text-purple-600 hover:bg-purple-50"
+                  }`}
+                  onClick={() => setActiveTab("delegation")}
+                >
+                  Delegation
+                </button>
+              </div>
 
-                            <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50 sticky top-0 z-20">
-                                        <tr>
-                                            {[
-                                                { key: 'Department', label: 'Department' },
-                                                { key: 'Given By', label: 'Given By' },
-                                                { key: 'Name', label: 'Name' },
-                                                { key: 'Task Description', label: 'Task Description', minWidth: 'min-w-[300px]' },
-                                                { key: 'Start Date', label: 'Start Date', bg: 'bg-yellow-50' },
-                                                { key: 'Frequency', label: 'Frequency' },
-                                                { key: 'Reminders', label: 'Reminders' },
-                                                { key: 'Attachment', label: 'Attachment' },
-                                            ].map((column) => (
-                                                <th
-                                                    key={column.label}
-                                                    className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${column.bg || ''} ${column.minWidth || ''} ${column.key ? 'cursor-pointer hover:bg-gray-100' : ''}`}
-                                                    onClick={() => column.key && requestSort(column.key)}
-                                                >
-                                                    <div className="flex items-center">
-                                                        {column.label}
-                                                        {sortConfig.key === column.key && (
-                                                            <span className="ml-1">
-                                                                {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </th>
-                                            ))}
-                                        </tr>
-                                    </thead>
+              <div className="relative flex-1 min-w-[200px]">
+                <Search
+                  className="absolute left-3 top-7 transform -translate-y-1/2 text-gray-400"
+                  size={18}
+                />
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-purple-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  disabled={loading || delegationLoading}
+                />
+              </div>
 
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {loading ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-8 text-center">
-                                                    <div className="flex flex-col items-center justify-center">
-                                                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-2"></div>
-                                                        <p className="text-purple-600">Loading checklist data...</p>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : filteredChecklistTasks.length > 0 ? (
-                                            filteredChecklistTasks.map((task) => (
-                                                <tr key={task._id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                        {task.Department || "—"}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {task['Given By'] || "—"}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {task.Name || "—"}
-                                                    </td>
-                                                    <td className="px-6 py-4 text-sm text-gray-500 min-w-[300px] max-w-[400px]">
-                                                        <div className="whitespace-normal break-words">
-                                                            {task['Task Description'] || "—"}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 bg-yellow-50">
-                                                        {task['Start Date'] || "—"}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        <span className={`px-2 py-1 rounded-full text-xs ${task.Frequency === 'Daily' ? 'bg-blue-100 text-blue-800' :
-                                                            task.Frequency === 'Weekly' ? 'bg-green-100 text-green-800' :
-                                                                task.Frequency === 'Monthly' ? 'bg-purple-100 text-purple-800' :
-                                                                    'bg-gray-100 text-gray-800'
-                                                            }`}>
-                                                            {task.Frequency || "—"}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {task.Reminders || "—"}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                        {task.Attachment || "—"}
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-4 text-center text-gray-500">
-                                                    {searchTerm || nameFilter || freqFilter
-                                                        ? "No tasks matching your filters"
-                                                        : userRole === 'admin' ? "No unique tasks available" : "No unique tasks assigned to you"}
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
+              <div className="flex gap-2">
+                <div className="relative">
+                  <button
+                    onClick={() => toggleDropdown("name")}
+                    className="flex items-center gap-2 px-3 py-2 border border-purple-200 rounded-md bg-white text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Filter className="h-4 w-4" />
+                    {nameFilter || "Filter by Name"}
+                    <ChevronDown
+                      size={16}
+                      className={`transition-transform ${
+                        dropdownOpen.name ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {dropdownOpen.name && (
+                    <div className="absolute z-50 mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 max-h-60 overflow-auto">
+                      <div className="py-1">
+                        <button
+                          onClick={clearNameFilter}
+                          className={`block w-full text-left px-4 py-2 text-sm ${
+                            !nameFilter
+                              ? "bg-purple-100 text-purple-900"
+                              : "text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          All Names
+                        </button>
+                        {currentNames.map((name) => (
+                          <button
+                            key={name}
+                            onClick={() => handleNameFilterSelect(name)}
+                            className={`block w-full text-left px-4 py-2 text-sm ${
+                              nameFilter === name
+                                ? "bg-purple-100 text-purple-900"
+                                : "text-gray-700 hover:bg-gray-100"
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    onClick={() => toggleDropdown("frequency")}
+                    className="flex items-center gap-2 px-3 py-2 border border-purple-200 rounded-md bg-white text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <Filter className="h-4 w-4" />
+                    {freqFilter || "Filter by Frequency"}
+                    <ChevronDown
+                      size={16}
+                      className={`transition-transform ${
+                        dropdownOpen.frequency ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {dropdownOpen.frequency && (
+                    <div className="absolute z-50 mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 max-h-60 overflow-auto">
+                      <div className="py-1">
+                        <button
+                          onClick={clearFrequencyFilter}
+                          className={`block w-full text-left px-4 py-2 text-sm ${
+                            !freqFilter
+                              ? "bg-purple-100 text-purple-900"
+                              : "text-gray-700 hover:bg-gray-100"
+                          }`}
+                        >
+                          All Frequencies
+                        </button>
+                        {currentFrequencies.map((freq) => (
+                          <button
+                            key={freq}
+                            onClick={() => handleFrequencyFilterSelect(freq)}
+                            className={`block w-full text-left px-4 py-2 text-sm ${
+                              freqFilter === freq
+                                ? "bg-purple-100 text-purple-900"
+                                : "text-gray-700 hover:bg-gray-100"
+                            }`}
+                          >
+                            {freq}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {currentUser && (
+          <>
+            {activeTab === "checklist" ? (
+              <div className="mt-4 rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
+                  <h2 className="text-purple-700 font-medium">
+                    {userRole === "admin"
+                      ? "All Unique Tasks"
+                      : "My Unique Tasks"}
+                  </h2>
+                  <p className="text-purple-600 text-sm">
+                    {userRole === "admin"
+                      ? "Showing all unique tasks from checklist"
+                      : CONFIG.PAGE_CONFIG.description}
+                  </p>
+                </div>
+
+                <div
+                  className="overflow-x-auto"
+                  style={{ maxHeight: "calc(100vh - 220px)" }}
+                >
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0 z-20">
+                      <tr>
+                        {[
+                          { key: "Department", label: "Department" },
+                          { key: "Given By", label: "Given By" },
+                          { key: "Name", label: "Name" },
+                          {
+                            key: "Task Description",
+                            label: "Task Description",
+                            minWidth: "min-w-[300px]",
+                          },
+                          {
+                            key: "Start Date",
+                            label: "Start Date",
+                            bg: "bg-yellow-50",
+                          },
+                          { key: "Frequency", label: "Frequency" },
+                          { key: "Reminders", label: "Reminders" },
+                          { key: "Attachment", label: "Attachment" },
+                        ].map((column) => (
+                          <th
+                            key={column.label}
+                            className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${
+                              column.bg || ""
+                            } ${column.minWidth || ""} ${
+                              column.key
+                                ? "cursor-pointer hover:bg-gray-100"
+                                : ""
+                            }`}
+                            onClick={() =>
+                              column.key && requestSort(column.key)
+                            }
+                          >
+                            <div className="flex items-center">
+                              {column.label}
+                              {sortConfig.key === column.key && (
+                                <span className="ml-1">
+                                  {sortConfig.direction === "asc" ? "↑" : "↓"}
+                                </span>
+                              )}
                             </div>
-                        </div>
-                    ) : (
-                        <DelegationPage
-                            searchTerm={searchTerm}
-                            nameFilter={nameFilter}
-                            freqFilter={freqFilter}
-                            setNameFilter={setNameFilter}
-                            setFreqFilter={setFreqFilter}
-                            currentUser={currentUser}
-                            userRole={userRole}
-                            CONFIG={CONFIG}
-                            delegationTasks={delegationTasks}
-                            delegationLoading={delegationLoading}
-                            loading={delegationLoading}
-                        />
-                    )}
-                </>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-8 text-center">
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-2"></div>
+                              <p className="text-purple-600">
+                                Loading checklist data...
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filteredChecklistTasks.length > 0 ? (
+                        filteredChecklistTasks.map((task) => (
+                          <tr key={task._id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {task.Department || "—"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {task["Given By"] || "—"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {task.Name || "—"}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500 min-w-[300px] max-w-[400px]">
+                              <div className="whitespace-normal break-words">
+                                {task["Task Description"] || "—"}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 bg-yellow-50">
+                              {task["Start Date"] || "—"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs ${
+                                  task.Frequency === "Daily"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : task.Frequency === "Weekly"
+                                    ? "bg-green-100 text-green-800"
+                                    : task.Frequency === "Monthly"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {task.Frequency || "—"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {task.Reminders || "—"}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {task.Attachment || "—"}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={8}
+                            className="px-6 py-4 text-center text-gray-500"
+                          >
+                            {searchTerm || nameFilter || freqFilter
+                              ? "No tasks matching your filters"
+                              : userRole === "admin"
+                              ? "No unique tasks available"
+                              : "No unique tasks assigned to you"}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <DelegationPage
+                searchTerm={searchTerm}
+                nameFilter={nameFilter}
+                freqFilter={freqFilter}
+                setNameFilter={setNameFilter}
+                setFreqFilter={setFreqFilter}
+                currentUser={currentUser}
+                userRole={userRole}
+                CONFIG={CONFIG}
+                delegationTasks={delegationTasks}
+                delegationLoading={delegationLoading}
+                loading={delegationLoading}
+              />
             )}
-        </AdminLayout>
+          </>
+        )}
+      </AdminLayout>
     );
 }

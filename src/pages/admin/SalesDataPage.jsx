@@ -247,7 +247,6 @@ function AccountDataPage() {
     isOpen: false,
     itemCount: 0,
   })
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 })
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   // Function to determine submission status
   useEffect(() => {
@@ -959,61 +958,53 @@ const filteredAccountData = useMemo(() => {
     setRemarksData((prev) => ({ ...prev, [id]: value }))
   }, [])
 
-const handleTableScroll = useCallback((e) => {
-  const scrollTop = e.target.scrollTop;
-  const scrollHeight = e.target.scrollHeight;
-  const clientHeight = e.target.clientHeight;
-  const itemHeight = 60; // approximate row height
-  
-  // Calculate visible range with buffer (keep existing logic)
-  const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5);
-  const end = Math.min(
-    start + Math.ceil(clientHeight / itemHeight) + 10,
-    Math.min(filteredAccountData.length, displayLimit) // Use displayLimit instead of full length
-  );
-
-  setVisibleRange({ start, end });
-
-  // Infinite scroll logic - load more when near bottom
-  const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
-  if (scrollPercentage > 0.8 && // When 80% scrolled
-      displayLimit < filteredAccountData.length && // More data available
-      !isLoadingMore) { // Not already loading
+  const handleLoadMore = useCallback(() => {
+  if (displayLimit < filteredAccountData.length && !isLoadingMore) {
     setIsLoadingMore(true);
-    
-    // Simulate loading delay (remove this setTimeout in production if not needed)
     setTimeout(() => {
-      setDisplayLimit(prev => Math.min(prev + 50, filteredAccountData.length));
+      setDisplayLimit(prev => Math.min(prev + 500, filteredAccountData.length));
       setIsLoadingMore(false);
     }, 300);
   }
-}, [filteredAccountData.length, displayLimit, isLoadingMore]);
-
-// Add this useEffect to reset visible range when data changes
-useEffect(() => {
-  setDisplayLimit(50);
-  setVisibleRange({ start: 0, end: 50 });
-}, [debouncedSearchTerm, selectedStatus, selectedMembers, startDate, endDate]);
+}, [displayLimit, filteredAccountData.length, isLoadingMore]);
 
 // const handleTableScroll = useCallback((e) => {
 //   const scrollTop = e.target.scrollTop;
+//   const scrollHeight = e.target.scrollHeight;
+//   const clientHeight = e.target.clientHeight;
 //   const itemHeight = 60; // approximate row height
-//   const containerHeight = e.target.clientHeight;
   
-//   // Calculate visible range with buffer
-//   const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 10); // Add buffer above
+//   // Calculate visible range with buffer (keep existing logic)
+//   const start = Math.max(0, Math.floor(scrollTop / itemHeight) - 5);
 //   const end = Math.min(
-//     start + Math.ceil(containerHeight / itemHeight) + 20, // Add buffer below
-//     filteredAccountData.length
+//     start + Math.ceil(clientHeight / itemHeight) + 10,
+//     Math.min(filteredAccountData.length, displayLimit) // Use displayLimit instead of full length
 //   );
 
 //   setVisibleRange({ start, end });
-// }, [filteredAccountData.length]);
 
-const visibleAccountData = useMemo(() => {
-  const limitedData = filteredAccountData.slice(0, displayLimit);
-  return limitedData.slice(visibleRange.start, visibleRange.end);
-}, [filteredAccountData, displayLimit, visibleRange.start, visibleRange.end]);
+//   // Infinite scroll logic - load more when near bottom
+//   const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+//   if (scrollPercentage > 0.8 && // When 80% scrolled
+//       displayLimit < filteredAccountData.length && // More data available
+//       !isLoadingMore) { // Not already loading
+//     setIsLoadingMore(true);
+    
+//     // Simulate loading delay (remove this setTimeout in production if not needed)
+//     setTimeout(() => {
+//       setDisplayLimit(prev => Math.min(prev + 50, filteredAccountData.length));
+//       setIsLoadingMore(false);
+//     }, 300);
+//   }
+// }, [filteredAccountData.length, displayLimit, isLoadingMore]);
+
+useEffect(() => {
+  setDisplayLimit(500);
+}, [debouncedSearchTerm, selectedStatus, selectedMembers, startDate, endDate]);
+
+const displayedAccountData = useMemo(() => {
+  return filteredAccountData.slice(0, displayLimit);
+}, [filteredAccountData, displayLimit]);
 
   const handleImageUpload = useCallback(async (id, e) => {
     const file = e.target.files[0]
@@ -1341,14 +1332,21 @@ const visibleAccountData = useMemo(() => {
       <div className="space-y-6">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="text-2xl font-bold tracking-tight text-purple-700">
-            {showHistory ? CONFIG.PAGE_CONFIG.historyTitle : CONFIG.PAGE_CONFIG.title}
+            {showHistory
+              ? CONFIG.PAGE_CONFIG.historyTitle
+              : CONFIG.PAGE_CONFIG.title}
           </h1>
           <div className="flex space-x-4">
             <div className="relative">
-              <Search className="absolute left-3 top-7 transform -translate-y-1/2 text-gray-400" size={18} />
+              <Search
+                className="absolute left-3 top-7 transform -translate-y-1/2 text-gray-400"
+                size={18}
+              />
               <input
                 type="text"
-                placeholder={showHistory ? "Search history..." : "Search tasks..."}
+                placeholder={
+                  showHistory ? "Search history..." : "Search tasks..."
+                }
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 border border-purple-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -1387,22 +1385,28 @@ const visibleAccountData = useMemo(() => {
                 disabled={selectedItemsCount === 0 || isSubmitting}
                 className="w-52 gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
-                {isSubmitting ? "Processing..." : `Submit Selected (${selectedItemsCount})`}
+                {isSubmitting
+                  ? "Processing..."
+                  : `Submit Selected (${selectedItemsCount})`}
               </button>
             )}
 
             {/* Admin Submit Button for History View */}
-            {showHistory && userRole === "admin" && selectedHistoryItems.length > 0 && (
-              <div className="fixed top-40 right-10 z-50">
-                <button
-                  onClick={handleMarkMultipleDone}
-                  disabled={markingAsDone}
-                  className="rounded-md bg-green-600 text-white px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {markingAsDone ? "Processing..." : `Mark ${selectedHistoryItems.length} Items as Admin Done`}
-                </button>
-              </div>
-            )}
+            {showHistory &&
+              userRole === "admin" &&
+              selectedHistoryItems.length > 0 && (
+                <div className="fixed top-40 right-10 z-50">
+                  <button
+                    onClick={handleMarkMultipleDone}
+                    disabled={markingAsDone}
+                    className="rounded-md bg-green-600 text-white px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {markingAsDone
+                      ? "Processing..."
+                      : `Mark ${selectedHistoryItems.length} Items as Admin Done`}
+                  </button>
+                </div>
+              )}
           </div>
         </div>
 
@@ -1412,7 +1416,10 @@ const visibleAccountData = useMemo(() => {
               <CheckCircle2 className="h-5 w-5 mr-2 text-green-500" />
               {successMessage}
             </div>
-            <button onClick={() => setSuccessMessage("")} className="text-green-500 hover:text-green-700">
+            <button
+              onClick={() => setSuccessMessage("")}
+              className="text-green-500 hover:text-green-700"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -1421,11 +1428,15 @@ const visibleAccountData = useMemo(() => {
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
             <h2 className="text-purple-700 font-medium">
-              {showHistory ? `Completed ${CONFIG.SHEET_NAME} Tasks` : `All ${CONFIG.SHEET_NAME} Tasks`}
+              {showHistory
+                ? `Completed ${CONFIG.SHEET_NAME} Tasks`
+                : `All ${CONFIG.SHEET_NAME} Tasks`}
             </h2>
             <p className="text-purple-600 text-sm">
               {showHistory
-                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${userRole === "admin" ? "all" : "your"} tasks`
+                ? `${CONFIG.PAGE_CONFIG.historyDescription} for ${
+                    userRole === "admin" ? "all" : "your"
+                  } tasks`
                 : CONFIG.PAGE_CONFIG.description}
             </p>
           </div>
@@ -1441,7 +1452,10 @@ const visibleAccountData = useMemo(() => {
           ) : error ? (
             <div className="bg-red-50 p-4 rounded-md text-red-800 text-center">
               {error}{" "}
-              <button className="underline ml-2" onClick={() => window.location.reload()}>
+              <button
+                className="underline ml-2"
+                onClick={() => window.location.reload()}
+              >
                 Try again
               </button>
             </div>
@@ -1452,26 +1466,45 @@ const visibleAccountData = useMemo(() => {
                 isOpen={confirmationModal.isOpen}
                 itemCount={confirmationModal.itemCount}
                 onConfirm={confirmMarkDone}
-                onCancel={() => setConfirmationModal({ isOpen: false, itemCount: 0 })}
+                onCancel={() =>
+                  setConfirmationModal({ isOpen: false, itemCount: 0 })
+                }
               />
 
               {/* Task Statistics */}
               <div className="p-4 border-b border-purple-100 bg-blue-50">
                 <div className="flex flex-col">
-                  <h3 className="text-sm font-medium text-blue-700 mb-2">Task Completion Statistics:</h3>
+                  <h3 className="text-sm font-medium text-blue-700 mb-2">
+                    Task Completion Statistics:
+                  </h3>
                   <div className="flex flex-wrap gap-4">
                     <div className="px-3 py-2 bg-white rounded-md shadow-sm">
-                      <span className="text-xs text-gray-500">Total Completed</span>
-                      <div className="text-lg font-semibold text-blue-600">{getTaskStatistics().totalCompleted}</div>
+                      <span className="text-xs text-gray-500">
+                        Total Completed
+                      </span>
+                      <div className="text-lg font-semibold text-blue-600">
+                        {getTaskStatistics().totalCompleted}
+                      </div>
                     </div>
-                    {(selectedMembers.length > 0 || startDate || endDate || searchTerm || selectedStatus) && (
+                    {(selectedMembers.length > 0 ||
+                      startDate ||
+                      endDate ||
+                      searchTerm ||
+                      selectedStatus) && (
                       <div className="px-3 py-2 bg-white rounded-md shadow-sm">
-                        <span className="text-xs text-gray-500">Filtered Results</span>
-                        <div className="text-lg font-semibold text-blue-600">{getTaskStatistics().filteredTotal}</div>
+                        <span className="text-xs text-gray-500">
+                          Filtered Results
+                        </span>
+                        <div className="text-lg font-semibold text-blue-600">
+                          {getTaskStatistics().filteredTotal}
+                        </div>
                       </div>
                     )}
                     {selectedMembers.map((member) => (
-                      <div key={member} className="px-3 py-2 bg-white rounded-md shadow-sm">
+                      <div
+                        key={member}
+                        className="px-3 py-2 bg-white rounded-md shadow-sm"
+                      >
                         <span className="text-xs text-gray-500">{member}</span>
                         <div className="text-lg font-semibold text-indigo-600">
                           {getTaskStatistics().memberStats[member]}
@@ -1502,19 +1535,35 @@ const visibleAccountData = useMemo(() => {
                               type="checkbox"
                               className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
                               checked={
-                                filteredHistoryData.filter(item => isEmpty(item["col15"]) || item["col15"].toString().trim() !== "Done").length > 0 &&
-                                selectedHistoryItems.length === filteredHistoryData.filter(item => isEmpty(item["col15"]) || item["col15"].toString().trim() !== "Done").length
+                                filteredHistoryData.filter(
+                                  (item) =>
+                                    isEmpty(item["col15"]) ||
+                                    item["col15"].toString().trim() !== "Done"
+                                ).length > 0 &&
+                                selectedHistoryItems.length ===
+                                  filteredHistoryData.filter(
+                                    (item) =>
+                                      isEmpty(item["col15"]) ||
+                                      item["col15"].toString().trim() !== "Done"
+                                  ).length
                               }
                               onChange={(e) => {
-                                const unprocessedItems = filteredHistoryData.filter(item => isEmpty(item["col15"]) || item["col15"].toString().trim() !== "Done")
+                                const unprocessedItems =
+                                  filteredHistoryData.filter(
+                                    (item) =>
+                                      isEmpty(item["col15"]) ||
+                                      item["col15"].toString().trim() !== "Done"
+                                  );
                                 if (e.target.checked) {
-                                  setSelectedHistoryItems(unprocessedItems)
+                                  setSelectedHistoryItems(unprocessedItems);
                                 } else {
-                                  setSelectedHistoryItems([])
+                                  setSelectedHistoryItems([]);
                                 }
                               }}
                             />
-                            <span className="text-xs text-gray-400 mt-1">Admin</span>
+                            <span className="text-xs text-gray-400 mt-1">
+                              Admin
+                            </span>
                           </div>
                         </th>
                       )}
@@ -1569,7 +1618,10 @@ const visibleAccountData = useMemo(() => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredHistoryData.length > 0 ? (
                       filteredHistoryData.map((history) => {
-                        const submissionStatus = getSubmissionStatus(history["col10"], history["col11"]);
+                        const submissionStatus = getSubmissionStatus(
+                          history["col10"],
+                          history["col11"]
+                        );
                         return (
                           <tr key={history._id} className="hover:bg-gray-50">
                             {/* Add this cell at the end of each row, after the Admin Done column (if admin) */}
@@ -1577,14 +1629,25 @@ const visibleAccountData = useMemo(() => {
                               {editingRemarks[history._id] ? (
                                 <div className="flex space-x-2">
                                   <button
-                                    onClick={() => handleEditRemarks(history._id, history["col13"], history)}
+                                    onClick={() =>
+                                      handleEditRemarks(
+                                        history._id,
+                                        history["col13"],
+                                        history
+                                      )
+                                    }
                                     className="text-green-600 hover:text-green-800"
                                     title="Save"
                                   >
                                     <CheckCircle2 size={20} />
                                   </button>
                                   <button
-                                    onClick={() => setEditingRemarks(prev => ({ ...prev, [history._id]: false }))}
+                                    onClick={() =>
+                                      setEditingRemarks((prev) => ({
+                                        ...prev,
+                                        [history._id]: false,
+                                      }))
+                                    }
                                     className="text-red-600 hover:text-red-800"
                                     title="Cancel"
                                   >
@@ -1593,7 +1656,12 @@ const visibleAccountData = useMemo(() => {
                                 </div>
                               ) : (
                                 <button
-                                  onClick={() => setEditingRemarks(prev => ({ ...prev, [history._id]: true }))}
+                                  onClick={() =>
+                                    setEditingRemarks((prev) => ({
+                                      ...prev,
+                                      [history._id]: true,
+                                    }))
+                                  }
                                   className="text-blue-600 hover:text-blue-800"
                                   title="Edit Remarks"
                                 >
@@ -1604,12 +1672,13 @@ const visibleAccountData = useMemo(() => {
                             {/* Submission Status Column */}
                             <td className="px-3 py-4 bg-blue-50 min-w-[120px]">
                               <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${submissionStatus.color === 'green'
-                                  ? "bg-green-100 text-green-800"
-                                  : submissionStatus.color === 'red'
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  submissionStatus.color === "green"
+                                    ? "bg-green-100 text-green-800"
+                                    : submissionStatus.color === "red"
                                     ? "bg-red-100 text-red-800"
                                     : "bg-gray-100 text-gray-800"
-                                  }`}
+                                }`}
                               >
                                 {submissionStatus.status}
                               </span>
@@ -1617,7 +1686,9 @@ const visibleAccountData = useMemo(() => {
                             {/* Admin Select Checkbox */}
                             {userRole === "admin" && (
                               <td className="px-3 py-4 w-12">
-                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Admin Done" ? (
+                                {!isEmpty(history["col15"]) &&
+                                history["col15"].toString().trim() ===
+                                  "Admin Done" ? (
                                   <div className="flex flex-col items-center">
                                     <input
                                       type="checkbox"
@@ -1635,13 +1706,20 @@ const visibleAccountData = useMemo(() => {
                                     <input
                                       type="checkbox"
                                       className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                      checked={selectedHistoryItems.some((item) => item._id === history._id)}
+                                      checked={selectedHistoryItems.some(
+                                        (item) => item._id === history._id
+                                      )}
                                       onChange={() => {
                                         setSelectedHistoryItems((prev) =>
-                                          prev.some((item) => item._id === history._id)
-                                            ? prev.filter((item) => item._id !== history._id)
-                                            : [...prev, history],
-                                        )
+                                          prev.some(
+                                            (item) => item._id === history._id
+                                          )
+                                            ? prev.filter(
+                                                (item) =>
+                                                  item._id !== history._id
+                                              )
+                                            : [...prev, history]
+                                        );
                                       }}
                                     />
                                     <span className="text-xs text-gray-400 mt-1 text-center break-words">
@@ -1657,27 +1735,37 @@ const visibleAccountData = useMemo(() => {
                               </div>
                             </td>
                             <td className="px-3 py-4 min-w-[120px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col2"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col2"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 min-w-[100px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col3"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col3"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 min-w-[100px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col4"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col4"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 min-w-[200px]">
-                              <div className="text-sm text-gray-900 break-words" title={history["col5"]}>
+                              <div
+                                className="text-sm text-gray-900 break-words"
+                                title={history["col5"]}
+                              >
                                 {history["col5"] || "—"}
                               </div>
                             </td>
                             <td className="px-3 py-4 bg-blue-50 min-w-[80px]">
                               <span
-                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full break-words ${history["col12"] === "Yes"
-                                  ? "bg-green-100 text-green-800"
-                                  : history["col12"] === "No"
+                                className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full break-words ${
+                                  history["col12"] === "Yes"
+                                    ? "bg-green-100 text-green-800"
+                                    : history["col12"] === "No"
                                     ? "bg-red-100 text-red-800"
                                     : "bg-gray-100 text-gray-800"
-                                  }`}
+                                }`}
                               >
                                 {history["col12"] || "—"}
                               </span>
@@ -1687,7 +1775,12 @@ const visibleAccountData = useMemo(() => {
                                 <input
                                   type="text"
                                   defaultValue={history["col13"] || ""}
-                                  onChange={(e) => setTempRemarks(prev => ({ ...prev, [history._id]: e.target.value }))}
+                                  onChange={(e) =>
+                                    setTempRemarks((prev) => ({
+                                      ...prev,
+                                      [history._id]: e.target.value,
+                                    }))
+                                  }
                                   className="border rounded-md px-2 py-1 w-full text-sm"
                                   autoFocus
                                 />
@@ -1702,7 +1795,9 @@ const visibleAccountData = useMemo(() => {
                                 {history["col6"] ? (
                                   <div>
                                     <div className="font-medium break-words">
-                                      {history["col6"].includes(" ") ? history["col6"].split(" ")[0] : history["col6"]}
+                                      {history["col6"].includes(" ")
+                                        ? history["col6"].split(" ")[0]
+                                        : history["col6"]}
                                     </div>
                                     {history["col6"].includes(" ") && (
                                       <div className="text-xs text-gray-500 break-words">
@@ -1716,20 +1811,28 @@ const visibleAccountData = useMemo(() => {
                               </div>
                             </td>
                             <td className="px-3 py-4 min-w-[80px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col7"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col7"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 min-w-[120px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col8"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col8"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 min-w-[120px]">
-                              <div className="text-sm text-gray-900 break-words">{history["col9"] || "—"}</div>
+                              <div className="text-sm text-gray-900 break-words">
+                                {history["col9"] || "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-4 bg-green-50 min-w-[140px]">
                               <div className="text-sm text-gray-900 break-words">
                                 {history["col10"] ? (
                                   <div>
                                     <div className="font-medium break-words">
-                                      {history["col10"].includes(" ") ? history["col10"].split(" ")[0] : history["col10"]}
+                                      {history["col10"].includes(" ")
+                                        ? history["col10"].split(" ")[0]
+                                        : history["col10"]}
                                     </div>
                                     {history["col10"].includes(" ") && (
                                       <div className="text-xs text-gray-500 break-words">
@@ -1752,24 +1855,33 @@ const visibleAccountData = useMemo(() => {
                                   className="text-blue-600 hover:text-blue-800 underline flex items-center break-words"
                                 >
                                   <img
-                                    src={history["col14"] || "/placeholder.svg?height=32&width=32"}
+                                    src={
+                                      history["col14"] ||
+                                      "/placeholder.svg?height=32&width=32"
+                                    }
                                     alt="Attachment"
                                     className="h-8 w-8 object-cover rounded-md mr-2 flex-shrink-0"
                                   />
                                   <span className="break-words">View</span>
                                 </a>
                               ) : (
-                                <span className="text-gray-400">No attachment</span>
+                                <span className="text-gray-400">
+                                  No attachment
+                                </span>
                               )}
                             </td>
                             {/* Admin Done Column */}
                             {userRole === "admin" && (
                               <td className="px-3 py-4 bg-gray-50 min-w-[140px]">
-                                {!isEmpty(history["col15"]) && history["col15"].toString().trim() === "Admin Done" ? (
+                                {!isEmpty(history["col15"]) &&
+                                history["col15"].toString().trim() ===
+                                  "Admin Done" ? (
                                   <div className="text-sm text-gray-900 break-words">
                                     <div className="flex items-center">
                                       <div className="h-4 w-4 rounded border-gray-300 text-green-600 bg-green-100 mr-2 flex items-center justify-center">
-                                        <span className="text-xs text-green-600">✓</span>
+                                        <span className="text-xs text-green-600">
+                                          ✓
+                                        </span>
                                       </div>
                                       <div className="flex flex-col">
                                         <div className="font-medium text-green-700 text-sm">
@@ -1787,12 +1899,19 @@ const visibleAccountData = useMemo(() => {
                               </td>
                             )}
                           </tr>
-                        )
+                        );
                       })
                     ) : (
                       <tr>
-                        <td colSpan={userRole === "admin" ? 16 : 14} className="px-6 py-4 text-center text-gray-500">
-                          {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
+                        <td
+                          colSpan={userRole === "admin" ? 16 : 14}
+                          className="px-6 py-4 text-center text-gray-500"
+                        >
+                          {searchTerm ||
+                          selectedMembers.length > 0 ||
+                          startDate ||
+                          endDate ||
+                          selectedStatus
                             ? "No historical records matching your filters"
                             : "No completed records found"}
                         </td>
@@ -1804,7 +1923,7 @@ const visibleAccountData = useMemo(() => {
             </>
           ) : (
             /* Regular Tasks Table with Status Column */
-            <div className="h-[calc(100vh-250px)] overflow-auto" onScroll={handleTableScroll}>
+            <div className="h-[calc(100vh-250px)] overflow-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
@@ -1814,14 +1933,27 @@ const visibleAccountData = useMemo(() => {
                         className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                         checked={
                           // Only consider enabled items for select all
-                          filteredAccountData.filter(item => {
-                            const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-                            return taskStatus !== "Admin Done" && taskStatus !== "Done";
+                          filteredAccountData.filter((item) => {
+                            const taskStatus = getTaskStatus(
+                              item["col10"],
+                              item["col15"]
+                            );
+                            return (
+                              taskStatus !== "Admin Done" &&
+                              taskStatus !== "Done"
+                            );
                           }).length > 0 &&
-                          selectedItems.size === filteredAccountData.filter(item => {
-                            const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-                            return taskStatus !== "Admin Done" && taskStatus !== "Done";
-                          }).length
+                          selectedItems.size ===
+                            filteredAccountData.filter((item) => {
+                              const taskStatus = getTaskStatus(
+                                item["col10"],
+                                item["col15"]
+                              );
+                              return (
+                                taskStatus !== "Admin Done" &&
+                                taskStatus !== "Done"
+                              );
+                            }).length
                         }
                         onChange={handleSelectAllItems}
                       />
@@ -1869,74 +2001,70 @@ const visibleAccountData = useMemo(() => {
                   </tr>
                 </thead>
                 {/* // Replace the tbody section in tasks table with this: */}
-               <tbody className="bg-white divide-y divide-gray-200">
-  {/* Top spacer */}
-  {visibleRange.start > 0 && (
-    <tr>
-      <td 
-        colSpan={14} 
-        style={{ height: visibleRange.start * 60 }}
-        className="p-0 m-0 border-none"
-      />
-    </tr>
-  )}
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {displayedAccountData.map((account) => (
+                    <MemoizedTaskRow
+                      key={account._id}
+                      account={account}
+                      isSelected={selectedItems.has(account._id)}
+                      additionalData={additionalData[account._id]}
+                      remarksData={remarksData[account._id]}
+                      onCheckboxClick={handleCheckboxClick}
+                      onAdditionalDataChange={handleAdditionalDataChange}
+                      onRemarksChange={handleRemarksChange}
+                      onImageUpload={handleImageUpload}
+                    />
+                  ))}
 
-  {/* Visible rows only */}
-  {visibleAccountData.map((account) => (
-    <MemoizedTaskRow
-      key={account._id}
-      account={account}
-      isSelected={selectedItems.has(account._id)}
-      additionalData={additionalData[account._id]}
-      remarksData={remarksData[account._id]}
-      onCheckboxClick={handleCheckboxClick}
-      onAdditionalDataChange={handleAdditionalDataChange}
-      onRemarksChange={handleRemarksChange}
-      onImageUpload={handleImageUpload}
-    />
-  ))}
+                  {/* Load More Button */}
+                  {displayLimit < filteredAccountData.length && (
+                    <tr>
+                      <td colSpan={14} className="px-6 py-4 text-center">
+                        <button
+                          onClick={handleLoadMore}
+                          disabled={isLoadingMore}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isLoadingMore ? (
+                            <div className="flex items-center justify-center">
+                              <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                              Loading...
+                            </div>
+                          ) : (
+                            `Load More (${
+                              filteredAccountData.length - displayLimit
+                            } remaining)`
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
 
-  {/* Bottom spacer */}
-  {visibleRange.end < Math.min(filteredAccountData.length, displayLimit) && (
-    <tr>
-      <td 
-        colSpan={14} 
-        style={{ height: (Math.min(filteredAccountData.length, displayLimit) - visibleRange.end) * 60 }}
-        className="p-0 m-0 border-none"
-      />
-    </tr>
-  )}
-
-  {/* Loading indicator */}
-  {isLoadingMore && (
-    <tr>
-      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-purple-500 mr-2"></div>
-          Loading more tasks...
-        </div>
-      </td>
-    </tr>
-  )}
-
-  {/* Empty state */}
-  {filteredAccountData.length === 0 && (
-    <tr>
-      <td colSpan={14} className="px-6 py-4 text-center text-gray-500">
-        {searchTerm || selectedMembers.length > 0 || startDate || endDate || selectedStatus
-          ? "No tasks matching your filters"
-          : "No tasks found for today, tomorrow, or past due dates"}
-      </td>
-    </tr>
-  )}
-</tbody>
+                  {/* Empty state */}
+                  {filteredAccountData.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={14}
+                        className="px-6 py-4 text-center text-gray-500"
+                      >
+                        {searchTerm ||
+                        selectedMembers.length > 0 ||
+                        startDate ||
+                        endDate ||
+                        selectedStatus
+                          ? "No tasks matching your filters"
+                          : "No tasks found for today, tomorrow, or past due dates"}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
               </table>
             </div>
           )}
         </div>
       </div>
     </AdminLayout>
-  )
+  );
 }
 
 export default AccountDataPage
