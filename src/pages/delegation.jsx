@@ -63,7 +63,6 @@ function DelegationDataPage() {
   const [endDate, setEndDate] = useState("");
   const [userRole, setUserRole] = useState("");
   const [username, setUsername] = useState("");
-
   const [nameFilter, setNameFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -1594,7 +1593,8 @@ const confirmMarkDone = async () => {
               </div>
 
               {/* History Table */}
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto sticky top-0 max-h-[calc(100vh-300px)] overflow-y-auto">
+               <div className="min-w-full">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -1929,10 +1929,12 @@ const confirmMarkDone = async () => {
                   </tbody>
                 </table>
               </div>
+              </div>
             </>
           ) : (
             /* Regular Tasks Table */
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto sticky top-0 max-h-[calc(100vh-300px)] overflow-y-auto">
+             <div className="min-w-full">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -2286,6 +2288,7 @@ const confirmMarkDone = async () => {
                   )}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
         </div>
