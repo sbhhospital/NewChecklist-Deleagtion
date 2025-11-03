@@ -443,29 +443,52 @@ const sortDateWise = useCallback(
     sortDateWise,
   ]);
 
-  const uniqueNames = useMemo(() => {
-    const names = new Set();
+const uniqueNames = useMemo(() => {
+  const names = new Set();
+  const normalizedNames = new Map(); // To track normalized versions
 
-    // Add names from accountData (main table - col4)
-    accountData.forEach((item) => {
-      if (item["col4"]) {
-        // If user is not admin, only add their own name
-        if (userRole !== "admin" && item["col4"] !== username) return;
-        names.add(item["col4"]);
+  // Helper function to normalize names
+  const normalizeName = (name) => {
+    if (!name) return '';
+    return name.toString().toLowerCase().trim();
+  };
+
+  // Add names from accountData (main table - col4)
+  accountData.forEach((item) => {
+    if (item["col4"]) {
+      const originalName = item["col4"];
+      const normalized = normalizeName(originalName);
+      
+      // If user is not admin, only add their own name
+      if (userRole !== "admin" && originalName !== username) return;
+      
+      // Only add if we haven't seen this normalized name before
+      if (!normalizedNames.has(normalized)) {
+        normalizedNames.set(normalized, originalName);
+        names.add(originalName); // Keep the original casing from first occurrence
       }
-    });
+    }
+  });
 
-    // Add names from historyData (history table - col7)
-    historyData.forEach((item) => {
-      if (item["col7"]) {
-        // If user is not admin, only add their own name
-        if (userRole !== "admin" && item["col7"] !== username) return;
-        names.add(item["col7"]);
+  // Add names from historyData (history table - col7)
+  historyData.forEach((item) => {
+    if (item["col7"]) {
+      const originalName = item["col7"];
+      const normalized = normalizeName(originalName);
+      
+      // If user is not admin, only add their own name
+      if (userRole !== "admin" && originalName !== username) return;
+      
+      // Only add if we haven't seen this normalized name before
+      if (!normalizedNames.has(normalized)) {
+        normalizedNames.set(normalized, originalName);
+        names.add(originalName); // Keep the original casing from first occurrence
       }
-    });
+    }
+  });
 
-    return Array.from(names).sort();
-  }, [accountData, historyData, userRole, username]);
+  return Array.from(names).sort();
+}, [accountData, historyData, userRole, username]);
 
 
 
@@ -1392,7 +1415,7 @@ const confirmMarkDone = async () => {
             >
               <option value="">All Names</option>
               {uniqueNames.map((name) => (
-                <option key={name} value={name}>
+                <option key={name} value={name} className="uppercase">
                   {name}
                 </option>
               ))}
