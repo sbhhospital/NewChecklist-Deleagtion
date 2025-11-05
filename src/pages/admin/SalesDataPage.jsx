@@ -21,16 +21,41 @@ const CONFIG = {
   },
 }
 
+// Move this function before any component logic, right after CONFIG
+const parseDateFromDDMMYYYY = (dateStr) => {
+  if (!dateStr || typeof dateStr !== "string") return null
+  const datePart = dateStr.includes(" ") ? dateStr.split(" ")[0] : dateStr
+  const parts = datePart.split("/")
+  if (parts.length !== 3) return null
+  return new Date(parts[2], parts[1] - 1, parts[0])
+}
+
 const isEmpty = (value) => {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "")
 }
 
-const getTaskStatus = (actualValue, adminDoneValue) => {
+const getTaskStatus = (actualValue, adminDoneValue, taskStartDate) => {
   // Column K (col10) = Actual value
   if (!isEmpty(adminDoneValue) && adminDoneValue.toString().trim() === "Admin Done") {
     return "Admin Done";
   }
-  return actualValue && actualValue.toString().trim() !== "" ? "Done" : "Pending";
+  if (actualValue && actualValue.toString().trim() !== "") {
+    return "Done";
+  }
+  
+  // Check if task is from today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const taskDate = parseDateFromDDMMYYYY(taskStartDate);
+  
+  if (taskDate) {
+    taskDate.setHours(0, 0, 0, 0);
+    if (taskDate.getTime() !== today.getTime()) {
+      return "Disabled"; // Overdue task
+    }
+  }
+  
+  return "Pending";
 };
 
 const getStatusColor = (status) => {
@@ -38,7 +63,9 @@ const getStatusColor = (status) => {
     case "Done":
       return "bg-green-100 text-green-800";
     case "Admin Done":
-      return "bg-blue-100 text-blue-800"; // Blue for Admin Done
+      return "bg-blue-100 text-blue-800";
+    case "Disabled":
+      return "bg-red-100 text-red-800"; // Changed to red color
     case "Pending":
       return "bg-red-100 text-red-800";
     default:
@@ -69,12 +96,13 @@ const MemoizedTaskRow = memo(({
   onRemarksChange,
   onImageUpload
 }) => {
-  const taskStatus = getTaskStatus(account["col10"], account["col15"]);
-  const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done";
+  const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"]);
+  const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done" || taskStatus === "Disabled";
+  const isNotToday = taskStatus === "Disabled";
 
   return (
     <tr
-      className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50 ${isDisabled ? "opacity-50 bg-gray-100 cursor-not-allowed" : ""}`}
+      className={`${isSelected ? "bg-purple-50" : ""} ${isNotToday ? "bg-lime-300 border-l-4 border-red-500" : "hover:bg-gray-50"} ${isDisabled ? "opacity-90 cursor-not-allowed" : ""}`}
     >
       <td className="px-3 py-4 w-12">
         <input
@@ -86,51 +114,51 @@ const MemoizedTaskRow = memo(({
         />
       </td>
       <td className="px-3 py-4 min-w-[100px]">
-        <div className="text-sm text-gray-900 break-words">{account["col1"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col1"] || "—"}</div>
       </td>
       <td className="px-3 py-4 min-w-[80px]">
         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(taskStatus)}`}>
-          {taskStatus}
+          {taskStatus === "Disabled" ? "Overdue" : taskStatus}
         </span>
       </td>
       {/* Keep all other existing td elements exactly as they are */}
       <td className="px-3 py-4 min-w-[120px]">
-        <div className="text-sm text-gray-900 break-words">{account["col2"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col2"] || "—"}</div>
       </td>
       <td className="px-3 py-4 min-w-[100px]">
-        <div className="text-sm text-gray-900 break-words">{account["col3"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col3"] || "—"}</div>
       </td>
       <td className="px-3 py-4 min-w-[100px]">
-        <div className="text-sm text-gray-900 break-words">{account["col4"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col4"] || "—"}</div>
       </td>
-      <td className="px-3 py-4 bg-yellow-50 min-w-[100px]">
+      <td className={`px-3 py-4 ${isNotToday ? "bg-lime-300 border-l-4 border-lime-300" : "hover:bg-gray-50"} min-w-[100px]`}>
         <select
           disabled={!isSelected}
           value={additionalData || ""}
           onChange={(e) => onAdditionalDataChange(account._id, e.target.value)}
-          className="border border-gray-300 rounded-md px-2 py-1 w-full disabled:bg-gray-100 disabled:cursor-not-allowed text-sm"
+          className="border border-gray-300 rounded-md px-2 py-1 w-full disabled:bg-gray-100 disabled:cursor-not-allowed text-sm font-medium"
         >
           <option value="">Select...</option>
           <option value="Yes">Yes</option>
           <option value="No">No</option>
         </select>
       </td>
-      <td className="px-3 py-4 bg-orange-50 min-w-[150px]">
+      <td className={`px-3 py-4 ${isNotToday ? "bg-lime-300 border-l-4 border-lime-300" : "hover:bg-gray-50"} min-w-[150px]`}>
         <input
           type="text"
           placeholder="Enter remarks"
           disabled={!isSelected || !additionalData}
           value={remarksData || ""}
           onChange={(e) => onRemarksChange(account._id, e.target.value)}
-          className="border rounded-md px-2 py-1 w-full border-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm break-words"
+          className="border rounded-md px-2 py-1 w-full border-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm break-words font-medium"
         />
       </td>
       <td className="px-3 py-4 min-w-[200px]">
-        <div className="text-sm text-gray-900 break-words" title={account["col5"]}>
+        <div className="text-sm text-gray-900 break-words font-medium" title={account["col5"]}>
           {account["col5"] || "—"}
         </div>
       </td>
-      <td className="px-3 py-4 bg-yellow-50 min-w-[140px]">
+      <td className={`px-3 py-4 ${isNotToday ? "bg-lime-300 border-l-4 border-lime-300" : "hover:bg-gray-50"} min-w-[140px]`}>
         <div className="text-sm text-gray-900 break-words">
           {account["col6"] ? (
             <div>
@@ -149,13 +177,13 @@ const MemoizedTaskRow = memo(({
         </div>
       </td>
       <td className="px-3 py-4 min-w-[80px]">
-        <div className="text-sm text-gray-900 break-words">{account["col7"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col7"] || "—"}</div>
       </td>
       <td className="px-3 py-4 min-w-[120px]">
-        <div className="text-sm text-gray-900 break-words">{account["col8"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col8"] || "—"}</div>
       </td>
       <td className="px-3 py-4 min-w-[120px]">
-        <div className="text-sm text-gray-900 break-words">{account["col9"] || "—"}</div>
+        <div className="text-sm text-gray-900 break-words font-medium">{account["col9"] || "—"}</div>
       </td>
       <td className="px-3 py-4 bg-green-50 min-w-[120px]">
         {account.image ? (
@@ -174,10 +202,10 @@ const MemoizedTaskRow = memo(({
                 {account.image instanceof File ? account.image.name : "Uploaded Receipt"}
               </span>
               {account.image instanceof File ? (
-                <span className="text-xs text-green-600">Ready to upload</span>
+                <span className="text-xs text-green-600 font-medium">Ready to upload</span>
               ) : (
                 <button
-                  className="text-xs text-purple-600 hover:text-purple-800 break-words"
+                  className="text-xs text-purple-600 hover:text-purple-800 break-words font-medium"
                   onClick={() => window.open(account.image, "_blank")}
                 >
                   View Full Image
@@ -190,7 +218,7 @@ const MemoizedTaskRow = memo(({
             className={`flex items-center cursor-pointer ${account["col9"]?.toUpperCase() === "YES" ? "text-red-600 font-medium" : "text-purple-600"} hover:text-purple-800`}
           >
             <Upload className="h-4 w-4 mr-1 flex-shrink-0" />
-            <span className="text-xs break-words">
+            <span className="text-xs break-words font-medium">
               {account["col9"]?.toUpperCase() === "YES"
                 ? "Required Upload"
                 : "Upload Receipt Image"}
@@ -558,7 +586,7 @@ const filteredAccountData = useMemo(() => {
       if (selectedStatus === "Admin Done") {
         return !isEmpty(account["col15"]) && account["col15"].toString().trim() === "Admin Done";
       } else {
-        const taskStatus = getTaskStatus(account["col10"]);
+        const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"]);
         return taskStatus === selectedStatus;
       }
     });
@@ -589,42 +617,74 @@ const filteredAccountData = useMemo(() => {
     });
   }
 
-  // Sort by status (Pending first) and then by Task Start Date (oldest first for Pending)
+  // Sort: Today's tasks first, then by status and date
   return filtered.sort((a, b) => {
-    // First sort by status: Pending comes first
-    const statusA = getTaskStatus(a["col10"], a["col15"]);
-    const statusB = getTaskStatus(b["col10"], b["col15"]);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const dateA = parseDateFromDDMMYYYY(a["col6"]);
+    const dateB = parseDateFromDDMMYYYY(b["col6"]);
+    
+    const isATodayTask = dateA && dateA.setHours(0, 0, 0, 0) === today.getTime();
+    const isBTodayTask = dateB && dateB.setHours(0, 0, 0, 0) === today.getTime();
+    
+    // Today's tasks always come first
+    if (isATodayTask && !isBTodayTask) return -1;
+    if (!isATodayTask && isBTodayTask) return 1;
+    
+    // For today's tasks: Pending first, then sort by oldest
+    if (isATodayTask && isBTodayTask) {
+      const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"]);
+      const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"]);
+      
+      if (statusA === "Pending" && statusB !== "Pending") return -1;
+      if (statusA !== "Pending" && statusB === "Pending") return 1;
+      
+      // Both same status, sort by oldest first
+      const dateStrA = a["col6"] || "";
+      const dateStrB = b["col6"] || "";
+      const parsedDateA = parseDateFromDDMMYYYY(dateStrA);
+      const parsedDateB = parseDateFromDDMMYYYY(dateStrB);
+      
+      if (!parsedDateA && !parsedDateB) return 0;
+      if (!parsedDateA) return 1;
+      if (!parsedDateB) return -1;
+      
+      return parsedDateA.getTime() - parsedDateB.getTime();
+    }
+    
+    // For non-today tasks: sort by status and date
+    const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"]);
+    const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"]);
     
     if (statusA === "Pending" && statusB !== "Pending") return -1;
     if (statusA !== "Pending" && statusB === "Pending") return 1;
     
-    // For pending tasks: sort by Task Start Date (Column G/col6) - oldest first
     if (statusA === "Pending" && statusB === "Pending") {
       const dateStrA = a["col6"] || "";
       const dateStrB = b["col6"] || "";
-      const dateA = parseDateFromDDMMYYYY(dateStrA);
-      const dateB = parseDateFromDDMMYYYY(dateStrB);
+      const parsedDateA = parseDateFromDDMMYYYY(dateStrA);
+      const parsedDateB = parseDateFromDDMMYYYY(dateStrB);
       
-      if (!dateA && !dateB) return 0;
-      if (!dateA) return 1;
-      if (!dateB) return -1;
+      if (!parsedDateA && !parsedDateB) return 0;
+      if (!parsedDateA) return 1;
+      if (!parsedDateB) return -1;
       
-      return dateA.getTime() - dateB.getTime(); // Ascending order (oldest first for pending)
+      return parsedDateA.getTime() - parsedDateB.getTime();
     }
     
-    // For non-pending tasks: sort by Task Start Date (Column G/col6) - latest first
     const dateStrA = a["col6"] || "";
     const dateStrB = b["col6"] || "";
-    const dateA = parseDateFromDDMMYYYY(dateStrA);
-    const dateB = parseDateFromDDMMYYYY(dateStrB);
+    const parsedDateA = parseDateFromDDMMYYYY(dateStrA);
+    const parsedDateB = parseDateFromDDMMYYYY(dateStrB);
     
-    if (!dateA && !dateB) return 0;
-    if (!dateA) return 1;
-    if (!dateB) return -1;
+    if (!parsedDateA && !parsedDateB) return 0;
+    if (!parsedDateA) return 1;
+    if (!parsedDateB) return -1;
     
-    return dateB.getTime() - dateA.getTime(); // Descending order (latest first for non-pending)
+    return parsedDateB.getTime() - parsedDateA.getTime();
   });
-}, [accountData, debouncedSearchTerm, searchTerm, selectedStatus, selectedMembers, startDate, endDate, parseDateFromDDMMYYYY]);
+}, [accountData, debouncedSearchTerm, searchTerm, selectedStatus, selectedMembers, startDate, endDate]);
 
   // Replace existing filteredHistoryData with this
   const filteredHistoryData = useMemo(() => {
@@ -932,30 +992,30 @@ const handleLoadMoreHistory = useCallback(() => {
   )
 
   const handleSelectAllItems = useCallback(
-    (e) => {
-      e.stopPropagation();
-      const checked = e.target.checked;
+  (e) => {
+    e.stopPropagation();
+    const checked = e.target.checked;
 
-      if (checked) {
-        // Only select items that are not disabled (not 'Admin Done' or 'Done')
-        const enabledIds = filteredAccountData
-          .filter((item) => {
-            const taskStatus = getTaskStatus(item["col10"], item["col15"]);
-            return taskStatus !== "Admin Done" && taskStatus !== "Done";
-          })
-          .map((item) => item._id);
+    if (checked) {
+      // Only select items that are not disabled (today's tasks only)
+      const enabledIds = filteredAccountData
+        .filter((item) => {
+          const taskStatus = getTaskStatus(item["col10"], item["col15"], item["col6"]);
+          return taskStatus !== "Admin Done" && taskStatus !== "Done" && taskStatus !== "Disabled";
+        })
+        .map((item) => item._id);
 
-        setSelectedItems(new Set(enabledIds));
-        console.log(`Selected all enabled items: ${enabledIds}`);
-      } else {
-        setSelectedItems(new Set());
-        setAdditionalData({});
-        setRemarksData({});
-        console.log("Cleared all selections");
-      }
-    },
-    [filteredAccountData],
-  );
+      setSelectedItems(new Set(enabledIds));
+      console.log(`Selected all enabled items: ${enabledIds}`);
+    } else {
+      setSelectedItems(new Set());
+      setAdditionalData({});
+      setRemarksData({});
+      console.log("Cleared all selections");
+    }
+  },
+  [filteredAccountData],
+);
 
   // Add these optimized handlers inside the component
   const handleAdditionalDataChange = useCallback((id, value) => {
@@ -1212,7 +1272,9 @@ const displayedAccountData = useMemo(() => {
         <div className="flex flex-wrap items-center justify-center gap-4">
           {/* Status Filter */}
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-purple-700 mb-1">Filter by Status:</label>
+            <label className="text-sm font-medium text-purple-700 mb-1">
+              Filter by Status:
+            </label>
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
@@ -1227,22 +1289,27 @@ const displayedAccountData = useMemo(() => {
                 <>
                   <option value="">All Status</option>
                   <option value="Done">Done</option>
-                  <option value="Pending">Pending</option>
+                  <option value="Pending">Pending (Today Only)</option>
+                  <option value="Disabled">Overdue</option>
                   <option value="Admin Done">Admin Done</option>
                 </>
               )}
             </select>
-
           </div>
 
           {/* Name/Member Filter with Search Dropdown */}
           {getFilteredMembersList().length > 0 && (
             <div className="flex flex-col relative">
-              <label className="text-sm font-medium text-purple-700 mb-1">Filter by Member:</label>
+              <label className="text-sm font-medium text-purple-700 mb-1">
+                Filter by Member:
+              </label>
               <div className="relative">
                 {/* Search input that triggers dropdown */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
+                  <Search
+                    className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                    size={14}
+                  />
                   <input
                     type="text"
                     placeholder="Search members..."
@@ -1266,7 +1333,10 @@ const displayedAccountData = useMemo(() => {
                             checked={selectedMembers.includes(member)}
                             onChange={() => handleMemberSelection(member)}
                           />
-                          <label htmlFor={`member-${idx}`} className="ml-2 text-sm text-gray-700 whitespace-nowrap">
+                          <label
+                            htmlFor={`member-${idx}`}
+                            className="ml-2 text-sm text-gray-700 whitespace-nowrap"
+                          >
                             {member}
                           </label>
                         </div>
@@ -1300,10 +1370,15 @@ const displayedAccountData = useMemo(() => {
 
           {/* Date Range Filter */}
           <div className="flex flex-col">
-            <label className="text-sm font-medium text-purple-700 mb-1">Filter by Date Range:</label>
+            <label className="text-sm font-medium text-purple-700 mb-1">
+              Filter by Date Range:
+            </label>
             <div className="flex items-center gap-2">
               <div className="flex items-center">
-                <label htmlFor="start-date" className="text-sm text-gray-700 mr-1">
+                <label
+                  htmlFor="start-date"
+                  className="text-sm text-gray-700 mr-1"
+                >
                   From
                 </label>
                 <input
@@ -1315,7 +1390,10 @@ const displayedAccountData = useMemo(() => {
                 />
               </div>
               <div className="flex items-center">
-                <label htmlFor="end-date" className="text-sm text-gray-700 mr-1">
+                <label
+                  htmlFor="end-date"
+                  className="text-sm text-gray-700 mr-1"
+                >
                   To
                 </label>
                 <input
@@ -1330,7 +1408,12 @@ const displayedAccountData = useMemo(() => {
           </div>
 
           {/* Clear Filters Button */}
-          {(selectedMembers.length > 0 || startDate || endDate || searchTerm || selectedStatus || nameSearchTerm) && (
+          {(selectedMembers.length > 0 ||
+            startDate ||
+            endDate ||
+            searchTerm ||
+            selectedStatus ||
+            nameSearchTerm) && (
             <button
               onClick={() => {
                 resetFilters();

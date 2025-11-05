@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import {Eye, EyeOff} from "lucide-react"
 
 const LoginPage = () => {
   const navigate = useNavigate()
   const [isDataLoading, setIsDataLoading] = useState(false)
   const [isLoginLoading, setIsLoginLoading] = useState(false)
+  const [visible, setVisible] = useState(false);
   const [masterData, setMasterData] = useState({
     userCredentials: {}, // Object where keys are usernames and values are passwords
     userRoles: {},
@@ -232,20 +234,31 @@ const LoginPage = () => {
     }, 5000) // Toast duration
   }
 
+  const togglePasswordVisibility = () => {
+  setVisible(!visible);
+}
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
       <div className="w-full max-w-md shadow-lg border border-blue-200 rounded-lg bg-white">
         <div className="space-y-1 p-4 bg-gradient-to-r from-blue-100 to-purple-100 rounded-t-lg">
           <div className="flex items-center justify-center mb-2">
             <i className="fas fa-clipboard-list h-8 w-8 text-blue-600 mr-2"></i>
-            <h2 className="text-2xl font-bold text-blue-700">Checklist & Delegation</h2>
+            <h2 className="text-2xl font-bold text-blue-700">
+              Checklist & Delegation
+            </h2>
           </div>
-          <p className="text-center text-blue-600">Login to access your tasks and delegations</p>
+          <p className="text-center text-blue-600">
+            Login to access your tasks and delegations
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div className="space-y-2">
-            <label htmlFor="username" className="flex items-center text-blue-700">
+            <label
+              htmlFor="username"
+              className="flex items-center text-blue-700"
+            >
               <i className="fas fa-user h-4 w-4 mr-2"></i>
               Username
             </label>
@@ -262,20 +275,32 @@ const LoginPage = () => {
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="password" className="flex items-center text-blue-700">
+            <label
+              htmlFor="password"
+              className="flex items-center text-blue-700"
+            >
               <i className="fas fa-key h-4 w-4 mr-2"></i>
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              placeholder="Enter your password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={visible ? "text" : "password"}
+                placeholder="Enter your password"
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+              />
+              <button
+                type="button"
+                onClick={togglePasswordVisibility}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-600 hover:text-blue-700"
+              >
+                {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 -mx-4 -mb-4 mt-4 rounded-b-lg">
@@ -284,7 +309,11 @@ const LoginPage = () => {
               className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               disabled={isLoginLoading || isDataLoading}
             >
-              {isLoginLoading ? "Logging in..." : isDataLoading ? "Loading..." : "Login"}
+              {isLoginLoading
+                ? "Logging in..."
+                : isDataLoading
+                ? "Loading..."
+                : "Login"}
             </button>
           </div>
         </form>
@@ -302,10 +331,13 @@ const LoginPage = () => {
 
       {/* Toast Notification */}
       {toast.show && (
-        <div className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${toast.type === "success"
-          ? "bg-green-100 text-green-800 border-l-4 border-green-500"
-          : "bg-red-100 text-red-800 border-l-4 border-red-500"
-          }`}>
+        <div
+          className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${
+            toast.type === "success"
+              ? "bg-green-100 text-green-800 border-l-4 border-green-500"
+              : "bg-red-100 text-red-800 border-l-4 border-red-500"
+          }`}
+        >
           {toast.message}
         </div>
       )}
@@ -316,29 +348,46 @@ const LoginPage = () => {
           <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl transform transition-all duration-300 scale-100 opacity-100">
             <div className="text-center">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
-                <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                <svg
+                  className="h-6 w-6 text-green-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
               </div>
-              <h3 className="mt-3 text-lg font-medium text-gray-900">Login Successful!</h3>
+              <h3 className="mt-3 text-lg font-medium text-gray-900">
+                Login Successful!
+              </h3>
               <div className="mt-2 px-4 py-3">
                 <p className="text-xl text-gray-600">
-                  Welcome <span className="font-semibold text-blue-600">{loggedInUsername}</span>, you have successfully logged in.
+                  Welcome{" "}
+                  <span className="font-semibold text-blue-600">
+                    {loggedInUsername}
+                  </span>
+                  , you have successfully logged in.
                 </p>
-
               </div>
               <div className="mt-4">
                 <div className="flex justify-center">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Redirecting to dashboard...</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Redirecting to dashboard...
+                </p>
               </div>
             </div>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }
 
 export default LoginPage
