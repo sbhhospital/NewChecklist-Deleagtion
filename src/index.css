@@ -129,3 +129,7 @@
       text-align: center;
     }
   }
+
+  .placeholder::placeholder{
+    color: red;
+  }

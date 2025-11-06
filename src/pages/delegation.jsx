@@ -1955,8 +1955,132 @@ const confirmMarkDone = async () => {
               </div>
             </>
           ) : (
-            /* Regular Tasks Table */
-            <div className="overflow-x-auto sticky top-0 max-h-[calc(100vh-300px)] overflow-y-auto">
+            <>
+            {/* Mobile Card View */}
+            <div className="block md:hidden space-y-4 px-4 py-4">
+              {filteredAccountData.length > 0 ? (
+                filteredAccountData.map((account) => {
+                  const isSelected = selectedItems.has(account._id);
+                  return (
+                    <div
+                      key={account._id}
+                      className={`bg-white rounded-lg shadow-sm border ${
+                        isSelected ? "border-purple-500" : "border-gray-200"
+                      } ${
+                        isTaskDisabled(account["col20"], userRole)
+                          ? "opacity-50 bg-gray-50"
+                          : ""
+                      }`}
+                    >
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center space-x-3">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                              checked={isSelected}
+                              onChange={(e) => handleCheckboxClick(e, account._id)}
+                              disabled={isTaskDisabled(account["col20"], userRole)}
+                            />
+                            <div className="flex flex-col">
+                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(account["col20"])}`}>
+                                {account["col20"] || "—"}
+                              </span>
+                              <span className="text-xs text-gray-500 mt-1">ID: {account["col1"] || "—"}</span>
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-600">{formatDateForDisplay(account["col0"]) || "—"}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-sm text-gray-900 font-medium">{account["col5"] || "—"}</div>
+                          <div className="text-xs text-gray-500 mt-1">Given By: {account["col3"] || "—"} • Name: {account["col4"] || "—"}</div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <div className="text-xs text-gray-500">Old Deadline</div>
+                            <div className="text-sm text-gray-900">{formatDateForDisplay(account["col6"])}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500">New Deadline</div>
+                            <div className="text-sm text-gray-900">{formatDateForDisplay(account["col10"])}</div>
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <div className="pt-2 border-t border-gray-100 space-y-3">
+                            <div>
+                              <label className="text-xs text-gray-500">Remarks</label>
+                              <input
+                                type="text"
+                                placeholder="Enter remarks"
+                                disabled={isTaskDisabled(account["col20"], userRole)}
+                                value={remarksData[account._id] || ""}
+                                onChange={(e) =>
+                                  setRemarksData((prev) => ({ ...prev, [account._id]: e.target.value }))
+                                }
+                                className="mt-1 block w-full border rounded-md px-2 py-1 text-sm border-gray-300 disabled:bg-gray-100"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-xs text-gray-500">Status</label>
+                              <select
+                                disabled={isTaskDisabled(account["col20"], userRole)}
+                                value={statusData[account._id] || ""}
+                                onChange={(e) => handleStatusChange(account._id, e.target.value)}
+                                className="mt-1 block w-full border rounded-md px-2 py-1 text-sm border-gray-300 disabled:bg-gray-100"
+                              >
+                                <option value="">Select</option>
+                                <option value="Done">Done</option>
+                                <option value="Extend date">Extend date</option>
+                              </select>
+                            </div>
+
+                            {statusData[account._id] === "Extend date" && (
+                              <div>
+                                <label className="text-xs text-gray-500">Next Target Date</label>
+                                <input
+                                  type="date"
+                                  disabled={isTaskDisabled(account["col20"], userRole)}
+                                  value={nextTargetDate[account._id] || ""}
+                                  onChange={(e) => handleNextTargetDateChange(account._id, e.target.value)}
+                                  className="mt-1 block w-full border rounded-md px-2 py-1 text-sm border-gray-300 disabled:bg-gray-100"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                          <div>
+                            {account.image ? (
+                              <div className="flex items-center gap-2">
+                                <img src={typeof account.image === "string" ? account.image : URL.createObjectURL(account.image)} alt="Receipt" className="h-10 w-10 object-cover rounded-md" />
+                                <div className="text-xs text-gray-600">{account.image instanceof File ? "Ready to upload" : <button className="text-purple-600" onClick={() => window.open(account.image, "_blank")}>View</button>}</div>
+                              </div>
+                            ) : (
+                              <label className={`flex items-center cursor-pointer text-xs text-purple-600 hover:text-purple-800`}> 
+                                <Upload className="h-4 w-4 mr-1" />
+                                <span>{account["col9"]?.toUpperCase() === "YES" ? "Required Upload" : "Upload Image"}</span>
+                                <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(account._id, e)} disabled={!isSelected || isTaskDisabled(account["col20"], userRole)} />
+                              </label>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500">{account["col2"] || "—"}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-4 text-center text-gray-500">{searchTerm ? "No tasks matching your search" : "No pending tasks found"}</div>
+              )}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto sticky top-0 max-h-[calc(100vh-300px)] overflow-y-auto">
              <div className="min-w-full">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -2313,6 +2437,7 @@ const confirmMarkDone = async () => {
               </table>
             </div>
             </div>
+            </>
           )}
         </div>
         <ConfirmationModal
