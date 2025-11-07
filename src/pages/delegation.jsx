@@ -667,80 +667,80 @@ const uniqueNames = useMemo(() => {
       setHistoryData(processedHistoryData);
 
       // Process main delegation data - ADD USER FILTERING LOGIC
-      const allDelegationData = [];
+      // Process main delegation data - ADD USER FILTERING LOGIC
+const allDelegationData = [];
 
-      let rows = [];
-      if (data.table && data.table.rows) {
-        rows = data.table.rows;
-      } else if (Array.isArray(data)) {
-        rows = data;
-      } else if (data.values) {
-        rows = data.values.map((row) => ({
-          c: row.map((val) => ({ v: val })),
-        }));
-      }
+let rows = [];
+if (data.table && data.table.rows) {
+  rows = data.table.rows;
+} else if (Array.isArray(data)) {
+  rows = data;
+} else if (data.values) {
+  rows = data.values.map((row) => ({
+    c: row.map((val) => ({ v: val })),
+  }));
+}
 
-      // Inside the fetchSheetData function, update the data processing section:
-      rows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return; // Skip header row
+// Inside the fetchSheetData function, update the data processing section:
+rows.forEach((row, rowIndex) => {
+  if (rowIndex === 0) return; // Skip header row
 
-        let rowValues = [];
-        if (row.c) {
-          rowValues = row.c.map((cell) =>
-            cell && cell.v !== undefined ? cell.v : ""
-          );
-        } else if (Array.isArray(row)) {
-          rowValues = row;
-        } else {
-          return;
-        }
+  let rowValues = [];
+  if (row.c) {
+    rowValues = row.c.map((cell) =>
+      cell && cell.v !== undefined ? cell.v : ""
+    );
+  } else if (Array.isArray(row)) {
+    rowValues = row;
+  } else {
+    return;
+  }
 
-        const googleSheetsRowIndex = rowIndex + 1;
-        const taskId = rowValues[1] || "";
-        const stableId = taskId
-          ? `task_${taskId}_${googleSheetsRowIndex}`
-          : `row_${googleSheetsRowIndex}_${Math.random()
-            .toString(36)
-            .substring(2, 15)}`;
+  const googleSheetsRowIndex = rowIndex + 1;
+  const taskId = rowValues[1] || "";
+  const stableId = taskId
+    ? `task_${taskId}_${googleSheetsRowIndex}`
+    : `row_${googleSheetsRowIndex}_${Math.random()
+        .toString(36)
+        .substring(2, 15)}`;
 
-        const rowData = {
-          _id: stableId,
-          _rowIndex: googleSheetsRowIndex,
-          _taskId: taskId,
-        };
+  const rowData = {
+    _id: stableId,
+    _rowIndex: googleSheetsRowIndex,
+    _taskId: taskId,
+  };
 
-        // Map all columns including timestamp (column A)
-        for (let i = 0; i < 21; i++) {
-          if (i === 0 || i === 6 || i === 10) {
-            // Column A (0), G (6), K (10) are dates
-            rowData[`col${i}`] = rowValues[i]
-              ? parseGoogleSheetsDate(String(rowValues[i]))
-              : "";
-          } else {
-            rowData[`col${i}`] = rowValues[i] || "";
-          }
-        }
+  // Map all columns including timestamp (column A)
+  for (let i = 0; i < 21; i++) {
+    if (i === 0 || i === 6 || i === 10) {
+      // Column A (0), G (6), K (10) are dates
+      rowData[`col${i}`] = rowValues[i]
+        ? parseGoogleSheetsDate(String(rowValues[i]))
+        : "";
+    } else {
+      rowData[`col${i}`] = rowValues[i] || "";
+    }
+  }
 
-        // ✅ NEW: Skip rows where Column L (col11) has a value
-        // const actualValue = rowData["col11"] // Column L (Actual)
-        // if (!isEmpty(actualValue)) {
-        //   return // Skip this row if Column L is not empty
-        // }
+  // ✅ User filtering logic
+  if (userRole !== "admin") {
+    const taskAssignedTo = rowData["col4"]; // Column E (Name)
+    if (
+      !taskAssignedTo ||
+      taskAssignedTo.toLowerCase().trim() !== username.toLowerCase().trim()
+    ) {
+      return; // Skip if not assigned to this user
+    }
+  }
 
-        // ✅ User filtering logic
-        if (userRole !== "admin") {
-          const taskAssignedTo = rowData["col4"]; // Column E (Name)
-          if (
-            !taskAssignedTo ||
-            taskAssignedTo.toLowerCase().trim() !==
-            username.toLowerCase().trim()
-          ) {
-            return; // Skip if not assigned to this user
-          }
-        }
+  // ✅ NEW: Filter out "Done" tasks from regular view
+  const taskStatus = rowData["col20"]; // Column U (Status)
+  if (taskStatus && taskStatus.toString().trim().toLowerCase() === "done") {
+    return; // Skip Done tasks from regular view
+  }
 
-        allDelegationData.push(rowData);
-      });
+  allDelegationData.push(rowData);
+});
 
       setAccountData(allDelegationData);
       setDelegationData(allDelegationData);
@@ -1471,7 +1471,7 @@ const confirmMarkDone = async () => {
               <option value="">
                 All Status ({filteredAccountData.length})
               </option>
-              <option value="Done">✅ Done ({statusCounts.Done})</option>
+              {/* <option value="Done">✅ Done ({statusCounts.Done})</option> */}
               <option value="Pending">
                 🕒 Pending ({statusCounts.Pending})
               </option>

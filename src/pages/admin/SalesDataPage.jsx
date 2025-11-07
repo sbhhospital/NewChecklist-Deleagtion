@@ -808,163 +808,167 @@ const handleLoadMoreHistory = useCallback(() => {
     }
   }, [membersList, userRole, username])
 
-  // fetchSheetData - Show both Done and Pending tasks in task page and ALL completed tasks in history
-  const fetchSheetData = useCallback(async () => {
+ // fetchSheetData - Show only Pending and Overdue tasks in task page and ALL completed tasks in history
+const fetchSheetData = useCallback(async () => {
+  try {
+    setLoading(true)
+    const pendingAccounts = []
+    const historyRows = []
+    const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch data: ${response.status}`)
+    }
+    const text = await response.text()
+    let data
     try {
-      setLoading(true)
-      const pendingAccounts = []
-      const historyRows = []
-      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data: ${response.status}`)
+      data = JSON.parse(text)
+    } catch (parseError) {
+      const jsonStart = text.indexOf("{")
+      const jsonEnd = text.lastIndexOf("}")
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const jsonString = text.substring(jsonStart, jsonEnd + 1)
+        data = JSON.parse(jsonString)
+      } else {
+        throw new Error("Invalid JSON response from server")
       }
-      const text = await response.text()
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (parseError) {
-        const jsonStart = text.indexOf("{")
-        const jsonEnd = text.lastIndexOf("}")
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          const jsonString = text.substring(jsonStart, jsonEnd + 1)
-          data = JSON.parse(jsonString)
+    }
+
+    const currentUsername = sessionStorage.getItem("username")
+    const currentUserRole = sessionStorage.getItem("role")
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(today.getDate() + 1)
+    const todayStr = formatDateToDDMMYYYY(today)
+    const tomorrowStr = formatDateToDDMMYYYY(tomorrow)
+    console.log("Filtering dates:", { todayStr, tomorrowStr })
+
+    const membersSet = new Set()
+    let rows = []
+    if (data.table && data.table.rows) {
+      rows = data.table.rows
+    } else if (Array.isArray(data)) {
+      rows = data
+    } else if (data.values) {
+      rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }))
+    }
+
+    rows.forEach((row, rowIndex) => {
+      if (rowIndex === 0) return
+      let rowValues = []
+      if (row.c) {
+        rowValues = row.c.map((cell) => (cell && cell.v !== undefined ? cell.v : ""))
+      } else if (Array.isArray(row)) {
+        rowValues = row
+      } else {
+        // console.log("Unknown row format:", row)
+        return
+      }
+
+      const assignedTo = rowValues[4] || "Unassigned"
+      membersSet.add(assignedTo)
+      const isUserMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
+      if (!isUserMatch && currentUserRole !== "admin") return
+
+      const columnGValue = rowValues[6] // Task Start Date
+      const columnKValue = rowValues[10] // Actual Date
+      const columnMValue = rowValues[12] // Status (DONE)
+      const columnPValue = rowValues[15] // Admin Processed Date (Column P)
+
+      const rowDateStr = columnGValue ? String(columnGValue).trim() : ""
+      const formattedRowDate = parseGoogleSheetsDateTime(rowDateStr)
+      const googleSheetsRowIndex = rowIndex + 1
+
+      // Create stable unique ID using task ID and row index
+      const taskId = rowValues[1] || ""
+      const stableId = taskId
+        ? `task_${taskId}_${googleSheetsRowIndex}`
+        : `row_${googleSheetsRowIndex}_${Math.random().toString(36).substring(2, 15)}`
+
+      const rowData = {
+        _id: stableId,
+        _rowIndex: googleSheetsRowIndex,
+        _taskId: taskId,
+      }
+
+      const columnHeaders = [
+        { id: "col0", label: "Timestamp", type: "string" },
+        { id: "col1", label: "Task ID", type: "string" },
+        { id: "col2", label: "Firm", type: "string" },
+        { id: "col3", label: "Given By", type: "string" },
+        { id: "col4", label: "Name", type: "string" },
+        { id: "col5", label: "Task Description", type: "string" },
+        { id: "col6", label: "Task Start Date", type: "datetime" },
+        { id: "col7", label: "Freq", type: "string" },
+        { id: "col8", label: "Enable Reminders", type: "string" },
+        { id: "col9", label: "Require Attachment", type: "string" },
+        { id: "col10", label: "Actual", type: "datetime" },
+        { id: "col11", label: "Delay", type: "string" }, // Column L - Delay
+        { id: "col12", label: "Status", type: "string" },
+        { id: "col13", label: "Remarks", type: "string" },
+        { id: "col14", label: "Uploaded Image", type: "string" },
+        { id: "col15", label: "Admin Done", type: "string" }, // Column P
+      ]
+
+      columnHeaders.forEach((header, index) => {
+        const cellValue = rowValues[index]
+        if (
+          header.type === "datetime" ||
+          header.type === "date" ||
+          (cellValue && String(cellValue).startsWith("Date("))
+        ) {
+          rowData[header.id] = cellValue ? parseGoogleSheetsDateTime(String(cellValue)) : ""
+        } else if (header.type === "number" && cellValue !== null && cellValue !== "") {
+          rowData[header.id] = cellValue
         } else {
-          throw new Error("Invalid JSON response from server")
-        }
-      }
-
-      const currentUsername = sessionStorage.getItem("username")
-      const currentUserRole = sessionStorage.getItem("role")
-      const today = new Date()
-      const tomorrow = new Date(today)
-      tomorrow.setDate(today.getDate() + 1)
-      const todayStr = formatDateToDDMMYYYY(today)
-      const tomorrowStr = formatDateToDDMMYYYY(tomorrow)
-      console.log("Filtering dates:", { todayStr, tomorrowStr })
-
-      const membersSet = new Set()
-      let rows = []
-      if (data.table && data.table.rows) {
-        rows = data.table.rows
-      } else if (Array.isArray(data)) {
-        rows = data
-      } else if (data.values) {
-        rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }))
-      }
-
-      rows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return
-        let rowValues = []
-        if (row.c) {
-          rowValues = row.c.map((cell) => (cell && cell.v !== undefined ? cell.v : ""))
-        } else if (Array.isArray(row)) {
-          rowValues = row
-        } else {
-          // console.log("Unknown row format:", row)
-          return
-        }
-
-        const assignedTo = rowValues[4] || "Unassigned"
-        membersSet.add(assignedTo)
-        const isUserMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
-        if (!isUserMatch && currentUserRole !== "admin") return
-
-        const columnGValue = rowValues[6] // Task Start Date
-        const columnKValue = rowValues[10] // Actual Date
-        const columnMValue = rowValues[12] // Status (DONE)
-        const columnPValue = rowValues[15] // Admin Processed Date (Column P)
-
-        const rowDateStr = columnGValue ? String(columnGValue).trim() : ""
-        const formattedRowDate = parseGoogleSheetsDateTime(rowDateStr)
-        const googleSheetsRowIndex = rowIndex + 1
-
-        // Create stable unique ID using task ID and row index
-        const taskId = rowValues[1] || ""
-        const stableId = taskId
-          ? `task_${taskId}_${googleSheetsRowIndex}`
-          : `row_${googleSheetsRowIndex}_${Math.random().toString(36).substring(2, 15)}`
-
-        const rowData = {
-          _id: stableId,
-          _rowIndex: googleSheetsRowIndex,
-          _taskId: taskId,
-        }
-
-        const columnHeaders = [
-          { id: "col0", label: "Timestamp", type: "string" },
-          { id: "col1", label: "Task ID", type: "string" },
-          { id: "col2", label: "Firm", type: "string" },
-          { id: "col3", label: "Given By", type: "string" },
-          { id: "col4", label: "Name", type: "string" },
-          { id: "col5", label: "Task Description", type: "string" },
-          { id: "col6", label: "Task Start Date", type: "datetime" },
-          { id: "col7", label: "Freq", type: "string" },
-          { id: "col8", label: "Enable Reminders", type: "string" },
-          { id: "col9", label: "Require Attachment", type: "string" },
-          { id: "col10", label: "Actual", type: "datetime" },
-          { id: "col11", label: "Delay", type: "string" }, // Column L - Delay
-          { id: "col12", label: "Status", type: "string" },
-          { id: "col13", label: "Remarks", type: "string" },
-          { id: "col14", label: "Uploaded Image", type: "string" },
-          { id: "col15", label: "Admin Done", type: "string" }, // Column P
-        ]
-
-        columnHeaders.forEach((header, index) => {
-          const cellValue = rowValues[index]
-          if (
-            header.type === "datetime" ||
-            header.type === "date" ||
-            (cellValue && String(cellValue).startsWith("Date("))
-          ) {
-            rowData[header.id] = cellValue ? parseGoogleSheetsDateTime(String(cellValue)) : ""
-          } else if (header.type === "number" && cellValue !== null && cellValue !== "") {
-            rowData[header.id] = cellValue
-          } else {
-            rowData[header.id] = cellValue !== null ? cellValue : ""
-          }
-        })
-
-        // console.log(`Row ${rowIndex}: Task ID = ${rowData.col1}, Google Sheets Row = ${googleSheetsRowIndex}, Column K = ${columnKValue}`)
-
-        const hasColumnG = !isEmpty(columnGValue)
-        const hasColumnK = !isEmpty(columnKValue) // Check if Column K (Actual Date) has data
-
-        // FIXED HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks)
-        if (hasColumnG && hasColumnK) {
-          const isUserHistoryMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
-          if (isUserHistoryMatch) {
-            // console.log(`Adding to history: Task ID = ${rowData.col1}, Actual Date = ${columnKValue}`)
-            historyRows.push(rowData)
-          }
-        }
-
-        // For task page - show BOTH Done and Pending tasks (excluding admin processed items)
-        if (hasColumnG) {
-          const rowDate = parseDateFromDDMMYYYY(formattedRowDate)
-          const isToday = formattedRowDate.startsWith(todayStr)
-          const isTomorrow = formattedRowDate.startsWith(tomorrowStr)
-          const isPastDate = rowDate && rowDate <= today
-
-          if (isToday || isTomorrow || isPastDate) {
-            // console.log(`Adding to tasks: Task ID = ${rowData.col1}, Status = ${hasColumnK ? 'Done' : 'Pending'}`)
-            pendingAccounts.push(rowData)
-          }
+          rowData[header.id] = cellValue !== null ? cellValue : ""
         }
       })
 
-      // console.log(`Total history rows collected: ${historyRows.length}`)
-      // console.log(`Total task rows collected: ${pendingAccounts.length}`)
+      // console.log(`Row ${rowIndex}: Task ID = ${rowData.col1}, Google Sheets Row = ${googleSheetsRowIndex}, Column K = ${columnKValue}`)
 
-      setMembersList(Array.from(membersSet).sort())
-      setAccountData(pendingAccounts)
-      setHistoryData(historyRows)
-      setLoading(false)
-    } catch (error) {
-      console.error("Error fetching sheet data:", error)
-      setError("Failed to load account data: " + error.message)
-      setLoading(false)
-    }
-  }, [])
+      const hasColumnG = !isEmpty(columnGValue)
+      const hasColumnK = !isEmpty(columnKValue) // Check if Column K (Actual Date) has data
+      const isAdminDone = !isEmpty(columnPValue) && columnPValue.toString().trim() === "Admin Done"
+
+      // FIXED HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks)
+      if (hasColumnG && hasColumnK) {
+        const isUserHistoryMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
+        if (isUserHistoryMatch) {
+          // console.log(`Adding to history: Task ID = ${rowData.col1}, Actual Date = ${columnKValue}`)
+          historyRows.push(rowData)
+        }
+      }
+
+      // MODIFIED: For task page - show ONLY Pending and Overdue tasks (excluding Done and Admin Done)
+      if (hasColumnG) {
+        const rowDate = parseDateFromDDMMYYYY(formattedRowDate)
+        const isToday = formattedRowDate.startsWith(todayStr)
+        const isTomorrow = formattedRowDate.startsWith(tomorrowStr)
+        const isPastDate = rowDate && rowDate <= today
+
+        // Only add to tasks if it's NOT done and NOT admin done
+        const isNotDone = !hasColumnK && !isAdminDone
+        
+        if ((isToday || isTomorrow || isPastDate) && isNotDone) {
+          // console.log(`Adding to tasks: Task ID = ${rowData.col1}, Status = Pending/Overdue`)
+          pendingAccounts.push(rowData)
+        }
+      }
+    })
+
+    // console.log(`Total history rows collected: ${historyRows.length}`)
+    // console.log(`Total task rows collected: ${pendingAccounts.length}`)
+
+    setMembersList(Array.from(membersSet).sort())
+    setAccountData(pendingAccounts)
+    setHistoryData(historyRows)
+    setLoading(false)
+  } catch (error) {
+    console.error("Error fetching sheet data:", error)
+    setError("Failed to load account data: " + error.message)
+    setLoading(false)
+  }
+}, [])
 
   useEffect(() => {
     fetchSheetData()
@@ -1273,10 +1277,8 @@ const displayedAccountData = useMemo(() => {
               ) : (
                 <>
                   <option value="">All Status</option>
-                  <option value="Done">Done</option>
                   <option value="Pending">Pending (Today Only)</option>
                   <option value="Disabled">Overdue</option>
-                  <option value="Admin Done">Admin Done</option>
                 </>
               )}
             </select>
@@ -2270,6 +2272,46 @@ const displayedAccountData = useMemo(() => {
 
               {/* Mobile Card View for Regular Tasks */}
               <div className="sm:hidden space-y-4 p-4 max-h-[calc(100vh-250px)] overflow-auto">
+                <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-700">
+                      Select All:
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="h-5 w-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                      checked={
+                        // Only consider enabled items for select all
+                        filteredAccountData.filter((item) => {
+                          const taskStatus = getTaskStatus(
+                            item["col10"],
+                            item["col15"],
+                            item["col6"]
+                          );
+                          return (
+                            taskStatus !== "Admin Done" &&
+                            taskStatus !== "Done" &&
+                            taskStatus !== "Disabled"
+                          );
+                        }).length > 0 &&
+                        selectedItems.size ===
+                          filteredAccountData.filter((item) => {
+                            const taskStatus = getTaskStatus(
+                              item["col10"],
+                              item["col15"],
+                              item["col6"]
+                            );
+                            return (
+                              taskStatus !== "Admin Done" &&
+                              taskStatus !== "Done" &&
+                              taskStatus !== "Disabled"
+                            );
+                          }).length
+                      }
+                      onChange={handleSelectAllItems}
+                    />
+                  </div>
+                </div>
                 {displayedAccountData.length > 0 ? (
                   displayedAccountData.map((account) => {
                     const isSelected = selectedItems.has(account._id);
