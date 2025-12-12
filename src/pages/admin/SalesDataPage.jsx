@@ -34,27 +34,60 @@ const isEmpty = (value) => {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "")
 }
 
-const getTaskStatus = (actualValue, adminDoneValue, taskStartDate) => {
+const getTaskStatus = (
+  actualValue,
+  adminDoneValue,
+  taskStartDate,
+  assignedTo
+) => {
   // Column K (col10) = Actual value
-  if (!isEmpty(adminDoneValue) && adminDoneValue.toString().trim() === "Admin Done") {
+  if (
+    !isEmpty(adminDoneValue) &&
+    adminDoneValue.toString().trim() === "Admin Done"
+  ) {
     return "Admin Done";
   }
   if (actualValue && actualValue.toString().trim() !== "") {
     return "Done";
   }
-  
-  // Check if task is from today
+
+  // Check if task is from today or yesterday (for specific users only)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const taskDate = parseDateFromDDMMYYYY(taskStartDate);
-  
+
   if (taskDate) {
     taskDate.setHours(0, 0, 0, 0);
-    if (taskDate.getTime() !== today.getTime()) {
-      return "Disabled"; // Overdue task
+
+    // List of users who get 1-day grace period
+    const usersWithGracePeriod = [
+      "ARCHANA DAY",
+      "AMITA, POONIYA",
+      "INDRAJEET",
+    ].map((name) => name.toUpperCase());
+
+    const assignedToUpper = assignedTo ? assignedTo.trim().toUpperCase() : "";
+
+    // Check if user is in the grace period list
+    if (usersWithGracePeriod.includes(assignedToUpper)) {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+
+      const taskDateStr = taskDate.getTime();
+      const todayStr = today.getTime();
+      const yesterdayStr = yesterday.getTime();
+
+      if (taskDateStr !== todayStr && taskDateStr !== yesterdayStr) {
+        return "Disabled"; // Overdue task (more than 2 days old)
+      }
+    } else {
+      // For all other users: normal logic (only today's tasks)
+      if (taskDate.getTime() !== today.getTime()) {
+        return "Disabled"; // Overdue task
+      }
     }
   }
-  
+
   return "Pending";
 };
 
@@ -97,7 +130,7 @@ const MemoizedTaskRow = memo(({
   onRemarksChange,
   onImageUpload
 }) => {
-  const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"]);
+  const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"]);
   const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done" || taskStatus === "Disabled";
   const isNotToday = taskStatus === "Disabled";
 
@@ -601,7 +634,7 @@ const filteredAccountData = useMemo(() => {
       if (selectedStatus === "Admin Done") {
         return !isEmpty(account["col15"]) && account["col15"].toString().trim() === "Admin Done";
       } else {
-        const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"]);
+        const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"]);
         return taskStatus === selectedStatus;
       }
     });
@@ -632,25 +665,42 @@ const filteredAccountData = useMemo(() => {
     });
   }
 
-  // Sort: Today's tasks first, then by status and date
+  // Sort with grace period consideration
   return filtered.sort((a, b) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
     
     const dateA = parseDateFromDDMMYYYY(a["col6"]);
     const dateB = parseDateFromDDMMYYYY(b["col6"]);
     
+    // List of users who get 1-day grace period
+    const usersWithGracePeriod = [
+      "ARCHANA DAY",
+      "AMITA, POONIYA",
+      "INDRAJEET"
+    ].map(name => name.toUpperCase());
+    
+    const isAGracePeriodUser = a["col4"] && usersWithGracePeriod.includes(a["col4"].trim().toUpperCase());
+    const isBGracePeriodUser = b["col4"] && usersWithGracePeriod.includes(b["col4"].trim().toUpperCase());
+    
     const isATodayTask = dateA && dateA.setHours(0, 0, 0, 0) === today.getTime();
+    const isAYesterdayTask = isAGracePeriodUser && dateA && dateA.setHours(0, 0, 0, 0) === yesterday.getTime();
+    const isATodayOrYesterdayTask = isATodayTask || isAYesterdayTask;
+    
     const isBTodayTask = dateB && dateB.setHours(0, 0, 0, 0) === today.getTime();
+    const isBYesterdayTask = isBGracePeriodUser && dateB && dateB.setHours(0, 0, 0, 0) === yesterday.getTime();
+    const isBTodayOrYesterdayTask = isBTodayTask || isBYesterdayTask;
     
-    // Today's tasks always come first
-    if (isATodayTask && !isBTodayTask) return -1;
-    if (!isATodayTask && isBTodayTask) return 1;
+    // Today's (and yesterday's for grace period users) tasks always come first
+    if (isATodayOrYesterdayTask && !isBTodayOrYesterdayTask) return -1;
+    if (!isATodayOrYesterdayTask && isBTodayOrYesterdayTask) return 1;
     
-    // For today's tasks: Pending first, then sort by oldest
-    if (isATodayTask && isBTodayTask) {
-      const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"]);
-      const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"]);
+    // For today's/yesterday's tasks: Pending first, then sort by oldest
+    if (isATodayOrYesterdayTask && isBTodayOrYesterdayTask) {
+      const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"]);
+      const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"]);
       
       if (statusA === "Pending" && statusB !== "Pending") return -1;
       if (statusA !== "Pending" && statusB === "Pending") return 1;
@@ -669,8 +719,8 @@ const filteredAccountData = useMemo(() => {
     }
     
     // For non-today tasks: sort by status and date
-    const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"]);
-    const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"]);
+    const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"]);
+    const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"]);
     
     if (statusA === "Pending" && statusB !== "Pending") return -1;
     if (statusA !== "Pending" && statusB === "Pending") return 1;
@@ -808,7 +858,6 @@ const handleLoadMoreHistory = useCallback(() => {
     }
   }, [membersList, userRole, username])
 
- // fetchSheetData - Show only Pending and Overdue tasks in task page and ALL completed tasks in history
 const fetchSheetData = useCallback(async () => {
   try {
     setLoading(true)
@@ -840,7 +889,13 @@ const fetchSheetData = useCallback(async () => {
     tomorrow.setDate(today.getDate() + 1)
     const todayStr = formatDateToDDMMYYYY(today)
     const tomorrowStr = formatDateToDDMMYYYY(tomorrow)
-    console.log("Filtering dates:", { todayStr, tomorrowStr })
+    
+    // For users with grace period: also include yesterday's tasks
+    const yesterday = new Date(today)
+    yesterday.setDate(today.getDate() - 1)
+    const yesterdayStr = formatDateToDDMMYYYY(yesterday)
+    
+    console.log("Filtering dates:", { todayStr, tomorrowStr, yesterdayStr })
 
     const membersSet = new Set()
     let rows = []
@@ -852,6 +907,13 @@ const fetchSheetData = useCallback(async () => {
       rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }))
     }
 
+    // List of users who get 1-day grace period
+    const usersWithGracePeriod = [
+      "ARCHANA DAY",
+      "AMITA, POONIYA",
+      "INDRAJEET"
+    ].map(name => name.toUpperCase());
+
     rows.forEach((row, rowIndex) => {
       if (rowIndex === 0) return
       let rowValues = []
@@ -860,7 +922,6 @@ const fetchSheetData = useCallback(async () => {
       } else if (Array.isArray(row)) {
         rowValues = row
       } else {
-        // console.log("Unknown row format:", row)
         return
       }
 
@@ -878,7 +939,6 @@ const fetchSheetData = useCallback(async () => {
       const formattedRowDate = parseGoogleSheetsDateTime(rowDateStr)
       const googleSheetsRowIndex = rowIndex + 1
 
-      // Create stable unique ID using task ID and row index
       const taskId = rowValues[1] || ""
       const stableId = taskId
         ? `task_${taskId}_${googleSheetsRowIndex}`
@@ -902,11 +962,11 @@ const fetchSheetData = useCallback(async () => {
         { id: "col8", label: "Enable Reminders", type: "string" },
         { id: "col9", label: "Require Attachment", type: "string" },
         { id: "col10", label: "Actual", type: "datetime" },
-        { id: "col11", label: "Delay", type: "string" }, // Column L - Delay
+        { id: "col11", label: "Delay", type: "string" },
         { id: "col12", label: "Status", type: "string" },
         { id: "col13", label: "Remarks", type: "string" },
         { id: "col14", label: "Uploaded Image", type: "string" },
-        { id: "col15", label: "Admin Done", type: "string" }, // Column P
+        { id: "col15", label: "Admin Done", type: "string" },
       ]
 
       columnHeaders.forEach((header, index) => {
@@ -924,40 +984,45 @@ const fetchSheetData = useCallback(async () => {
         }
       })
 
-      // console.log(`Row ${rowIndex}: Task ID = ${rowData.col1}, Google Sheets Row = ${googleSheetsRowIndex}, Column K = ${columnKValue}`)
-
       const hasColumnG = !isEmpty(columnGValue)
-      const hasColumnK = !isEmpty(columnKValue) // Check if Column K (Actual Date) has data
+      const hasColumnK = !isEmpty(columnKValue)
       const isAdminDone = !isEmpty(columnPValue) && columnPValue.toString().trim() === "Admin Done"
 
-      // FIXED HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks)
+      // HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks)
       if (hasColumnG && hasColumnK) {
         const isUserHistoryMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
         if (isUserHistoryMatch) {
-          // console.log(`Adding to history: Task ID = ${rowData.col1}, Actual Date = ${columnKValue}`)
           historyRows.push(rowData)
         }
       }
 
-      // MODIFIED: For task page - show ONLY Pending and Overdue tasks (excluding Done and Admin Done)
+      // TASK PAGE LOGIC: Show Pending and Overdue tasks (excluding Done and Admin Done)
       if (hasColumnG) {
         const rowDate = parseDateFromDDMMYYYY(formattedRowDate)
         const isToday = formattedRowDate.startsWith(todayStr)
         const isTomorrow = formattedRowDate.startsWith(tomorrowStr)
+        const isYesterday = formattedRowDate.startsWith(yesterdayStr)
         const isPastDate = rowDate && rowDate <= today
-
+        
         // Only add to tasks if it's NOT done and NOT admin done
         const isNotDone = !hasColumnK && !isAdminDone
         
-        if ((isToday || isTomorrow || isPastDate) && isNotDone) {
-          // console.log(`Adding to tasks: Task ID = ${rowData.col1}, Status = Pending/Overdue`)
-          pendingAccounts.push(rowData)
+        const assignedToUpper = assignedTo.trim().toUpperCase();
+        const isUserWithGracePeriod = usersWithGracePeriod.includes(assignedToUpper);
+        
+        // For users with grace period: include today, tomorrow, yesterday, and past dates
+        if (isUserWithGracePeriod) {
+          if ((isToday || isTomorrow || isYesterday || isPastDate) && isNotDone) {
+            pendingAccounts.push(rowData)
+          }
+        } else {
+          // For all other users: normal logic (today, tomorrow, past dates)
+          if ((isToday || isTomorrow || isPastDate) && isNotDone) {
+            pendingAccounts.push(rowData)
+          }
         }
       }
     })
-
-    // console.log(`Total history rows collected: ${historyRows.length}`)
-    // console.log(`Total task rows collected: ${pendingAccounts.length}`)
 
     setMembersList(Array.from(membersSet).sort())
     setAccountData(pendingAccounts)
