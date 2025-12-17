@@ -135,7 +135,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       label: "Dashboard",
       icon: Database,
       active: location.pathname === "/dashboard/admin",
-      showFor: ["admin"] // Show for both roles
+      showFor: ["admin", "user"] // Show for both roles
     },
     {
       href: "/dashboard/quick-task",
