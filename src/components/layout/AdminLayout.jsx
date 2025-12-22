@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video } from 'lucide-react'
+import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar } from 'lucide-react'
 import sbhLogo from '../../assets/logo.png'
 
 export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
@@ -158,6 +158,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       icon: ClipboardList,
       active: location.pathname === "/dashboard/delegation",
       showFor: ["admin", "user"] // Only show for admin
+    },
+    {
+      href: "/dashboard/calendar",
+      label: "Calendar",
+      icon: Calendar,
+      active: location.pathname === "/dashboard/calendar",
+      showFor: ["admin", "user"] // Show for both roles
     },
     {
       href: "#",
