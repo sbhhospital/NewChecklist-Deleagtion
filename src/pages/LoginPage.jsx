@@ -1,26 +1,26 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
-import {Eye, EyeOff} from "lucide-react"
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 
 const LoginPage = () => {
-  const navigate = useNavigate()
-  const [isDataLoading, setIsDataLoading] = useState(false)
-  const [isLoginLoading, setIsLoginLoading] = useState(false)
+  const navigate = useNavigate();
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
   const [visible, setVisible] = useState(false);
   const [masterData, setMasterData] = useState({
     userCredentials: {}, // Object where keys are usernames and values are passwords
     userRoles: {},
-    userEmails: {} // Object where keys are usernames and values are roles
-  })
+    userEmails: {}, // Object where keys are usernames and values are roles
+  });
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-  })
-  const [toast, setToast] = useState({ show: false, message: "", type: "" })
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
-  const [loggedInUsername, setLoggedInUsername] = useState("")
+  });
+  const [toast, setToast] = useState({ show: false, message: "", type: "" });
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [loggedInUsername, setLoggedInUsername] = useState("");
 
   // Function to check if a role is any variation of "inactive"
   const isInactiveRole = (role) => {
@@ -30,37 +30,40 @@ const LoginPage = () => {
     const normalizedRole = String(role).toLowerCase().trim();
 
     // Check for different variations of "inactive" status
-    return normalizedRole === "inactive" ||
+    return (
+      normalizedRole === "inactive" ||
       normalizedRole === "in active" ||
       normalizedRole === "inactiv" ||
-      normalizedRole === "in activ";
-  }
+      normalizedRole === "in activ"
+    );
+  };
 
   // Fetch master data on component mount
   useEffect(() => {
     const fetchMasterData = async () => {
-      const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec"
+      const SCRIPT_URL =
+        "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
 
       try {
-        setIsDataLoading(true)
+        setIsDataLoading(true);
 
         // Get the spreadsheet ID from your Apps Script
-        const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+        const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
 
         // Construct the URL to read the sheet data directly
-        const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master`
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master`;
 
-        const response = await fetch(sheetUrl)
-        const text = await response.text()
+        const response = await fetch(sheetUrl);
+        const text = await response.text();
 
         // Parse the Google Sheets JSON response
-        const jsonString = text.substring(47).slice(0, -2) // Remove Google's wrapper
-        const data = JSON.parse(jsonString)
+        const jsonString = text.substring(47).slice(0, -2); // Remove Google's wrapper
+        const data = JSON.parse(jsonString);
 
         // Create userCredentials and userRoles objects from the sheet data
-        const userCredentials = {}
-        const userRoles = {}
-        const userEmails = {}
+        const userCredentials = {};
+        const userRoles = {};
+        const userEmails = {};
 
         // Process the data rows (skip header row if it exists)
         if (data.table && data.table.rows) {
@@ -68,18 +71,22 @@ const LoginPage = () => {
 
           // Start from index 1 to skip header row (adjust if needed)
           for (let i = 1; i < data.table.rows.length; i++) {
-            const row = data.table.rows[i]
+            const row = data.table.rows[i];
 
             // Extract data from columns C, D, E (indices 2, 3, 4)
-            const username = row.c[2] ? String(row.c[2].v || '').trim().toLowerCase() : '';
-            const password = row.c[3] ? String(row.c[3].v || '').trim() : '';
-            const role = row.c[4] ? String(row.c[4].v || '').trim() : 'user';
-            const email = row.c[5] ? String(row.c[5].v || '').trim() : '';
+            const username = row.c[2]
+              ? String(row.c[2].v || "")
+                  .trim()
+                  .toLowerCase()
+              : "";
+            const password = row.c[3] ? String(row.c[3].v || "").trim() : "";
+            const role = row.c[4] ? String(row.c[4].v || "").trim() : "user";
+            const email = row.c[5] ? String(row.c[5].v || "").trim() : "";
 
             //console.log(`Processing row ${i}: username=${username}, password=${password}, role=${role}`);
 
             // Only process if we have both username and password
-            if (username && password && password.trim() !== '') {
+            if (username && password && password.trim() !== "") {
               // Check if the role is any kind of inactive status
               if (isInactiveRole(role)) {
                 //console.log(`Skipping inactive user: ${username} with role: ${role}`);
@@ -99,56 +106,138 @@ const LoginPage = () => {
           }
         }
 
-        setMasterData({ userCredentials, userRoles, userEmails })
+        setMasterData({ userCredentials, userRoles, userEmails });
         //console.log("Loaded credentials from master sheet:", Object.keys(userCredentials).length)
         //console.log("Credentials map:", userCredentials)
         //console.log("Roles map:", userRoles)
 
         // Debug - check admin roles specifically
         const adminUsers = Object.entries(userRoles)
-          .filter(([, role]) => role === 'admin')
+          .filter(([, role]) => role === "admin")
           .map(([username]) => username);
         //console.log("Admin users found:", adminUsers);
-
       } catch (error) {
-        console.error("Error Fetching Master Data:", error)
+        console.error("Error Fetching Master Data:", error);
 
         // Fallback: Try the alternative method using your Apps Script
         try {
           //console.log("Trying alternative method...");
           const fallbackResponse = await fetch(SCRIPT_URL, {
-            method: 'GET'
-          })
+            method: "GET",
+          });
 
           if (fallbackResponse.ok) {
             //console.log("Apps Script is accessible, but getMasterData action needs to be implemented");
-            showToast("Unable to load user data. Please contact administrator.", "error")
+            showToast(
+              "Unable to load user data. Please contact administrator.",
+              "error"
+            );
           }
         } catch (fallbackError) {
           console.error("Fallback also failed:", fallbackError);
         }
 
-        showToast(`Network error: ${error.message}. Please try again later.`, "error")
+        showToast(
+          `Network error: ${error.message}. Please try again later.`,
+          "error"
+        );
       } finally {
-        setIsDataLoading(false)
+        setIsDataLoading(false);
       }
-    }
+    };
 
-    fetchMasterData()
-  }, [])
+    fetchMasterData();
+  }, []);
 
   const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setIsLoginLoading(true)
+  const logAttendance = async (username, role) => {
+    const SCRIPT_URL =
+      "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
+    const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
 
     try {
-      const trimmedUsername = formData.username.trim().toLowerCase()
-      const trimmedPassword = formData.password.trim()
+      // Step 1: Fetch sheet data using GVIZ to find the user's row
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance%20Login`;
+      const response = await fetch(sheetUrl);
+      const text = await response.text();
+      const jsonString = text.substring(47).slice(0, -2);
+      const data = JSON.parse(jsonString);
+
+      let rowIndex = -1;
+      // Search for the username in Column B (index 1)
+      if (data.table && data.table.rows) {
+        for (let i = 0; i < data.table.rows.length; i++) {
+          const row = data.table.rows[i];
+          const cellValue =
+            row.c && row.c[1]
+              ? String(row.c[1].v || "")
+                  .trim()
+                  .toLowerCase()
+              : "";
+
+          if (cellValue === username.trim().toLowerCase()) {
+            // i is 0-based index from the rows array
+            // User reported it was writing 1 row too high, so we increment by 2
+            // i=0 (likely first data row after header) -> should be Row 2 in sheet
+            rowIndex = i + 2;
+            break;
+          }
+        }
+      }
+
+      if (rowIndex === -1) {
+        console.warn(
+          "User not found in Attendance Login sheet for attendance logging"
+        );
+        return;
+      }
+
+      // Step 2: Update the specific row
+      const now = new Date();
+      const day = now.getDate().toString().padStart(2, "0");
+      const month = (now.getMonth() + 1).toString().padStart(2, "0");
+      const year = now.getFullYear();
+      const hours = now.getHours().toString().padStart(2, "0");
+      const minutes = now.getMinutes().toString().padStart(2, "0");
+      const seconds = now.getSeconds().toString().padStart(2, "0");
+
+      const formattedTimestamp = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+
+      const payload = new FormData();
+      payload.append("sheetName", "Attendance Login");
+      payload.append("action", "update");
+      payload.append("rowIndex", rowIndex.toString());
+
+      // We send a flat array to update specific columns
+      // Index 0 -> Column A: "" (No change)
+      // Index 1 -> Column B: "" (No change)
+      // Index 2 -> Column C: Timestamp
+      const rowData = ["", "", formattedTimestamp];
+
+      payload.append("rowData", JSON.stringify(rowData));
+
+      // Fire and forget - don't await to avoid blocking UI
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: payload,
+      }).catch((err) => console.error("Attendance logging failed", err));
+    } catch (error) {
+      console.error("Error preparing attendance log:", error);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoginLoading(true);
+
+    try {
+      const trimmedUsername = formData.username.trim().toLowerCase();
+      const trimmedPassword = formData.password.trim();
 
       //console.log("Login Attempt Details:")
       //console.log("Entered Username:", trimmedUsername)
@@ -159,9 +248,9 @@ const LoginPage = () => {
 
       // Check if the username exists in our credentials map
       if (trimmedUsername in masterData.userCredentials) {
-        const correctPassword = masterData.userCredentials[trimmedUsername]
-        const userRole = masterData.userRoles[trimmedUsername]
-        const userEmail = masterData.userEmails[trimmedUsername] || ''
+        const correctPassword = masterData.userCredentials[trimmedUsername];
+        const userRole = masterData.userRoles[trimmedUsername];
+        const userEmail = masterData.userEmails[trimmedUsername] || "";
 
         //console.log("Found user in credentials map")
         //console.log("Expected Password:", correctPassword)
@@ -169,74 +258,87 @@ const LoginPage = () => {
         //console.log("User Role:", userRole)
         //console.log("User Email:", userEmail)
 
-
         // Check if password matches
         if (correctPassword === trimmedPassword) {
           // Store user info in sessionStorage
-          sessionStorage.setItem('username', trimmedUsername)
-          sessionStorage.setItem('email', userEmail)
-          setLoggedInUsername(trimmedUsername) // Set the username for the popup
+          sessionStorage.setItem("username", trimmedUsername);
+          sessionStorage.setItem("email", userEmail);
+          setLoggedInUsername(trimmedUsername); // Set the username for the popup
 
           // Check if user is admin - explicitly compare with the string "admin"
           const isAdmin = userRole === "admin";
           //console.log(`User ${trimmedUsername} is admin: ${isAdmin}`);
 
           // Set role based on the fetched role
-          sessionStorage.setItem('role', isAdmin ? 'admin' : 'user')
+          sessionStorage.setItem("role", isAdmin ? "admin" : "user");
 
           // For admin users, we don't want to restrict by department
           if (isAdmin) {
-            sessionStorage.setItem('department', 'all') // Admin sees all departments
-            sessionStorage.setItem('isAdmin', 'true') // Additional flag to ensure admin permissions
+            sessionStorage.setItem("department", "all"); // Admin sees all departments
+            sessionStorage.setItem("isAdmin", "true"); // Additional flag to ensure admin permissions
             //console.log("ADMIN LOGIN - Setting full access permissions");
           } else {
-            sessionStorage.setItem('department', trimmedUsername)
-            sessionStorage.setItem('isAdmin', 'false')
+            sessionStorage.setItem("department", trimmedUsername);
+            sessionStorage.setItem("isAdmin", "false");
             //console.log("USER LOGIN - Setting restricted access");
           }
 
+          // Log attendance to Google Sheet
+          logAttendance(trimmedUsername, userRole);
+
           // Show success popup
-          setShowSuccessPopup(true)
+          setShowSuccessPopup(true);
 
           // After 2 seconds, navigate to dashboard
           setTimeout(() => {
-            navigate("/dashboard/admin")
-          }, 2000)
+            navigate("/dashboard/admin");
+          }, 2000);
 
-          showToast(`Login successful. Welcome, ${trimmedUsername}!`, "success")
-          return
+          showToast(
+            `Login successful. Welcome, ${trimmedUsername}!`,
+            "success"
+          );
+          return;
         } else {
-          showToast("Username or password is incorrect. Please try again.", "error")
+          showToast(
+            "Username or password is incorrect. Please try again.",
+            "error"
+          );
         }
       } else {
-        showToast("Username or password is incorrect. Please try again.", "error")
+        showToast(
+          "Username or password is incorrect. Please try again.",
+          "error"
+        );
       }
 
       // If we got here, login failed
       console.error("Login Failed", {
         usernameExists: trimmedUsername in masterData.userCredentials,
-        passwordMatch: (trimmedUsername in masterData.userCredentials) ?
-          "Password did not match" : 'Username not found',
-        userRole: masterData.userRoles[trimmedUsername] || 'No role'
-      })
+        passwordMatch:
+          trimmedUsername in masterData.userCredentials
+            ? "Password did not match"
+            : "Username not found",
+        userRole: masterData.userRoles[trimmedUsername] || "No role",
+      });
     } catch (error) {
-      console.error("Login Error:", error)
-      showToast(`Login failed: ${error.message}. Please try again.`, "error")
+      console.error("Login Error:", error);
+      showToast(`Login failed: ${error.message}. Please try again.`, "error");
     } finally {
-      setIsLoginLoading(false)
+      setIsLoginLoading(false);
     }
-  }
+  };
 
   const showToast = (message, type) => {
-    setToast({ show: true, message, type })
+    setToast({ show: true, message, type });
     setTimeout(() => {
-      setToast({ show: false, message: "", type: "" })
-    }, 5000) // Toast duration
-  }
+      setToast({ show: false, message: "", type: "" });
+    }, 5000); // Toast duration
+  };
 
   const togglePasswordVisibility = () => {
-  setVisible(!visible);
-}
+    setVisible(!visible);
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -388,6 +490,6 @@ const LoginPage = () => {
       )}
     </div>
   );
-}
+};
 
-export default LoginPage
+export default LoginPage;
