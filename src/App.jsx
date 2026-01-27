@@ -14,6 +14,7 @@ import QuickTask from "./pages/QuickTask"
 import License from "./pages/License"
 import TrainingVideo from "./pages/TrainingVideo"
 import Calendar from "./pages/Calendar"
+import SessionTimeout from "./components/SessionTimeout"
 // Auth wrapper component to protect routes
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const username = sessionStorage.getItem("username")
@@ -62,6 +63,7 @@ function App() {
 
   return (
     <Router>
+      <SessionTimeout />
       <Routes>
         {/* Root redirect */}
         <Route path="/" element={<Navigate to="/login" replace />} />

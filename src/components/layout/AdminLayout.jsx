@@ -14,9 +14,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   const [username, setUsername] = useState("")
   const [userRole, setUserRole] = useState("")
   const [userEmail, setUserEmail] = useState("")
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false) // NEW: Profile modal state
-  const [profileImage, setProfileImage] = useState(null) // NEW: Selected image file
-  const [isUploading, setIsUploading] = useState(false)
+
 
   // Check authentication on component mount
   useEffect(() => {
@@ -35,6 +33,33 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     setUserEmail(storedEmail || "")
   }, [navigate])
 
+  // Session Timer Logic
+  const [timeLeft, setTimeLeft] = useState("")
+
+  useEffect(() => {
+    const TIMEOUT_MS = 30 * 60 * 1000 // 30 Minutes
+
+    const updateTimer = () => {
+      const storedActivity = sessionStorage.getItem("lastActivity")
+      if (storedActivity) {
+        const lastActive = parseInt(storedActivity, 10)
+        const now = Date.now()
+        const elapsed = now - lastActive
+        const remaining = Math.max(0, TIMEOUT_MS - elapsed)
+
+        // Format time
+        const minutes = Math.floor(remaining / 60000)
+        const seconds = Math.floor((remaining % 60000) / 1000)
+        setTimeLeft(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`)
+      }
+    }
+
+    const intervalId = setInterval(updateTimer, 1000)
+    updateTimer() // Initial call
+
+    return () => clearInterval(intervalId)
+  }, [])
+
   // Handle logout
   const handleLogout = () => {
     sessionStorage.removeItem('username')
@@ -42,74 +67,6 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     sessionStorage.removeItem('department')
     sessionStorage.removeItem('email')
     navigate("/login")
-  }
-
-  // Handle profile image selection
-  const handleImageSelect = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      // Check if file is an image
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file')
-        return
-      }
-
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB')
-        return
-      }
-
-      setProfileImage(file)
-    }
-  }
-
-  // Upload profile image to Google Drive and update sheet
-  const uploadProfileImage = async () => {
-    if (!profileImage) {
-      alert('Please select an image first')
-      return
-    }
-
-    setIsUploading(true)
-
-    try {
-      // Create form data for the image
-      const formData = new FormData()
-      formData.append('image', profileImage)
-      formData.append('username', username)
-      formData.append('folderId', '16PdlZxWyzBHG4JrY3n2LOVF9EShNFs_Y')
-      formData.append('sheetId', '1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0')
-      formData.append('sheetName', 'Whatsapp')
-      formData.append('column', 'H')
-
-      // Upload to your Apps Script endpoint
-      const response = await fetch('https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec', {
-        method: 'POST',
-        body: formData
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        alert('Profile image uploaded successfully!')
-        setIsProfileModalOpen(false)
-        setProfileImage(null)
-      } else {
-        alert('Error uploading image: ' + result.message)
-      }
-    } catch (error) {
-      console.error('Upload error:', error)
-      alert('Failed to upload image. Please try again.')
-    } finally {
-      setIsUploading(false)
-    }
-  }
-
-  // Close profile modal
-  const closeProfileModal = () => {
-    setIsProfileModalOpen(false)
-    setProfileImage(null)
   }
 
 
@@ -257,17 +214,15 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                   <div>
                     <button
                       onClick={() => setIsDataSubmenuOpen(!isDataSubmenuOpen)}
-                      className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                        route.active
-                          ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                          : "text-gray-700 hover:bg-blue-50"
-                      }`}
+                      className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                        ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
+                        : "text-gray-700 hover:bg-blue-50"
+                        }`}
                     >
                       <div className="flex items-center gap-3">
                         <route.icon
-                          className={`h-4 w-4 ${
-                            route.active ? "text-blue-600" : ""
-                          }`}
+                          className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                            }`}
                         />
                         {route.label}
                       </div>
@@ -286,13 +241,12 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                                 category.link ||
                                 `/dashboard/data/${category.id}`
                               }
-                              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                                location.pathname ===
+                              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                 (category.link ||
                                   `/dashboard/data/${category.id}`)
-                                  ? "bg-blue-50 text-blue-700 font-medium"
-                                  : "text-gray-600 hover:bg-blue-50 hover:text-blue-700 "
-                              }`}
+                                ? "bg-blue-50 text-blue-700 font-medium"
+                                : "text-gray-600 hover:bg-blue-50 hover:text-blue-700 "
+                                }`}
                               onClick={() => setIsMobileMenuOpen(false)}
                             >
                               {category.name}
@@ -305,16 +259,14 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                 ) : (
                   <Link
                     to={route.href}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                      route.active
-                        ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                        : "text-gray-700 hover:bg-blue-50"
-                    }`}
+                    className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                      ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
+                      : "text-gray-700 hover:bg-blue-50"
+                      }`}
                   >
                     <route.icon
-                      className={`h-4 w-4 ${
-                        route.active ? "text-blue-600" : ""
-                      }`}
+                      className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                        }`}
                     />
                     {route.label}
                   </Link>
@@ -324,17 +276,23 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           </ul>
         </nav>
         <div className="border-t border-blue-200 p-4 bg-gradient-to-r from-blue-50 to-purple-50 ">
+          {/* Session Timer */}
+          <div className="mb-3 px-2 py-1.5 bg-blue-100/50 rounded-md border border-blue-200 flex justify-between items-center">
+            <span className="text-xs font-medium text-blue-600">Session expires:</span>
+            <span className={`text-xs font-mono font-bold ${timeLeft < "05:00" ? "text-red-500" : "text-blue-700"}`}>
+              {timeLeft}
+            </span>
+          </div>
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsProfileModalOpen(true)}
-                className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
-                title="Set Profile Image"
+              <div
+                className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center border border-black"
               >
-                <span className="text-sm font-medium text-white">
+                <span className="text-xl font-medium text-black">
                   {username ? username.charAt(0).toUpperCase() : "U"}
                 </span>
-              </button>
+              </div>
               <div>
                 <p className="text-sm font-medium text-blue-700">
                   {username || "User"} {userRole === "admin" ? "(Admin)" : ""}
@@ -445,17 +403,15 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                           onClick={() =>
                             setIsDataSubmenuOpen(!isDataSubmenuOpen)
                           }
-                          className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                            route.active
-                              ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                              : "text-gray-700 hover:bg-blue-50"
-                          }`}
+                          className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                            ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
+                            : "text-gray-700 hover:bg-blue-50"
+                            }`}
                         >
                           <div className="flex items-center gap-3">
                             <route.icon
-                              className={`h-4 w-4 ${
-                                route.active ? "text-blue-600" : ""
-                              }`}
+                              className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                                }`}
                             />
                             {route.label}
                           </div>
@@ -474,13 +430,12 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                                     category.link ||
                                     `/dashboard/data/${category.id}`
                                   }
-                                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                                    location.pathname ===
+                                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                     (category.link ||
                                       `/dashboard/data/${category.id}`)
-                                      ? "bg-blue-50 text-blue-700 font-medium"
-                                      : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
-                                  }`}
+                                    ? "bg-blue-50 text-blue-700 font-medium"
+                                    : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
+                                    }`}
                                   onClick={() => setIsMobileMenuOpen(false)}
                                 >
                                   {category.name}
@@ -493,17 +448,15 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                     ) : (
                       <Link
                         to={route.href}
-                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                          route.active
-                            ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                            : "text-gray-700 hover:bg-blue-50"
-                        }`}
+                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                          ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
+                          : "text-gray-700 hover:bg-blue-50"
+                          }`}
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         <route.icon
-                          className={`h-4 w-4 ${
-                            route.active ? "text-blue-600" : ""
-                          }`}
+                          className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                            }`}
                         />
                         {route.label}
                       </Link>
@@ -513,17 +466,23 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
               </ul>
             </nav>
             <div className="border-t border-blue-200 p-4 bg-gradient-to-r from-blue-50 to-purple-50">
+              {/* Session Timer */}
+              <div className="mb-3 px-2 py-1.5 bg-blue-100/50 rounded-md border border-blue-200 flex justify-between items-center">
+                <span className="text-xs font-medium text-blue-600">Session expires:</span>
+                <span className={`text-xs font-mono font-bold ${timeLeft < "05:00" ? "text-red-500" : "text-blue-700"}`}>
+                  {timeLeft}
+                </span>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsProfileModalOpen(true)}
-                    className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
-                    title="Set Profile Image"
+                  <div
+                    className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center border border-black"
                   >
-                    <span className="text-sm font-medium text-white">
+                    <span className="text-sm font-medium text-black">
                       {username ? username.charAt(0).toUpperCase() : "U"}
                     </span>
-                  </button>
+                  </div>
                   <div>
                     <p className="text-sm font-medium text-blue-700">
                       {username || "User"}{" "}
@@ -609,8 +568,24 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 items-center justify-between border-b border-blue-200 bg-white px-4 md:px-6">
           <div className="flex md:hidden w-8"></div>
-          <h1 className="text-lg font-semibold text-blue-700">
-            Checklist & Delegation
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <span style={{
+              background: 'linear-gradient(to right, #9333EA, #DB2777)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              color: 'transparent'
+            }}>
+              {(() => {
+                const hour = new Date().getHours()
+                let greeting = "Good Morning"
+                if (hour >= 12 && hour < 18) greeting = "Good Afternoon"
+                else if (hour >= 18) greeting = "Good Evening"
+
+                return `${greeting}, ${username ? username.toUpperCase() : "USER"}! Welcome On Board`
+              })()}
+            </span>
+            <span className="animate-bounce inline-block">👋</span>
           </h1>
           {/*<button
             onClick={() => setIsLicenseModalOpen(true)}
@@ -636,64 +611,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           </div>
         </main>
       </div>
-      {/* Profile Image Modal */}
-      {isProfileModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-blue-700">
-                Set Profile Image
-              </h3>
-              <button
-                onClick={closeProfileModal}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Profile Image
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageSelect}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-            </div>
-
-            {profileImage && (
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">Preview:</p>
-                <img
-                  src={URL.createObjectURL(profileImage)}
-                  alt="Profile preview"
-                  className="h-24 w-24 rounded-full object-cover mx-auto border-2 border-blue-200"
-                />
-              </div>
-            )}
-
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={closeProfileModal}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-                disabled={isUploading}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={uploadProfileImage}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                disabled={!profileImage || isUploading}
-              >
-                {isUploading ? "Uploading..." : "Upload Image"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
