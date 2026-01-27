@@ -593,13 +593,8 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
   if (loading)
     return (
       <AdminLayout>
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 px-4">
-          <div className="relative">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-          </div>
-          <p className="mt-6 text-lg sm:text-xl font-semibold text-gray-700 animate-pulse text-center">
-            Loading calendar data...
-          </p>
+        <div className="flex justify-center items-center h-[calc(100vh-4rem)]">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
         </div>
       </AdminLayout>
     );
@@ -607,29 +602,12 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
   if (error)
     return (
       <AdminLayout>
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-50 via-pink-50 to-rose-50 p-4">
-          <div className="bg-white p-6 sm:p-10 rounded-3xl shadow-2xl max-w-md w-full border-2 border-red-100">
-            <div className="flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 mx-auto bg-gradient-to-br from-red-500 to-pink-500 rounded-full shadow-lg">
-              <svg
-                className="w-8 h-8 sm:w-10 sm:h-10 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </div>
-            <h3 className="mt-6 text-xl sm:text-2xl font-bold text-center text-gray-900">
-              {error}
-            </h3>
+        <div className="flex justify-center items-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <p className="text-red-500 text-xl mb-4">{error}</p>
             <button
               onClick={fetchData}
-              className="mt-6 w-full px-6 py-3 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-xl hover:from-red-600 hover:to-pink-600 transition-all duration-200 shadow-md hover:shadow-lg font-semibold"
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
             >
               Retry
             </button>
@@ -640,31 +618,15 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-purple-100 py-4 sm:py-8 px-2 sm:px-4">
+      <div className="space-y-6 p-4">
         <div className="max-w-7xl mx-auto">
           {/* Header Card */}
-          <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 mb-3 border border-gray-100">
-            <div className="flex flex-col gap-2 sm:gap-3">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+            <div className="flex flex-col gap-2 sm:gap-3 w-full">
               {/* Header Section with Buttons on Right - Single Row */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg">
-                    <svg
-                      className="w-4 h-4 sm:w-5 sm:h-5 text-white"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </div>
-
-                  <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                  <h1 className="text-2xl font-bold tracking-tight text-purple-500">
                     Task Calendar
                   </h1>
                 </div>
@@ -692,9 +654,8 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
                     className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg
-                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                        loading ? "animate-spin" : ""
-                      }`}
+                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${loading ? "animate-spin" : ""
+                        }`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -738,7 +699,7 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
           </div>
 
           {/* Calendar */}
-          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-2 sm:p-8 border border-indigo-100">
+          <div className="bg-white rounded-lg border border-purple-200 shadow-md p-4 sm:p-6">
             <style>{`
               .fc-event {
                 background-color: transparent !important;
@@ -758,31 +719,80 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
               }
               .fc .fc-toolbar {
                 flex-direction: column;
-                gap: 0.5rem;
+                gap: 1rem;
               }
               @media (min-width: 640px) {
                 .fc .fc-toolbar {
                   flex-direction: row;
+                  align-items: center;
+                  justify-content: space-between;
                 }
               }
+              .fc .fc-toolbar-title {
+                font-size: 1.25rem !important;
+                font-weight: 700 !important;
+                color: #4b5563 !important; /* gray-700 */
+              }
+              .fc .fc-button-primary {
+                background-color: #9333ea !important; /* purple-600 */
+                border-color: #9333ea !important;
+                padding: 0.5rem 1rem !important;
+                font-size: 0.875rem !important;
+                font-weight: 500 !important;
+                border-radius: 0.5rem !important;
+                text-transform: capitalize !important;
+                transition: all 0.2s !important;
+                box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+              }
+              .fc .fc-button-primary:hover {
+                background-color: #7e22ce !important; /* purple-700 */
+                border-color: #7e22ce !important;
+              }
+              .fc .fc-button-primary:not(:disabled).fc-button-active,
+              .fc .fc-button-primary:not(:disabled):active {
+                background-color: #6b21a8 !important; /* purple-800 */
+                border-color: #6b21a8 !important;
+              }
+              .fc .fc-button-primary:focus {
+                box-shadow: 0 0 0 2px #d8b4fe !important; /* purple-300 ring */
+              }
+              .fc .fc-button-primary:disabled {
+                background-color: #d1d5db !important;
+                border-color: #d1d5db !important;
+              }
+              
+              /* Headers */
+              .fc-theme-standard th {
+                border-color: #e9d5ff !important; /* purple-200 */
+                background-color: #faf5ff !important; /* purple-50 */
+                padding: 0.75rem !important;
+              }
+              .fc-col-header-cell-cushion {
+                color: #6b21a8 !important; /* purple-800 */
+                font-weight: 600 !important;
+                text-transform: uppercase !important;
+                font-size: 0.75rem !important;
+                letter-spacing: 0.05em !important;
+              }
+              
+              /* Grid Cells */
+              .fc-theme-standard td {
+                border-color: #f3f4f6 !important; /* gray-100 */
+              }
+              .fc-day-today {
+                background-color: #faf5ff !important; /* purple-50 */
+              }
+              
+              .fc .fc-daygrid-day-number {
+                padding: 0.5rem !important;
+                color: #374151 !important; /* gray-700 */
+                font-weight: 500 !important;
+              }
+              
               .fc .fc-toolbar-chunk {
                 display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 0.25rem;
-              }
-              .fc .fc-button {
-                padding: 0.375rem 0.75rem !important;
-                font-size: 0.875rem !important;
-              }
-              @media (min-width: 640px) {
-                .fc .fc-button {
-                  padding: 0.5rem 1rem !important;
-                  font-size: 1rem !important;
-                }
-              }
-              .fc-theme-standard td, .fc-theme-standard th {
-                border-color: #e5e7eb;
+                gap: 0.5rem;
+                align-items: center;
               }
             `}</style>
             <FullCalendar
@@ -830,11 +840,11 @@ const CalendarUI = ({ userRole, userName, displayName }) => {
               validRange={
                 lastWorkingDate
                   ? {
-                      start: new Date(
-                        new Date().setDate(new Date().getDate() + 1)
-                      ),
-                      end: lastWorkingDate,
-                    }
+                    start: new Date(
+                      new Date().setDate(new Date().getDate() + 1)
+                    ),
+                    end: lastWorkingDate,
+                  }
                   : {}
               }
               eventContent={(arg) => {
@@ -1034,11 +1044,10 @@ const TaskModal = ({
           <div className="flex flex-wrap gap-2 mb-3">
             <button
               onClick={() => setStatusFilter("all")}
-              className={`px-3 sm:px-4 py-1.5 rounded-lg font-medium transition-all text-xs sm:text-sm ${
-                statusFilter === "all"
-                  ? "bg-gray-800 text-white shadow-sm"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
+              className={`px-3 sm:px-4 py-1.5 rounded-lg font-medium transition-all text-xs sm:text-sm ${statusFilter === "all"
+                ? "bg-gray-800 text-white shadow-sm"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
             >
               All Tasks
             </button>
@@ -1076,9 +1085,8 @@ const TaskModal = ({
             </select>
             <input
               type="text"
-              placeholder={`Search by ${
-                filterType === "name" ? "person name" : "task ID"
-              }...`}
+              placeholder={`Search by ${filterType === "name" ? "person name" : "task ID"
+                }...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg text-gray-700 placeholder-gray-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1160,11 +1168,10 @@ const TaskModal = ({
                               </span>
                             )}
                             <span
-                              className={`px-2 py-1 rounded-md font-medium ${
-                                t.status === "done"
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                              }`}
+                              className={`px-2 py-1 rounded-md font-medium ${t.status === "done"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-yellow-100 text-yellow-700"
+                                }`}
                             >
                               {t.status === "done"
                                 ? "✓ Completed"
@@ -1181,8 +1188,8 @@ const TaskModal = ({
                                     t.priority === "high"
                                       ? "#ef4444"
                                       : t.priority === "medium"
-                                      ? "#f59e0b"
-                                      : "#10b981",
+                                        ? "#f59e0b"
+                                        : "#10b981",
                                 }}
                               >
                                 {t.priority.toUpperCase()}
