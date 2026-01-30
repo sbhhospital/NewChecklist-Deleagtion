@@ -27,11 +27,11 @@ const SessionTimeout = () => {
                 if (now - startTime > TIMEOUT_MS) {
                     console.log("Session expired (on load)");
                     sessionStorage.clear();
-                    navigate("/login");
+                    window.location.href = "/login";
                     return;
                 }
 
-                // RESTORE existing start time (do not reset)
+                // RESTORE existing start time
                 sessionStartRef.current = startTime;
             } else {
                 // First time setting it for this session (Login)
@@ -43,27 +43,50 @@ const SessionTimeout = () => {
         // Run immediate check on mount
         checkAndSetSessionStart();
 
+        const updateSessionActivity = () => {
+            if (sessionStorage.getItem("username")) {
+                const now = Date.now();
+                sessionStorage.setItem("lastActivity", now.toString());
+                sessionStartRef.current = now;
+            }
+        };
+
+        // Throttling to prevent excessive writes
+        let lastUpdate = 0;
+        const THROTTLE_MS = 1000;
+
+        // Event listeners for activity
+        const handleActivity = () => {
+            const now = Date.now();
+            if (now - lastUpdate > THROTTLE_MS) {
+                updateSessionActivity();
+                lastUpdate = now;
+            }
+        };
+
+        // Add event listeners
+        window.addEventListener('mousemove', handleActivity);
+        window.addEventListener('keydown', handleActivity);
+        window.addEventListener('click', handleActivity);
+        window.addEventListener('scroll', handleActivity);
+
         const checkTimeout = () => {
             const username = sessionStorage.getItem("username");
 
             // Only enforce timeout if user is logged in
             if (username) {
                 const now = Date.now();
-                const startTime = sessionStartRef.current;
-
-                // Sync the start time to storage (redundant but safe)
-                // We do NOT update startTime on activity anymore.
+                // Read directly from storage to sync across tabs/updates
+                const storedActivity = sessionStorage.getItem("lastActivity");
+                const startTime = storedActivity ? parseInt(storedActivity, 10) : sessionStartRef.current;
 
                 if (now - startTime > TIMEOUT_MS) {
                     console.log("Session expired due to time limit");
                     sessionStorage.clear();
-                    navigate("/login");
+                    window.location.href = "/login";
                 }
             }
         };
-
-        // NO event listeners for activity tracking anymore.
-        // The session is fixed length from login/start.
 
         // Start the interval check
         const intervalId = setInterval(checkTimeout, CHECK_INTERVAL);
@@ -71,6 +94,10 @@ const SessionTimeout = () => {
         // Cleanup
         return () => {
             clearInterval(intervalId);
+            window.removeEventListener('mousemove', handleActivity);
+            window.removeEventListener('keydown', handleActivity);
+            window.removeEventListener('click', handleActivity);
+            window.removeEventListener('scroll', handleActivity);
         };
     }, [navigate]);
 
