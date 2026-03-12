@@ -1857,17 +1857,7 @@ export default function AdminDashboard() {
                                       ? filteredDateStats.completionRate
                                       : departmentData.completionRate
                                     }%`,
-                                  background: `linear-gradient(to right, #10b981 ${(dashboardType === "delegation"
-                                    ? departmentData.completionRate
-                                    : dateRange.filtered
-                                      ? filteredDateStats.completionRate
-                                      : departmentData.completionRate) * 0.8
-                                    }%, #f59e0b ${(dashboardType === "delegation"
-                                      ? departmentData.completionRate
-                                      : dateRange.filtered
-                                        ? filteredDateStats.completionRate
-                                        : departmentData.completionRate) * 0.8
-                                    }%)`,
+                                  backgroundColor: "#10b981",
                                 }}
                               >
                                 {dashboardType === "delegation"
