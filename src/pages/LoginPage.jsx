@@ -158,6 +158,43 @@ const LoginPage = () => {
     const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
 
     try {
+      // Fetch IP
+      let clientIp = "—";
+      try {
+        const ipRes = await fetch("https://api.ipify.org?format=json");
+        if (ipRes.ok) {
+          const ipData = await ipRes.json();
+          clientIp = ipData.ip;
+        }
+      } catch (ipErr) {
+        console.warn("Could not fetch client IP:", ipErr);
+      }
+
+      // Detect Browser
+      const userAgent = navigator.userAgent;
+      let browserName = "Unknown";
+      if (userAgent.indexOf("Firefox") > -1) browserName = "Firefox";
+      else if (userAgent.indexOf("Chrome") > -1) browserName = "Chrome";
+      else if (userAgent.indexOf("Safari") > -1) browserName = "Safari";
+      else if (userAgent.indexOf("MSIE") > -1 || !!document.documentMode === true) browserName = "IE";
+      
+      // Detect Device/OS
+      let devicePlatform = navigator.platform || "Unknown";
+
+      // Call recordLogin action
+      const recordPayload = new FormData();
+      recordPayload.append("action", "recordLogin");
+      recordPayload.append("username", username);
+      recordPayload.append("ip", clientIp);
+      recordPayload.append("browser", browserName);
+      recordPayload.append("device", devicePlatform);
+
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: recordPayload,
+      }).catch((err) => console.error("Login History logging failed", err));
+
       // Step 1: Fetch sheet data using GVIZ to find the user's row
       const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance%20Login`;
       const response = await fetch(sheetUrl);
@@ -417,15 +454,8 @@ const LoginPage = () => {
             </button>
           </div>
         </form>
-        <div className="fixed left-0 right-0 bottom-0 py-1 px-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-center text-sm shadow-md z-10">
-          <a
-            href="https://www.botivate.in/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-          >
-            Powered by-<span className="font-semibold">Botivate</span>
-          </a>
+        <div className="fixed left-0 right-0 bottom-0 py-1 px-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-center text-sm shadow-md z-10 font-medium">
+          Designed & Managed by Naman Mishra (IT Department | SBH Group of Hospitals)
         </div>
       </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar } from 'lucide-react'
+import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar, TrendingUp } from 'lucide-react'
 import sbhLogo from '../../assets/logo.png'
 
 export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
@@ -93,6 +93,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       icon: Database,
       active: location.pathname === "/dashboard/admin",
       showFor: ["admin", "user"] // Show for both roles
+    },
+    {
+      href: "/dashboard/performance",
+      label: "Performance",
+      icon: TrendingUp,
+      active: location.pathname === "/dashboard/performance",
+      showFor: ["admin", "user"]
     },
     {
       href: "/dashboard/quick-task",
@@ -596,17 +603,10 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           </button>
           */}
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-10">
-            <a
-              href="https://www.botivate.in/" // Replace with actual URL
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline"
-            >
-              Powered by-<span className="font-semibold">Botivate</span>
-            </a>
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-10 font-medium">
+            Designed & Managed by Naman Mishra (IT Department | SBH Group of Hospitals)
           </div>
         </main>
       </div>

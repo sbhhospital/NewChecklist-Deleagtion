@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import LoginPage from "./pages/LoginPage"
 import AdminDashboard from "./pages/admin/Dashboard"
 import AdminAssignTask from "./pages/admin/AssignTask"
+import PerformanceDashboard from "./pages/admin/Performance"
 // import AllTasks from "./pages/admin/AllTasks"
 import DataPage from "./pages/admin/DataPage"
 import AdminDataPage from "./pages/admin/admin-data-page"
@@ -80,6 +81,14 @@ function App() {
           element={
             <ProtectedRoute>
               <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/performance"
+          element={
+            <ProtectedRoute>
+              <PerformanceDashboard />
             </ProtectedRoute>
           }
         />

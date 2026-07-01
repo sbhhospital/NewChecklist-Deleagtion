@@ -48,6 +48,7 @@ function useDebounce(value, delay) {
 
 function DelegationDataPage() {
   const [accountData, setAccountData] = useState([]);
+  const [unfilteredDelegationData, setUnfilteredDelegationData] = useState([]);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -65,6 +66,8 @@ function DelegationDataPage() {
   const [userRole, setUserRole] = useState("");
   const [username, setUsername] = useState("");
   const [nameFilter, setNameFilter] = useState("");
+  const [staffSearchText, setStaffSearchText] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [dateFilter, setDateFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false); // NEW: Filter toggle state
@@ -266,6 +269,145 @@ function DelegationDataPage() {
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }, []);
 
+  const calculateTaskScore = useCallback((task, history) => {
+    const taskId = task["col1"];
+    
+    // Count extensions from history
+    let extensionCount = 0;
+    if (history && Array.isArray(history)) {
+      extensionCount = history.filter(
+        (h) => h["col1"] === taskId && h["col2"] === "Extend date"
+      ).length;
+    } else if (task["col10"] && task["col6"] && task["col10"] !== task["col6"]) {
+      extensionCount = 1;
+    }
+    
+    // Calculate delay penalty
+    let delayDays = 0;
+    const deadlineStr = task["col10"] || task["col6"] || "";
+    const deadlineDate = parseDateFromDDMMYYYY(deadlineStr);
+
+    const isDone = task["col20"] === "Done";
+    const actualStr = task["col11"] || "";
+    const actualDate = parseDateFromDDMMYYYY(actualStr);
+
+    const cutoffDate = new Date(2026, 5, 24); // June 24, 2026
+    cutoffDate.setHours(0, 0, 0, 0);
+
+    if (isDone && actualDate && actualDate < cutoffDate) {
+      // Forgive penalties for tasks completed before June 24, 2026
+      extensionCount = 0;
+      delayDays = 0;
+    } else {
+      if (deadlineDate) {
+        if (isDone) {
+          if (actualDate && actualDate > deadlineDate) {
+            const diffTime = actualDate - deadlineDate;
+            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          } else {
+            const col12Val = parseInt(task["col12"], 10);
+            if (!isNaN(col12Val) && col12Val > 0) {
+              delayDays = col12Val;
+            }
+          }
+        } else {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (today > deadlineDate) {
+            const diffTime = today - deadlineDate;
+            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          }
+        }
+      }
+    }
+
+    // Progressive penalty: 1st extension = 10, 2nd = 20, 3rd = 30... (Sum of 10*i)
+    const extensionPenalty = 5 * extensionCount * (extensionCount + 1);
+    const delayPenalty = delayDays * 20;
+    const penalty = extensionPenalty + delayPenalty;
+    const score = Math.max(0, 100 - penalty);
+
+    return {
+      score,
+      penalty,
+      extensionCount,
+      delayDays,
+      extensionPenalty,
+      delayPenalty,
+    };
+  }, [parseDateFromDDMMYYYY]);
+
+  const scoringSummary = useMemo(() => {
+    let tasksToScore = unfilteredDelegationData;
+    if (nameFilter) {
+      tasksToScore = unfilteredDelegationData.filter(
+        (t) => t["col4"] && t["col4"].toLowerCase() === nameFilter.toLowerCase()
+      );
+    } else if (userRole !== "admin") {
+      tasksToScore = unfilteredDelegationData.filter(
+        (t) => t["col4"] && t["col4"].toLowerCase() === username.toLowerCase()
+      );
+    }
+
+    if (tasksToScore.length === 0) {
+      return {
+        avgScore: 100,
+        avgPenalty: 0,
+        totalPenaltyPoints: 0,
+        totalTasks: 0,
+        completedTasks: 0,
+        extendedTasks: 0,
+        lateTasks: 0
+      };
+    }
+
+    let totalScoreSum = 0;
+    let totalPenaltySum = 0;
+    let thisMonthPenaltySum = 0;
+    let completedCount = 0;
+    let extendedCount = 0;
+    let lateCount = 0;
+
+    const currentMonthDate = new Date();
+    const currentMonth = currentMonthDate.getMonth();
+    const currentYear = currentMonthDate.getFullYear();
+
+    tasksToScore.forEach((task) => {
+      const scoreDetails = calculateTaskScore(task, historyData);
+      totalScoreSum += scoreDetails.score;
+      totalPenaltySum += scoreDetails.penalty;
+      
+      const taskStartDate = task["col6"];
+      if (taskStartDate) {
+          const taskDateObj = parseDateFromDDMMYYYY(taskStartDate);
+          if (taskDateObj && taskDateObj.getMonth() === currentMonth && taskDateObj.getFullYear() === currentYear) {
+              thisMonthPenaltySum += scoreDetails.penalty;
+          }
+      }
+      
+      if (task["col20"] === "Done") {
+        completedCount++;
+      }
+      if (scoreDetails.extensionCount > 0) {
+        extendedCount++;
+      }
+      if (scoreDetails.delayDays > 0) {
+        lateCount++;
+      }
+    });
+
+    return {
+      avgScore: Math.round(totalScoreSum / tasksToScore.length),
+      avgPenalty: Math.round(totalPenaltySum / tasksToScore.length),
+      totalPenaltyPoints: totalPenaltySum,
+      thisMonthPenaltyPoints: thisMonthPenaltySum,
+      totalTasks: tasksToScore.length,
+      completedTasks: completedCount,
+      extendedTasks: extendedCount,
+      lateTasks: lateCount
+    };
+  }, [unfilteredDelegationData, nameFilter, userRole, username, calculateTaskScore, historyData]);
+
   const sortDateWise = useCallback(
     (a, b) => {
       const dateStrA = a["col6"] || "";
@@ -334,7 +476,7 @@ function DelegationDataPage() {
           textColor: "text-gray-800",
         };
 
-      const delegationItem = delegationData.find(
+      const delegationItem = unfilteredDelegationData.find(
         (item) => item["col1"] === taskId
       );
       if (!delegationItem)
@@ -673,6 +815,7 @@ function DelegationDataPage() {
       // Process main delegation data - ADD USER FILTERING LOGIC
       // Process main delegation data - ADD USER FILTERING LOGIC
       const allDelegationData = [];
+      const rawDelegationList = [];
 
       let rows = [];
       if (data.table && data.table.rows) {
@@ -726,6 +869,16 @@ function DelegationDataPage() {
           }
         }
 
+        // Store for scoring calculation (filtered only by user if not admin, but KEEP "Done" tasks)
+        const isUserMatch =
+          userRole === "admin" ||
+          (rowData["col4"] &&
+            rowData["col4"].toLowerCase().trim() ===
+              username.toLowerCase().trim());
+        if (isUserMatch) {
+          rawDelegationList.push(rowData);
+        }
+
         // ✅ User filtering logic
         if (userRole !== "admin") {
           const taskAssignedTo = rowData["col4"]; // Column E (Name)
@@ -746,6 +899,7 @@ function DelegationDataPage() {
         allDelegationData.push(rowData);
       });
 
+      setUnfilteredDelegationData(rawDelegationList);
       setAccountData(allDelegationData);
       setDelegationData(allDelegationData);
       setLoading(false);
@@ -1610,12 +1764,119 @@ function DelegationDataPage() {
           </div>
         )}
 
+        {/* User Selection Dropdown for Admin */}
+        {userRole === "admin" && (
+          <div className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
+            <span className="text-sm font-semibold text-purple-700 uppercase tracking-wider">
+              Search Staff Member:
+            </span>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Type name to search..."
+                value={staffSearchText}
+                onChange={(e) => {
+                  const txt = e.target.value;
+                  setStaffSearchText(txt);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                className="border border-purple-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm uppercase font-semibold bg-purple-50/20"
+              />
+              {showSuggestions && (
+                <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-50 divide-y divide-slate-50 min-w-[220px]">
+                  <div
+                    onClick={() => {
+                      setNameFilter("");
+                      setStaffSearchText("");
+                      setShowSuggestions(false);
+                    }}
+                    className="px-4 py-2 hover:bg-purple-50 text-xs font-bold text-slate-500 uppercase cursor-pointer"
+                  >
+                    All Staff Members (Reset)
+                  </div>
+                  {uniqueNames.filter(n => n.toLowerCase().includes(staffSearchText.toLowerCase())).map(name => (
+                    <div
+                      key={name}
+                      onClick={() => {
+                        setNameFilter(name);
+                        setStaffSearchText(name);
+                        setShowSuggestions(false);
+                      }}
+                      className="px-4 py-2 hover:bg-purple-600 hover:text-white text-xs font-bold text-slate-700 uppercase cursor-pointer"
+                    >
+                      {name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {nameFilter && (
+              <span className="text-xs text-purple-600 font-medium">
+                Showing delegation performance and tasks for <strong className="uppercase">{nameFilter}</strong>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Scoring Summary Cards */}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-6 mt-4">
+          <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
+            <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Avg Rating</span>
+            <div className="flex flex-col mt-2">
+              <span className={`text-3xl font-extrabold ${
+                scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
+              }`}>
+                {scoringSummary.avgScore}%
+              </span>
+            </div>
+            <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/20 to-white shadow-sm flex flex-col justify-between">
+            <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending Tasks</span>
+            <span className="text-3xl font-extrabold text-amber-600 mt-2">
+              {scoringSummary.totalTasks - scoringSummary.completedTasks}
+            </span>
+            <span className="text-[10px] text-gray-500 mt-1">Remaining to complete</span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Tasks</span>
+            <span className="text-3xl font-extrabold text-gray-800 mt-2">{scoringSummary.totalTasks}</span>
+            <span className="text-[10px] text-gray-500 mt-1">Assigned Tasks</span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+            <span className="text-xs font-semibold text-green-600 uppercase tracking-wider">Completed</span>
+            <span className="text-3xl font-extrabold text-green-600 mt-2">{scoringSummary.completedTasks}</span>
+            <span className="text-[10px] text-gray-500 mt-1">Tasks Completed</span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+            <span className="text-xs font-semibold text-yellow-600 uppercase tracking-wider">Extended</span>
+            <span className="text-3xl font-extrabold text-yellow-600 mt-2">{scoringSummary.extendedTasks}</span>
+            <span className="text-[10px] text-gray-500 mt-1">Tasks Extended</span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between col-span-2 md:col-span-1">
+            <span className="text-xs font-semibold text-red-600 uppercase tracking-wider">Late / Overdue</span>
+            <span className="text-3xl font-extrabold text-red-600 mt-2">{scoringSummary.lateTasks}</span>
+            <span className="text-[10px] text-gray-500 mt-1">Submitted / Pending Late</span>
+          </div>
+        </div>
+
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
-            <h2 className="text-purple-700 font-medium">
-              {showHistory
-                ? `Completed ${CONFIG.SOURCE_SHEET_NAME} Tasks`
-                : `Pending ${CONFIG.SOURCE_SHEET_NAME} Tasks`}
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4 flex justify-between items-center">
+            <h2 className="text-purple-700 font-medium flex items-center gap-2">
+              <span>
+                {showHistory
+                  ? `Completed ${CONFIG.SOURCE_SHEET_NAME} Tasks`
+                  : `Pending ${CONFIG.SOURCE_SHEET_NAME} Tasks`}
+              </span>
+              <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">
+                {showHistory ? scoringSummary.completedTasks : (scoringSummary.totalTasks - scoringSummary.completedTasks)} / {scoringSummary.totalTasks} Tasks
+              </span>
             </h2>
             <p className="text-purple-600 text-sm">
               {showHistory
@@ -1709,6 +1970,9 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Submission Status
                         </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Task Score
+                        </th>
                         {/* Admin Select Column Header */}
                         {userRole === "admin" && (
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
@@ -1790,7 +2054,9 @@ function DelegationDataPage() {
                           const submissionStatus = getSubmissionStatus(
                             history["col1"]
                           ); // NEW: Get submission status
-                          console.log("submissionStatus", submissionStatus);
+                          const matchingTask = unfilteredDelegationData.find(
+                            (task) => task["col1"] === history["col1"]
+                          );
 
                           return (
                             <tr
@@ -1849,6 +2115,45 @@ function DelegationDataPage() {
                                 >
                                   {submissionStatus.status}
                                 </span>
+                              </td>
+                              {/* Task Score Column */}
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold">
+                                  {(() => {
+                                    if (matchingTask) {
+                                      const scoreDetails = calculateTaskScore(matchingTask, historyData);
+                                      let scoreColor = "text-red-600";
+                                      if (scoreDetails.score >= 80) scoreColor = "text-green-600";
+                                      return (
+                                        <div className="flex flex-col text-xs space-y-0.5">
+                                          <span className={`font-bold ${scoreColor}`}>
+                                            Score: {scoreDetails.score} Pts
+                                          </span>
+                                          {scoreDetails.penalty > 0 ? (
+                                            <>
+                                              <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
+                                                Total Penalty: {scoreDetails.penalty} Pts
+                                              </span>
+                                              {scoreDetails.extensionCount > 0 && (
+                                                <span className="text-gray-500">
+                                                  Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                                                </span>
+                                              )}
+                                              {scoreDetails.delayDays > 0 && (
+                                                <span className="text-red-500">
+                                                  Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
+                                                </span>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <span className="text-green-600 font-bold">0 Pts (On Time)</span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return <span className="text-gray-400">—</span>;
+                                  })()}
+                                </div>
                               </td>
                               {/* Admin Select Checkbox */}
                               {userRole === "admin" && (
@@ -2185,6 +2490,9 @@ function DelegationDataPage() {
                           Status
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Task Score
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Task Start Date
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2277,6 +2585,43 @@ function DelegationDataPage() {
                                 >
                                   {account["col20"] || "—"}
                                 </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold">
+                                  {(() => {
+                                    const scoreDetails = calculateTaskScore(account, historyData);
+                                    let scoreColor = "text-red-600";
+                                    if (scoreDetails.score >= 80) scoreColor = "text-green-600";
+                                    else if (scoreDetails.score >= 50) scoreColor = "text-yellow-600";
+                                    
+                                    return (
+                                        <div className="flex flex-col text-xs space-y-0.5">
+                                          <span className={`font-bold ${scoreColor}`}>
+                                            Score: {scoreDetails.score} Pts
+                                          </span>
+                                          {scoreDetails.penalty > 0 ? (
+                                            <>
+                                              <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
+                                                Total Penalty: {scoreDetails.penalty} Pts
+                                              </span>
+                                              {scoreDetails.extensionCount > 0 && (
+                                                <span className="text-gray-500">
+                                                  Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                                                </span>
+                                              )}
+                                              {scoreDetails.delayDays > 0 && (
+                                                <span className="text-red-500">
+                                                  Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
+                                                </span>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <span className="text-green-600 font-bold">0 Pts (On Time)</span>
+                                          )}
+                                        </div>
+                                      );
+                                  })()}
+                                </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
