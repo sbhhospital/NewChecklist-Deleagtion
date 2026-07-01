@@ -269,6 +269,7 @@ function doPost(e) {
 }
     
     // NEW: Add updateAdminDone action handling
+    if (params.action === 'updateAdminDone') {
       var result = updateAdminDone(sheetName, rowDataString);
       return ContentService.createTextOutput(JSON.stringify(result))
         .setMimeType(ContentService.MimeType.JSON);
@@ -1524,17 +1525,19 @@ function runDailyLoginCheck() {
 function sendWhatsAppNotification(phoneNumber, message) {
   Logger.log("WhatsApp Notification Sent to " + phoneNumber + ": " + message);
   try {
-    var url = "https://api.whatsapp.com/send"; 
-    var payload = {
-      phone: phoneNumber,
-      text: message
-    };
-    // UrlFetchApp.fetch(url, {
-    //   method: "post",
-    //   contentType: "application/json",
-    //   payload: JSON.stringify(payload),
-    //   muteHttpExceptions: true
-    // });
+    var cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    if (cleanPhone.length === 10) {
+      cleanPhone = "91" + cleanPhone;
+    }
+    
+    var encodedMessage = encodeURIComponent(message);
+    var url = "https://app.ceoitbox.com/message/new?username=SBH%20HOSPITAL&password=123456789&receiverMobileNo=" + cleanPhone + "&receiverName=User&message=" + encodedMessage;
+    
+    var response = UrlFetchApp.fetch(url, {
+      method: "get",
+      muteHttpExceptions: true
+    });
+    Logger.log("WhatsApp Response status: " + response.getResponseCode() + ", Body: " + response.getContentText());
   } catch (e) {
     Logger.log("WhatsApp send error: " + e.toString());
   }
