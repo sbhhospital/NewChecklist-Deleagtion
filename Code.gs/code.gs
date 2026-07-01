@@ -1260,7 +1260,16 @@ function dailyChecklistProcessor() {
   try {
     var result = processChecklistAndGenerateTasks();
     Logger.log("Daily checklist processing result: " + JSON.stringify(result));
-    return result;
+    
+    // Auto check daily logins and mark absents / deduct points
+    var loginResult = runDailyLoginCheck();
+    Logger.log("Daily login check result: " + JSON.stringify(loginResult));
+    
+    return {
+      success: true,
+      checklistResult: result,
+      loginResult: loginResult
+    };
   } catch (error) {
     Logger.log("Error in daily checklist processor: " + error.toString());
     return {
