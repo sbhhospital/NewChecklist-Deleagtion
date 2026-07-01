@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   Upload,
@@ -68,6 +68,21 @@ function DelegationDataPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [staffSearchText, setStaffSearchText] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const employeeRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (employeeRef.current && !employeeRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+    };
+  }, []);
   const [dateFilter, setDateFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false); // NEW: Filter toggle state
@@ -1770,7 +1785,7 @@ function DelegationDataPage() {
             <span className="text-sm font-semibold text-purple-700 uppercase tracking-wider">
               Search Staff Member:
             </span>
-            <div className="relative">
+            <div ref={employeeRef} className="relative">
               <input
                 type="text"
                 placeholder="Type name to search..."

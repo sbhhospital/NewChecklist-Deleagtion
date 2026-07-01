@@ -99,7 +99,14 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       label: "Performance",
       icon: TrendingUp,
       active: location.pathname === "/dashboard/performance",
-      showFor: ["admin", "user"]
+      showFor: ["admin"]
+    },
+    {
+      href: "/dashboard/attendance-report",
+      label: "Attendance Report",
+      icon: Calendar,
+      active: location.pathname === "/dashboard/attendance-report",
+      showFor: ["admin"]
     },
     {
       href: "/dashboard/quick-task",
@@ -396,7 +403,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                 className="flex items-center gap-2 font-semibold text-blue-700"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
-                <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8" />
+                <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
               </Link>
             </div>
             <nav className="flex-1 overflow-y-auto p-2 bg-white">
@@ -605,8 +612,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-10 font-medium">
-            Designed & Managed by Naman Mishra (IT Department | SBH Group of Hospitals)
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-[999] font-medium">
+            Architecture by Naman Mishra
           </div>
         </main>
       </div>

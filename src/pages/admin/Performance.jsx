@@ -480,7 +480,7 @@ export default function PerformanceDashboard() {
 
   return (
     <AdminLayout>
-      {loading || tabLoading ? (
+      {loading ? (
         <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
           <p className="text-slate-500 font-semibold animate-pulse text-sm">
@@ -509,6 +509,7 @@ export default function PerformanceDashboard() {
           setActiveSource={handleTabChange}
           loginHistory={data.loginHistory}
           pointDeductions={data.pointDeductions}
+          tabLoading={tabLoading}
         />
       )}
     </AdminLayout>

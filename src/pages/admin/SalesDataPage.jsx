@@ -78,14 +78,12 @@ const getTaskStatus = (
       const yesterdayStr = yesterday.getTime();
 
       if (taskDateStr !== todayStr && taskDateStr !== yesterdayStr) {
-        // TEMPORARILY DISABLED: Allow back date checklist fill
-        // return "Disabled"; // Overdue task (more than 2 days old)
+        return "Disabled"; // Overdue task (more than 2 days old)
       }
     } else {
       // For all other users: normal logic (only today's tasks)
       if (taskDate.getTime() !== today.getTime()) {
-        // TEMPORARILY DISABLED: Allow back date checklist fill
-        // return "Disabled"; // Overdue task
+        return "Disabled"; // Overdue task
       }
     }
   }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import {
   TrendingUp,
   AlertTriangle,
@@ -98,16 +98,39 @@ export default function EdpmsDashboardView({
   activeSource = "delegation",
   setActiveSource = () => {},
   loginHistory = [],
-  pointDeductions = []
+  pointDeductions = [],
+  tabLoading = false
 }) {
   const [selectedStaffName, setSelectedStaffName] = useState(null)
   const [timeRange, setTimeRange] = useState("overall") // overall, yearly, quarterly, monthly, weekly, daily, custom
-  const [filterDept, setFilterDept] = useState("all")
-  const [selectedEmployee, setSelectedEmployee] = useState("all")
+  const [filterDept, setFilterDept] = useState("")
+  const [selectedEmployee, setSelectedEmployee] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [staffSearchText, setStaffSearchText] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [deptSearchText, setDeptSearchText] = useState("")
+  const [showDeptSuggestions, setShowDeptSuggestions] = useState(false)
+
+  const employeeRef = useRef(null)
+  const deptRef = useRef(null)
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (employeeRef.current && !employeeRef.current.contains(e.target)) {
+        setShowSuggestions(false)
+      }
+      if (deptRef.current && !deptRef.current.contains(e.target)) {
+        setShowDeptSuggestions(false)
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick)
+    document.addEventListener("touchstart", handleOutsideClick)
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick)
+      document.removeEventListener("touchstart", handleOutsideClick)
+    }
+  }, [])
 
   // Custom Calendar date range pickers
   const [customStartDate, setCustomStartDate] = useState("")
@@ -154,17 +177,16 @@ export default function EdpmsDashboardView({
 
   // Filter tasks based on selected employee (userwise selection)
   const filteredTasksByUser = useMemo(() => {
-    if (selectedEmployee === "all") return allTasks
+    if (selectedEmployee === "all" || !selectedEmployee) return allTasks
     return allTasks.filter(t => t.assignedTo.toLowerCase() === selectedEmployee.toLowerCase())
   }, [allTasks, selectedEmployee])
 
   // Filter staff members based on selected employee
   const filteredStaffMembers = useMemo(() => {
-    if (selectedEmployee === "all") return staffMembers
+    if (selectedEmployee === "all" || !selectedEmployee) return staffMembers
     return staffMembers.filter(s => s.name.toLowerCase() === selectedEmployee.toLowerCase())
   }, [staffMembers, selectedEmployee])
 
-  // Calculate advanced stats
   const processedStats = useMemo(() => {
     // Filter tasks by selected timeRange and date inputs
     const filteredTasks = filteredTasksByUser.filter(t => {
@@ -299,9 +321,50 @@ export default function EdpmsDashboardView({
         }
       }
 
-      // Missed daily logins deductions
-      const userDeductions = (pointDeductions || []).filter(d => d.username && typeof d.username === "string" && d.username.toLowerCase() === name.toLowerCase())
-      const loginMissedDeductions = userDeductions.filter(d => d.reason === "Login Missed")
+      // Missed daily logins deductions (Filtered by selected date range)
+      const userDeductions = (pointDeductions || []).filter(d => {
+        if (!d.username || typeof d.username !== "string" || d.username.toLowerCase() !== name.toLowerCase()) return false;
+        
+        // Parse date for filtering
+        const parts = String(d.date || "").split("/");
+        let deductionDate = null;
+        if (parts.length === 3) {
+          deductionDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+        } else {
+          deductionDate = new Date(d.date);
+        }
+        if (isNaN(deductionDate.getTime())) return true; // keep if invalid
+        
+        const now = new Date();
+        if (timeRange === "weekly") {
+          const currentDay = now.getDay();
+          const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() + distanceToMon);
+          monday.setHours(0,0,0,0);
+          const saturday = new Date(monday);
+          saturday.setDate(monday.getDate() + 5);
+          saturday.setHours(23,59,59,999);
+          return deductionDate >= monday && deductionDate <= saturday;
+        }
+        if (timeRange === "monthly") {
+          return deductionDate.getMonth() === selectedMonth && deductionDate.getFullYear() === selectedYear;
+        }
+        if (timeRange === "yearly") {
+          return deductionDate.getFullYear() === selectedYear;
+        }
+        if (timeRange === "custom") {
+          const start = customStartDate ? new Date(customStartDate) : null;
+          const end = customEndDate ? new Date(customEndDate) : null;
+          if (start) start.setHours(0,0,0,0);
+          if (end) end.setHours(23,59,59,999);
+          if (start && end) return deductionDate >= start && deductionDate <= end;
+          if (start) return deductionDate >= start;
+          if (end) return deductionDate <= end;
+        }
+        return true; // Overall
+      })
+      const loginMissedDeductions = userDeductions.filter(d => d.reason && String(d.reason).includes("Login Missed"))
       const totalMissedLoginDays = loginMissedDeductions.length
       
       let loginDisciplineDeduction = 0
@@ -434,7 +497,7 @@ export default function EdpmsDashboardView({
   // Filter staff by department and search queries
   const filteredStaff = useMemo(() => {
     return processedStats.staffMembersDetail.filter(s => {
-      const matchDept = filterDept === "all" || s.department === filterDept
+      const matchDept = !filterDept || filterDept === "all" || s.department === filterDept
       const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           s.department.toLowerCase().includes(searchQuery.toLowerCase())
       return matchDept && matchSearch
@@ -472,7 +535,7 @@ export default function EdpmsDashboardView({
   // Filter tasks list to display in the main list table
   const displayTasksList = useMemo(() => {
     return processedStats.filteredTasks.filter(t => {
-      const matchDept = filterDept === "all" || getDepartment(t.assignedTo) === filterDept
+      const matchDept = !filterDept || filterDept === "all" || getDepartment(t.assignedTo) === filterDept
       const matchSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           t.assignedTo.toLowerCase().includes(searchQuery.toLowerCase())
@@ -650,8 +713,17 @@ export default function EdpmsDashboardView({
         </button>
       </div>
 
-      {/* Main Header Board - Light background with high contrast plain text */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
+      {/* Main Dashboard Container Wrap with Loading Overlay */}
+      <div className="relative space-y-6">
+        {tabLoading && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center min-h-[300px] rounded-2xl">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600"></div>
+            <p className="text-purple-700 text-xs font-extrabold mt-3 animate-pulse">Loading Analytics Data...</p>
+          </div>
+        )}
+
+        {/* Main Header Board - Light background with high contrast plain text */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
         <div className="space-y-1 z-10">
           <div className="flex items-center gap-2">
             <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm w-fit">
@@ -675,13 +747,7 @@ export default function EdpmsDashboardView({
             <Download className="h-4 w-4" />
             Excel Export
           </button>
-          <button
-            onClick={() => handleExport("csv")}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
-          >
-            <Download className="h-4 w-4" />
-            CSV Export
-          </button>
+
           <button
             onClick={() => handleExport("pdf")}
             className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer"
@@ -694,21 +760,11 @@ export default function EdpmsDashboardView({
 
       {/* Dynamic Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-        <div className="flex flex-col xl:flex-row gap-4 items-center justify-between">
-          {/* Userwise Select and Search */}
-          <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto items-stretch sm:items-center">
-            <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2 bg-slate-50">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search employee..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="outline-none text-sm bg-transparent w-full sm:w-48"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 relative">
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex flex-wrap gap-4 items-center w-full">
+            
+            {/* Employee Autocomplete */}
+            <div ref={employeeRef} className="flex items-center gap-2 relative">
               <span className="text-xs font-bold text-slate-500 whitespace-nowrap">Employee:</span>
               <div className="relative">
                 <input
@@ -719,6 +775,15 @@ export default function EdpmsDashboardView({
                     const txt = e.target.value
                     setStaffSearchText(txt)
                     setShowSuggestions(true)
+                    
+                    const matched = doerOptions.find(d => d.toLowerCase() === txt.trim().toLowerCase())
+                    if (matched) {
+                      setSelectedEmployee(matched)
+                    } else if (txt.trim().toLowerCase() === "all" || txt.trim().toLowerCase() === "all employees") {
+                      setSelectedEmployee("all")
+                    } else if (txt === "") {
+                      setSelectedEmployee("")
+                    }
                   }}
                   onFocus={() => setShowSuggestions(true)}
                   className="text-xs font-bold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none w-full sm:w-48 cursor-pointer uppercase"
@@ -728,12 +793,12 @@ export default function EdpmsDashboardView({
                     <div
                       onClick={() => {
                         setSelectedEmployee("all")
-                        setStaffSearchText("")
+                        setStaffSearchText("All Employees")
                         setShowSuggestions(false)
                       }}
                       className="px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-slate-500 uppercase cursor-pointer"
                     >
-                      All Employees (Reset)
+                      All Employees
                     </div>
                     {doerOptions.filter(d => d.toLowerCase().includes(staffSearchText.toLowerCase())).map(doer => (
                       <div
@@ -752,30 +817,69 @@ export default function EdpmsDashboardView({
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Department and simplified TimeRange Selection */}
-          <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto justify-end items-stretch sm:items-center">
-            <div className="flex items-center gap-2">
+            {/* Department Autocomplete */}
+            <div ref={deptRef} className="flex items-center gap-2 relative">
               <span className="text-xs font-bold text-slate-500 whitespace-nowrap">Department:</span>
-              <select
-                value={filterDept}
-                onChange={(e) => setFilterDept(e.target.value)}
-                className="text-xs font-bold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none w-full sm:w-56 cursor-pointer"
-              >
-                <option value="all">All Departments</option>
-                {departmentOptions.map(dept => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Type dept to search..."
+                  value={deptSearchText}
+                  onChange={(e) => {
+                    const txt = e.target.value
+                    setDeptSearchText(txt)
+                    setShowDeptSuggestions(true)
+                    
+                    const matched = departmentOptions.find(d => d.toLowerCase() === txt.trim().toLowerCase())
+                    if (matched) {
+                      setFilterDept(matched)
+                    } else if (txt.trim().toLowerCase() === "all" || txt.trim().toLowerCase() === "all departments") {
+                      setFilterDept("all")
+                    } else if (txt === "") {
+                      setFilterDept("")
+                    }
+                  }}
+                  onFocus={() => setShowDeptSuggestions(true)}
+                  className="text-xs font-bold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none w-full sm:w-48 cursor-pointer uppercase"
+                />
+                {showDeptSuggestions && (
+                  <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-50 divide-y divide-slate-50 min-w-[200px]">
+                    <div
+                      onClick={() => {
+                        setFilterDept("all")
+                        setDeptSearchText("All Departments")
+                        setShowDeptSuggestions(false)
+                      }}
+                      className="px-3 py-2 hover:bg-slate-50 text-[10px] font-bold text-slate-500 uppercase cursor-pointer"
+                    >
+                      All Departments
+                    </div>
+                    {departmentOptions.filter(d => d.toLowerCase().includes(deptSearchText.toLowerCase())).map(dept => (
+                      <div
+                        key={dept}
+                        onClick={() => {
+                          setFilterDept(dept)
+                          setDeptSearchText(dept)
+                          setShowDeptSuggestions(false)
+                        }}
+                        className="px-3 py-2 hover:bg-purple-600 hover:text-white text-[10px] font-bold text-slate-700 uppercase cursor-pointer"
+                      >
+                        {dept}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Performance Range */}
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-500 whitespace-nowrap">Performance Range:</span>
               <select
                 value={timeRange}
                 onChange={(e) => setTimeRange(e.target.value)}
-                className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none w-full sm:w-48 cursor-pointer"
+                className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 outline-none w-full sm:w-44 cursor-pointer"
               >
                 <option value="overall">Overall</option>
                 <option value="weekly">Weekly (Last Mon-Sat)</option>
@@ -786,71 +890,76 @@ export default function EdpmsDashboardView({
                 <option value="custom">Custom Range</option>
               </select>
             </div>
+
+            {/* Inline Custom Range Start/End Date Pickers */}
+            {timeRange === "custom" && (
+              <div className="flex flex-wrap items-center gap-2 animate-fade-in text-xs">
+                <span className="font-bold text-slate-500">Start:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => {
+                    setCustomStartDate(e.target.value)
+                    setTimeRange("custom")
+                  }}
+                  className="border border-slate-205 rounded-lg p-1 bg-white outline-none cursor-pointer text-xs font-semibold text-slate-700"
+                />
+                <span className="font-bold text-slate-500">End:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => {
+                    setCustomEndDate(e.target.value)
+                    setTimeRange("custom")
+                  }}
+                  className="border border-slate-205 rounded-lg p-1 bg-white outline-none cursor-pointer text-xs font-semibold text-slate-700"
+                />
+              </div>
+            )}
+
+            {/* Month selector inline dropdown when timeRange is Monthly */}
+            {timeRange === "monthly" && (
+              <div className="flex items-center gap-2 animate-fade-in text-xs">
+                <span className="font-bold text-slate-500">Month:</span>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="border border-slate-200 rounded-lg p-1 bg-white outline-none cursor-pointer text-xs font-semibold text-slate-700"
+                >
+                  {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m, idx) => (
+                    <option key={idx} value={idx}>{m}</option>
+                  ))}
+                </select>
+                <span className="font-bold text-slate-500">Year:</span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="border border-slate-200 rounded-lg p-1 bg-white outline-none cursor-pointer text-xs font-semibold text-slate-700"
+                >
+                  {[2025, 2026, 2027].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
           </div>
         </div>
-
-        {/* Conditional Sub-filters for Calendars & Months */}
-        {timeRange === "custom" && (
-          <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 animate-fade-in text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-600">Start Date:</span>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => {
-                  setCustomStartDate(e.target.value)
-                  setTimeRange("custom")
-                }}
-                className="border border-slate-200 rounded-lg p-2 bg-white outline-none cursor-pointer"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-600">End Date:</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => {
-                  setCustomEndDate(e.target.value)
-                  setTimeRange("custom")
-                }}
-                className="border border-slate-200 rounded-lg p-2 bg-white outline-none cursor-pointer"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Month selector dropdown when timeRange is Monthly */}
-        {timeRange === "monthly" && (
-          <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-150">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-600">Month:</span>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="border-none bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer"
-              >
-                {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m, idx) => (
-                  <option key={idx} value={idx}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 border-l pl-4">
-              <span className="font-bold text-slate-600">Year:</span>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="border-none bg-transparent text-sm font-bold text-slate-800 outline-none cursor-pointer"
-              >
-                {[2025, 2026, 2027].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* KPI Cards Grid */}
+      {!selectedEmployee && !filterDept ? (
+        <div className="bg-white p-12 rounded-2xl border border-slate-100 shadow-sm text-center max-w-xl mx-auto space-y-4 my-10">
+          <div className="bg-purple-50 text-purple-600 rounded-full p-4 w-16 h-16 flex items-center justify-center mx-auto shadow-sm">
+            <Search className="h-8 w-8 text-purple-600" />
+          </div>
+          <h3 className="font-extrabold text-slate-800 text-lg">Performance Dashboard Matrix</h3>
+          <p className="text-slate-500 text-sm max-w-md mx-auto">
+            Please search and select an <strong>Employee</strong> or choose a <strong>Department</strong> to load metrics. Select "All Employees" to see all.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex justify-between items-center text-slate-400">
@@ -1036,66 +1145,78 @@ export default function EdpmsDashboardView({
           </div>
 
           {/* Active Tasks List Table */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-gradient-to-r from-slate-50 to-indigo-50/20">
-              <div>
-                <h3 className="font-extrabold text-slate-800 text-lg">Detailed Tasks Reference Map</h3>
-                <p className="text-slate-500 text-xs mt-0.5">Filtered task rows for detailed review.</p>
+          {activeSource === "delegation" && (
+            (selectedEmployee || filterDept) ? (
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-gradient-to-r from-slate-50 to-indigo-50/20">
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-lg">Detailed Tasks Reference Map</h3>
+                    <p className="text-slate-500 text-xs mt-0.5">Filtered task rows for detailed review.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleExport("xlsx")}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer"
+                    >
+                      Download Excel
+                    </button>
+                    <button
+                      onClick={() => handleExport("pdf")}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer"
+                    >
+                      Download PDF
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto w-full max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-left border-collapse min-w-max md:min-w-0">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
+                        <th className="px-3.5 py-2.5">Task ID</th>
+                        <th className="px-3.5 py-2.5">Description</th>
+                        <th className="px-3.5 py-2.5">Assigned To</th>
+                        <th className="px-3.5 py-2.5">Deadline</th>
+                        <th className="px-3.5 py-2.5">Status</th>
+                        <th className="px-3.5 py-2.5 text-center">Ext.</th>
+                        <th className="px-3.5 py-2.5 text-center">Delays</th>
+                        <th className="px-3.5 py-2.5 text-center">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {displayTasksList.map((task, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-3.5 py-2.5 font-bold text-slate-700">{task.id}</td>
+                          <td className="px-3.5 py-2.5 max-w-xs truncate font-medium text-slate-800">{task.title}</td>
+                          <td className="px-3.5 py-2.5 font-semibold text-slate-600">{task.assignedTo}</td>
+                          <td className="px-3.5 py-2.5 font-medium text-slate-500">{task.dueDate}</td>
+                          <td className="px-3.5 py-2.5">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                              task.status === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                              task.status === "overdue" ? "bg-rose-50 text-rose-700 border border-rose-100" :
+                              "bg-amber-50 text-amber-700 border border-amber-100"
+                            }`}>
+                              {task.status}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center font-bold text-slate-600">{task.extensionCount ?? 0}</td>
+                          <td className="px-3.5 py-2.5 text-center font-bold text-rose-600">{task.delayDays ?? 0}d</td>
+                          <td className="px-3.5 py-2.5 text-center font-extrabold text-slate-800">{task.score}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleExport("csv")}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer"
-                >
-                  Download Excel
-                </button>
-                <button
-                  onClick={() => handleExport("pdf")}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer"
-                >
-                  Download PDF
-                </button>
+            ) : (
+              <div className="bg-white p-12 rounded-2xl border border-slate-100 shadow-sm text-center text-slate-400 font-semibold space-y-2">
+                <Search className="h-8 w-8 mx-auto text-slate-300" />
+                <h5 className="font-bold text-slate-700 text-sm">Detailed Tasks Reference Map</h5>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  To maintain high site performance, detailed task rows are deferred. Please search/select a specific <strong>Employee</strong> or choose a <strong>Department</strong> to load detailed tasks.
+                </p>
               </div>
-            </div>
-            <div className="overflow-x-auto w-full">
-              <table className="w-full text-left border-collapse min-w-max md:min-w-0">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
-                    <th className="px-3.5 py-2.5">Task ID</th>
-                    <th className="px-3.5 py-2.5">Description</th>
-                    <th className="px-3.5 py-2.5">Assigned To</th>
-                    <th className="px-3.5 py-2.5">Deadline</th>
-                    <th className="px-3.5 py-2.5">Status</th>
-                    <th className="px-3.5 py-2.5 text-center">Ext.</th>
-                    <th className="px-3.5 py-2.5 text-center">Delays</th>
-                    <th className="px-3.5 py-2.5 text-center">Score</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {displayTasksList.map((task, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-3.5 py-2.5 font-bold text-slate-700">{task.id}</td>
-                      <td className="px-3.5 py-2.5 max-w-xs truncate font-medium text-slate-800">{task.title}</td>
-                      <td className="px-3.5 py-2.5 font-semibold text-slate-600">{task.assignedTo}</td>
-                      <td className="px-3.5 py-2.5 font-medium text-slate-500">{task.dueDate}</td>
-                      <td className="px-3.5 py-2.5">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          task.status === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                          task.status === "overdue" ? "bg-rose-50 text-rose-700 border border-rose-100" :
-                          "bg-amber-50 text-amber-700 border border-amber-100"
-                        }`}>
-                          {task.status}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-2.5 text-center font-bold text-slate-600">{task.extensionCount ?? 0}</td>
-                      <td className="px-3.5 py-2.5 text-center font-bold text-rose-600">{task.delayDays ?? 0}d</td>
-                      <td className="px-3.5 py-2.5 text-center font-extrabold text-slate-800">{task.score}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            )
+          )}
         </div>
 
         <div className="space-y-6">
@@ -1159,6 +1280,9 @@ export default function EdpmsDashboardView({
             </p>
           </div>
         </div>
+      </div>
+      </>
+      )}
       </div>
 
       {/* 360 Degree Profile Modal */}
@@ -1229,7 +1353,7 @@ export default function EdpmsDashboardView({
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
                   <div className="bg-white p-3 rounded-xl border border-slate-100">
                     <span className="text-[9px] text-slate-400 font-bold block uppercase">Login Days</span>
-                    <span className="text-base font-extrabold text-slate-800">{(loginHistory || []).filter(l => l.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).length} Days</span>
+                    <span className="text-base font-extrabold text-slate-800">{(loginHistory || []).filter(l => l && l.username && typeof l.username === 'string' && l.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).length} Days</span>
                   </div>
                   <div className="bg-white p-3 rounded-xl border border-slate-100">
                     <span className="text-[9px] text-slate-400 font-bold block uppercase">Missed Logins</span>
@@ -1266,7 +1390,7 @@ export default function EdpmsDashboardView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {(pointDeductions || []).filter(d => d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).map((d, idx) => (
+                      {(pointDeductions || []).filter(d => d && d.username && typeof d.username === "string" && d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).map((d, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="px-4 py-2 font-medium text-slate-500">{d.date}</td>
                           <td className="px-4 py-2 font-semibold text-rose-600">{d.reason}</td>
@@ -1274,7 +1398,7 @@ export default function EdpmsDashboardView({
                           <td className="px-4 py-2 font-extrabold text-slate-800">{d.balance} pts</td>
                         </tr>
                       ))}
-                      {(pointDeductions || []).filter(d => d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).length === 0 && (
+                      {(pointDeductions || []).filter(d => d && d.username && typeof d.username === "string" && d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).length === 0 && (
                         <tr>
                           <td colSpan="4" className="px-4 py-4 text-center text-slate-400">No point deductions logged. Perfect compliance!</td>
                         </tr>

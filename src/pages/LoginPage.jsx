@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
+import sbhLogo from "../assets/logo.png";
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -378,9 +379,9 @@ const LoginPage = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
       <div className="w-full max-w-md shadow-lg border border-blue-200 rounded-lg bg-white">
-        <div className="space-y-1 p-4 bg-gradient-to-r from-blue-100 to-purple-100 rounded-t-lg">
-          <div className="flex items-center justify-center mb-2">
-            <i className="fas fa-clipboard-list h-8 w-8 text-blue-600 mr-2"></i>
+        <div className="space-y-1 p-5 bg-gradient-to-r from-blue-100 to-purple-100 rounded-t-lg">
+          <div className="flex flex-col items-center justify-center mb-2 gap-2">
+            <img src={sbhLogo} alt="SBH Group of Hospitals" className="h-12 object-contain" />
             <h2 className="text-2xl font-bold text-blue-700">
               Checklist & Delegation
             </h2>
@@ -454,9 +455,6 @@ const LoginPage = () => {
             </button>
           </div>
         </form>
-        <div className="fixed left-0 right-0 bottom-0 py-1 px-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-center text-sm shadow-md z-10 font-medium">
-          Designed & Managed by Naman Mishra (IT Department | SBH Group of Hospitals)
-        </div>
       </div>
 
       {/* Toast Notification */}
@@ -515,6 +513,9 @@ const LoginPage = () => {
           </div>
         </div>
       )}
+      <div className="fixed left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-[999] font-medium">
+        Architecture by Naman Mishra
+      </div>
     </div>
   );
 };

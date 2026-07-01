@@ -1298,17 +1298,41 @@ function getFormattedDate(date) {
 function recordLogin(username, ip, browser, device) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName("Login History");
+    var sheet = ss.getSheetByName("Attendance");
     if (!sheet) {
-      sheet = ss.insertSheet("Login History");
-      sheet.appendRow(["Date", "Username", "Login Time", "Logout Time", "IP Address", "Browser", "Device"]);
+      sheet = ss.insertSheet("Attendance");
+      sheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device"]);
     }
     
     var now = new Date();
     var dateStr = getFormattedDate(now);
     var timeStr = now.toLocaleTimeString();
     
-    sheet.appendRow([dateStr, username, timeStr, "", ip || "—", browser || "—", device || "—"]);
+    var data = sheet.getDataRange().getValues();
+    var alreadyRecorded = false;
+    for (var i = 1; i < data.length; i++) {
+      var rowDate = data[i][0];
+      if (!rowDate) continue; // Skip blank/cleared rows
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      var rowUser = String(data[i][1] || "").trim();
+      if (!rowUser) continue; // Skip blank/cleared usernames
+      if (rowDateStr === dateStr && rowUser.toLowerCase() === username.trim().toLowerCase()) {
+        alreadyRecorded = true;
+        break;
+      }
+    }
+    
+    if (!alreadyRecorded) {
+      sheet.appendRow([dateStr, username, "Present", timeStr, ip || "—", browser || "—", device || "—"]);
+    }
+    
+    var historySheet = ss.getSheetByName("Login History");
+    if (!historySheet) {
+      historySheet = ss.insertSheet("Login History");
+      historySheet.appendRow(["Date", "Username", "Login Time", "Logout Time", "IP Address", "Browser", "Device"]);
+    }
+    historySheet.appendRow([dateStr, username, timeStr, "", ip || "—", browser || "—", device || "—"]);
+    
     return { success: true, message: "Login recorded successfully" };
   } catch (error) {
     return { success: false, error: error.toString() };
@@ -1327,7 +1351,9 @@ function recordLogout(username) {
     var timeStr = now.toLocaleTimeString();
     
     for (var i = data.length - 1; i >= 1; i--) {
-      if (data[i][1] === username && data[i][0] === dateStr && data[i][3] === "") {
+      var rowDate = data[i][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      if (data[i][1] === username && rowDateStr === dateStr && data[i][3] === "") {
         sheet.getRange(i + 1, 4).setValue(timeStr);
         return { success: true, message: "Logout recorded successfully" };
       }
@@ -1344,12 +1370,6 @@ function runDailyLoginCheck() {
     var masterSheet = ss.getSheetByName("master");
     if (!masterSheet) return { success: false, error: "master sheet not found" };
     
-    var historySheet = ss.getSheetByName("Login History");
-    if (!historySheet) {
-      historySheet = ss.insertSheet("Login History");
-      historySheet.appendRow(["Date", "Username", "Login Time", "Logout Time", "IP Address", "Browser", "Device"]);
-    }
-    
     var deductionsSheet = ss.getSheetByName("Point Deductions");
     if (!deductionsSheet) {
       deductionsSheet = ss.insertSheet("Point Deductions");
@@ -1359,7 +1379,7 @@ function runDailyLoginCheck() {
     var attendanceSheet = ss.getSheetByName("Attendance");
     if (!attendanceSheet) {
       attendanceSheet = ss.insertSheet("Attendance");
-      attendanceSheet.appendRow(["Date", "Username", "Status", "Details"]);
+      attendanceSheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device"]);
     }
     
     var today = new Date();
@@ -1398,11 +1418,13 @@ function runDailyLoginCheck() {
       }
     }
     
-    var historyData = historySheet.getDataRange().getValues();
-    var loggedInToday = {};
-    for (var j = 1; j < historyData.length; j++) {
-      if (historyData[j][0] === dateStr) {
-        loggedInToday[String(historyData[j][1]).trim().toLowerCase()] = true;
+    var attendanceData = attendanceSheet.getDataRange().getValues();
+    var presentUsersToday = {};
+    for (var j = 1; j < attendanceData.length; j++) {
+      var rowDate = attendanceData[j][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      if (rowDateStr === dateStr && String(attendanceData[j][2]).toLowerCase() === "present") {
+        presentUsersToday[String(attendanceData[j][1]).trim().toLowerCase()] = true;
       }
     }
     
@@ -1414,27 +1436,48 @@ function runDailyLoginCheck() {
       var deptName = userDepts[user] || "—";
       var employeePhone = userPhones[user] || "";
       
-      if (loggedInToday[userKey]) {
-        // Log positive attendance
-        attendanceSheet.appendRow([dateStr, user, "Logged In", "Successfully checked in"]);
-        results.push({ username: user, status: "logged_in" });
+      if (presentUsersToday[userKey]) {
+        results.push({ username: user, status: "present" });
       } else {
-        var missedCount = 0;
-        for (var idx = 1; idx < deductionsData.length; idx++) {
-          if (String(deductionsData[idx][1]).trim().toLowerCase() === userKey && deductionsData[idx][2] === "Login Missed") {
-            missedCount++;
+        // Mark as Absent in Attendance sheet if not logged in
+        attendanceSheet.appendRow([dateStr, user, "Absent", "—", "—", "—", "—"]);
+
+        var consecutiveMissed = 1;
+        var checkDate = new Date();
+        var limitDate = new Date(2026, 6, 1); // July 1, 2026
+        limitDate.setHours(0,0,0,0);
+        
+        while (true) {
+          checkDate.setDate(checkDate.getDate() - 1);
+          if (checkDate < limitDate) {
+            break;
+          }
+          var checkDateStr = getFormattedDate(checkDate);
+          var foundPresent = false;
+          for (var h = 1; h < attendanceData.length; h++) {
+            var rowDate = attendanceData[h][0];
+            var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+            if (rowDateStr === checkDateStr && String(attendanceData[h][1]).trim().toLowerCase() === userKey && String(attendanceData[h][2]).toLowerCase() === "present") {
+              foundPresent = true;
+              break;
+            }
+          }
+          if (foundPresent) {
+            break;
+          } else {
+            consecutiveMissed++;
+            if (consecutiveMissed > 10) break;
           }
         }
-        var totalMissedDays = missedCount + 1;
-        
+
         var pointsToDeduct = 50;
-        if (totalMissedDays === 1) {
+        if (consecutiveMissed === 1) {
           pointsToDeduct = 50;
-        } else if (totalMissedDays === 2) {
+        } else if (consecutiveMissed === 2) {
           pointsToDeduct = 50; 
-        } else if (totalMissedDays === 3) {
+        } else if (consecutiveMissed === 3) {
           pointsToDeduct = 200; 
-        } else if (totalMissedDays >= 4) {
+        } else if (consecutiveMissed >= 4) {
           pointsToDeduct = 100; 
         }
 
@@ -1446,73 +1489,25 @@ function runDailyLoginCheck() {
           }
         }
         var newBalance = balance - pointsToDeduct;
-        deductionsSheet.appendRow([dateStr, user, "Login Missed", pointsToDeduct, newBalance]);
-        
-        var consecutiveMissed = 1;
-        var checkDate = new Date();
-        while (true) {
-          checkDate.setDate(checkDate.getDate() - 1);
-          var checkDateStr = getFormattedDate(checkDate);
-          var foundLogin = false;
-          for (var h = 1; h < historyData.length; h++) {
-            if (historyData[h][0] === checkDateStr && String(historyData[h][1]).trim().toLowerCase() === userKey) {
-              foundLogin = true;
-              break;
-            }
-          }
-          if (foundLogin) {
-            break;
-          } else {
-            consecutiveMissed++;
-            if (consecutiveMissed > 10) break;
-          }
-        }
+        deductionsSheet.appendRow([dateStr, user, "Login Missed (" + consecutiveMissed + " Days)", pointsToDeduct, newBalance]);
 
-        // Log missed attendance
-        attendanceSheet.appendRow([dateStr, user, "Missed", "Consecutive Missed: " + consecutiveMissed + " days"]);
-
-        // WhatsApp Notification & Escalation Rules
+        // WhatsApp Notification & Escalation Rules (No Emails)
         if (consecutiveMissed === 1) {
           // Alert Employee
           if (employeePhone) {
-            sendWhatsAppNotification(employeePhone, "Dear " + user + ", you have missed logging into the Delegation Management System today (" + dateStr + "). 50 points have been deducted.");
+            sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE REMINDER* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\nAs per company policy, *50 points* have been deducted from your performance rating. Please ensure timely login tomorrow to maintain your compliance status.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           }
           // Alert Manager
-          sendWhatsAppNotification("+919039080203", "Alert: Employee " + user + " (" + deptName + ") did not log in yesterday (" + dateStr + ").");
+          sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Did not log in yesterday (" + dateStr + ").\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
         } else if (consecutiveMissed >= 2 && consecutiveMissed <= 5) {
           // Alert Manager
-          sendWhatsAppNotification("+919039080203", "Alert: Employee " + user + " (" + deptName + ") has not logged in for " + consecutiveMissed + " days.");
+          sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Missed login for *" + consecutiveMissed + " consecutive days*.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
         } else if (consecutiveMissed > 5) {
           // Escalate alert to higher authority
-          sendWhatsAppNotification("+919644404741", "🚨 ESCALATION: Employee " + user + " (" + deptName + ") has not logged in for " + consecutiveMissed + " days. Critical compliance issue.");
+          sendWhatsAppNotification("+919644404741", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Missed login for *" + consecutiveMissed + " consecutive days*.\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
         }
         
-        // Fallback Email Alerts
-        if (userEmails[user]) {
-          try {
-            MailApp.sendEmail({
-              to: userEmails[user],
-              subject: "⚠️ Daily Login Missing - SBH Group of Hospitals",
-              body: "Dear " + user + ",\n\nYou have missed logging into the Delegation Management System today (" + dateStr + "). As per policy, " + pointsToDeduct + " points have been deducted.\n\nRegards,\nIT Department"
-            });
-          } catch(e) {
-            console.error("Email fail", e);
-          }
-        }
-        
-        if (consecutiveMissed >= 2) {
-          try {
-            MailApp.sendEmail({
-              to: "naman@sbhhospital.com",
-              subject: "🚨 ALERT: Consecutive Missed Logins - " + user,
-              body: "Employee Name: " + user + "\nDepartment: " + (userDepts[user] || "—") + "\nLast Login Date: " + (consecutiveMissed > 1 ? "Not logged in for " + consecutiveMissed + " days" : "—") + "\nConsecutive Missed Days: " + consecutiveMissed + "\nCurrent Status: Non-compliant\nManager Escalation Mobile: +91 90390 80203"
-            });
-          } catch(e) {
-            console.error("Manager alert send failed for " + user, e);
-          }
-        }
-        
-        results.push({ username: user, status: "deducted", consecutiveMissed: consecutiveMissed });
+        results.push({ username: user, status: "absent", consecutiveMissed: consecutiveMissed });
       }
     });
     
@@ -1540,5 +1535,68 @@ function sendWhatsAppNotification(phoneNumber, message) {
     Logger.log("WhatsApp Response status: " + response.getResponseCode() + ", Body: " + response.getContentText());
   } catch (e) {
     Logger.log("WhatsApp send error: " + e.toString());
+  }
+}
+
+function sendSameDayLoginReminder() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var masterSheet = ss.getSheetByName("master");
+    if (!masterSheet) return { success: false, error: "master sheet not found" };
+    
+    var attendanceSheet = ss.getSheetByName("Attendance");
+    if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
+    
+    var today = new Date();
+    var dateStr = getFormattedDate(today);
+    
+    var masterData = masterSheet.getDataRange().getValues();
+    var headers = masterData[0];
+    var usernameColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
+    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number"; });
+    var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+    
+    if (usernameColIndex === -1) usernameColIndex = 2;
+    if (phoneColIndex === -1) phoneColIndex = 3;
+    if (roleColIndex === -1) roleColIndex = 4;
+    
+    var activeUsers = [];
+    var userPhones = {};
+    for (var i = 1; i < masterData.length; i++) {
+      var username = String(masterData[i][usernameColIndex]).trim();
+      var role = String(masterData[i][roleColIndex]).trim().toLowerCase();
+      var phone = String(masterData[i][phoneColIndex]).trim();
+      
+      if (username && role !== "inactive" && role !== "in active") {
+        activeUsers.push(username);
+        userPhones[username] = phone;
+      }
+    }
+    
+    var attendanceData = attendanceSheet.getDataRange().getValues();
+    var presentUsersToday = {};
+    for (var j = 1; j < attendanceData.length; j++) {
+      var rowDate = attendanceData[j][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      if (rowDateStr === dateStr && String(attendanceData[j][2]).toLowerCase() === "present") {
+        presentUsersToday[String(attendanceData[j][1]).trim().toLowerCase()] = true;
+      }
+    }
+    
+    var count = 0;
+    activeUsers.forEach(function(user) {
+      var userKey = user.toLowerCase();
+      if (!presentUsersToday[userKey]) {
+        var phone = userPhones[user];
+        if (phone) {
+          sendWhatsAppNotification(phone, "⚠️ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⚠️\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          count++;
+        }
+      }
+    });
+    
+    return { success: true, remindedCount: count };
+  } catch (error) {
+    return { success: false, error: error.toString() };
   }
 }

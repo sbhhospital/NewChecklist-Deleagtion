@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage"
 import AdminDashboard from "./pages/admin/Dashboard"
 import AdminAssignTask from "./pages/admin/AssignTask"
 import PerformanceDashboard from "./pages/admin/Performance"
+import AttendanceReport from "./pages/admin/AttendanceReport"
 // import AllTasks from "./pages/admin/AllTasks"
 import DataPage from "./pages/admin/DataPage"
 import AdminDataPage from "./pages/admin/admin-data-page"
@@ -87,8 +88,16 @@ function App() {
         <Route
           path="/dashboard/performance"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={["admin"]}>
               <PerformanceDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard/attendance-report"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AttendanceReport />
             </ProtectedRoute>
           }
         />
