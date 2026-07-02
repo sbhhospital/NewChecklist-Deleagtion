@@ -1326,6 +1326,30 @@ function recordLogin(username, ip, browser, device) {
       var rowUser = String(data[i][1] || "").trim();
       if (!rowUser) continue; // Skip blank/cleared usernames
       if (rowDateStr === dateStr && rowUser.toLowerCase() === username.trim().toLowerCase()) {
+        var status = String(data[i][2] || "").trim().toLowerCase();
+        if (status === "absent") {
+          sheet.getRange(i + 1, 3).setValue("Present");
+          sheet.getRange(i + 1, 4).setValue(timeStr);
+          sheet.getRange(i + 1, 5).setValue(ip || "—");
+          sheet.getRange(i + 1, 6).setValue(browser || "—");
+          sheet.getRange(i + 1, 7).setValue(device || "—");
+          
+          // Remove the "Login Missed" deduction logged for today
+          var deductionsSheet = ss.getSheetByName("Point Deductions");
+          if (deductionsSheet) {
+            var deductionsData = deductionsSheet.getDataRange().getValues();
+            for (var k = deductionsData.length - 1; k >= 1; k--) {
+              var dDate = deductionsData[k][0];
+              var dDateStr = (dDate instanceof Date) ? getFormattedDate(dDate) : String(dDate).trim();
+              var dUser = String(deductionsData[k][1] || "").trim().toLowerCase();
+              var dReason = String(deductionsData[k][2] || "").trim();
+              if (dDateStr === dateStr && dUser === username.trim().toLowerCase() && dReason.indexOf("Login Missed") !== -1) {
+                deductionsSheet.deleteRow(k + 1);
+                break;
+              }
+            }
+          }
+        }
         alreadyRecorded = true;
         break;
       }
@@ -1445,11 +1469,38 @@ function runDailyLoginCheck() {
       var deptName = userDepts[user] || "—";
       var employeePhone = userPhones[user] || "";
       
-      if (presentUsersToday[userKey]) {
+      var existingRowIndex = -1;
+      var existingStatus = "";
+      for (var j = 1; j < attendanceData.length; j++) {
+        var rowDate = attendanceData[j][0];
+        var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+        if (rowDateStr === dateStr && String(attendanceData[j][1]).trim().toLowerCase() === userKey) {
+          existingRowIndex = j;
+          existingStatus = String(attendanceData[j][2]).toLowerCase().trim();
+          break;
+        }
+      }
+
+      if (presentUsersToday[userKey] || existingStatus === "present") {
         results.push({ username: user, status: "present" });
       } else {
-        // Mark as Absent in Attendance sheet if not logged in
-        attendanceSheet.appendRow([dateStr, user, "Absent", "—", "—", "—", "—"]);
+        // Mark as Absent in Attendance sheet if not already recorded
+        if (existingRowIndex === -1) {
+          attendanceSheet.appendRow([dateStr, user, "Absent", "—", "—", "—", "—"]);
+        }
+
+        // Check if deduction already logged today
+        var deductionLogged = false;
+        for (var k = deductionsData.length - 1; k >= 1; k--) {
+          var dDate = deductionsData[k][0];
+          var dDateStr = (dDate instanceof Date) ? getFormattedDate(dDate) : String(dDate).trim();
+          var dUser = String(deductionsData[k][1]).trim().toLowerCase();
+          var dReason = String(deductionsData[k][2]).trim();
+          if (dDateStr === dateStr && dUser === userKey && dReason.indexOf("Login Missed") !== -1) {
+            deductionLogged = true;
+            break;
+          }
+        }
 
         var consecutiveMissed = 1;
         var checkDate = new Date();
@@ -1490,30 +1541,34 @@ function runDailyLoginCheck() {
           pointsToDeduct = 100; 
         }
 
-        var balance = 1000;
-        for (var k = deductionsData.length - 1; k >= 1; k--) {
-          if (String(deductionsData[k][1]).trim().toLowerCase() === userKey) {
-            balance = parseInt(deductionsData[k][4]);
-            break;
+        if (!deductionLogged) {
+          var balance = 1000;
+          for (var k = deductionsData.length - 1; k >= 1; k--) {
+            if (String(deductionsData[k][1]).trim().toLowerCase() === userKey) {
+              balance = parseInt(deductionsData[k][4]);
+              break;
+            }
           }
-        }
-        var newBalance = balance - pointsToDeduct;
-        deductionsSheet.appendRow([dateStr, user, "Login Missed (" + consecutiveMissed + " Days)", pointsToDeduct, newBalance]);
+          var newBalance = balance - pointsToDeduct;
+          deductionsSheet.appendRow([dateStr, user, "Login Missed (" + consecutiveMissed + " Days)", pointsToDeduct, newBalance]);
 
-        // WhatsApp Notification & Escalation Rules (No Emails)
-        if (consecutiveMissed === 1) {
-          // Alert Employee
-          if (employeePhone) {
-            sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE REMINDER* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\nAs per company policy, *50 points* have been deducted from your performance rating. Please ensure timely login tomorrow to maintain your compliance status.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          // WhatsApp Notification & Escalation Rules (No Emails, No Department Name)
+          if (consecutiveMissed === 1) {
+            // Alert Employee
+            if (employeePhone) {
+              sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE REMINDER* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\nAs per company policy, *50 points* have been deducted from your performance rating. Please ensure timely login tomorrow to maintain your compliance status.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+            }
+            // Alert Manager
+            sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Did not log in today.\n*Consecutive Days Missed:* 1 Day\n*Points Deducted:* -50 Pts\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          } else if (consecutiveMissed >= 2) {
+            // Alert Employee
+            if (employeePhone) {
+              sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE ALERT* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nPlease ensure you log in immediately tomorrow to maintain compliance.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+            }
+            // Alert Manager & Escalation
+            sendWhatsAppNotification("+919039080203", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Non-compliant.\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+            sendWhatsAppNotification("+919644404741", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Non-compliant.\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           }
-          // Alert Manager
-          sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Did not log in yesterday (" + dateStr + ").\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-        } else if (consecutiveMissed >= 2 && consecutiveMissed <= 5) {
-          // Alert Manager
-          sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Missed login for *" + consecutiveMissed + " consecutive days*.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-        } else if (consecutiveMissed > 5) {
-          // Escalate alert to higher authority
-          sendWhatsAppNotification("+919644404741", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Department:* " + deptName + "\n*Status:* Missed login for *" + consecutiveMissed + " consecutive days*.\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
         }
         
         results.push({ username: user, status: "absent", consecutiveMissed: consecutiveMissed });
@@ -1608,4 +1663,30 @@ function sendSameDayLoginReminder() {
   } catch (error) {
     return { success: false, error: error.toString() };
   }
+}
+
+function setupAttendanceTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    var funcName = triggers[i].getHandlerFunction();
+    if (funcName === "runDailyLoginCheck" || funcName === "sendSameDayLoginReminder") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  
+  // 1. Trigger for sendSameDayLoginReminder at 5:00 PM daily
+  ScriptApp.newTrigger("sendSameDayLoginReminder")
+    .timeBased()
+    .everyDays(1)
+    .atHour(17)
+    .nearMinute(0)
+    .create();
+    
+  // 2. Trigger for runDailyLoginCheck at 11:50 PM daily
+  ScriptApp.newTrigger("runDailyLoginCheck")
+    .timeBased()
+    .everyDays(1)
+    .atHour(23)
+    .nearMinute(50)
+    .create();
 }
