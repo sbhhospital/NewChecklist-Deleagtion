@@ -494,11 +494,12 @@ export default function EdpmsDashboardView({
 
       // 1000 Points Score breakdown
       const scoreTaskCompletion = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 500) : 500
-      const scoreTaskQuality = Math.max(0, Math.min(200, 200 - totalPenalties + totalBonuses))
-      const scoreRatings = 100 // Base Rating points
-      const scoreLoginDiscipline = Math.max(0, 200 - loginDisciplineDeduction)
+      const scoreTaskQuality = Math.min(300, 300 - totalPenalties + totalBonuses)
+      const scoreLoginDiscipline = 200 - loginDisciplineDeduction
       
-      const finalScore = Math.max(0, Math.min(1000, scoreTaskCompletion + scoreTaskQuality + scoreRatings + scoreLoginDiscipline))
+      // Calculate net points directly using ledger arithmetic, allowing components to go negative
+      const netPoints = scoreTaskCompletion + scoreTaskQuality + scoreLoginDiscipline
+      const finalScore = Math.max(0, Math.min(1000, netPoints))
       const performancePercent = Math.round((finalScore / 1000) * 100)
 
       let tier = "Bronze"
@@ -558,7 +559,6 @@ export default function EdpmsDashboardView({
         scoreBreakdown: {
           completion: scoreTaskCompletion,
           quality: scoreTaskQuality,
-          ratings: scoreRatings,
           login: scoreLoginDiscipline
         }
       }
@@ -1491,18 +1491,14 @@ export default function EdpmsDashboardView({
 
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 md:col-span-2 flex flex-col justify-between">
                   <h4 className="font-bold text-slate-700 text-sm mb-4">Performance Points Breakdown (1000 Scale)</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
                     <div className="bg-white p-3 rounded-xl border border-slate-100">
                       <span className="text-[10px] text-slate-400 font-semibold block uppercase">Task Completion</span>
                       <span className="text-lg font-black text-indigo-600">{activeStaffProfile.scoreBreakdown.completion} / 500</span>
                     </div>
                     <div className="bg-white p-3 rounded-xl border border-slate-100">
                       <span className="text-[10px] text-slate-400 font-semibold block uppercase">Task Quality</span>
-                      <span className="text-lg font-black text-indigo-600">{activeStaffProfile.scoreBreakdown.quality} / 200</span>
-                    </div>
-                    <div className="bg-white p-3 rounded-xl border border-slate-100">
-                      <span className="text-[10px] text-slate-400 font-semibold block uppercase">Ratings</span>
-                      <span className="text-lg font-black text-indigo-600">{activeStaffProfile.scoreBreakdown.ratings} / 100</span>
+                      <span className="text-lg font-black text-indigo-600">{activeStaffProfile.scoreBreakdown.quality} / 300</span>
                     </div>
                     <div className="bg-white p-3 rounded-xl border border-slate-100">
                       <span className="text-[10px] text-slate-400 font-semibold block uppercase">Login Discipline</span>
