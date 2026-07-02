@@ -1541,7 +1541,7 @@ export default function EdpmsDashboardView({
               {/* Point Deductions History Log */}
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-100 bg-slate-50">
-                  <h5 className="font-bold text-slate-800 text-sm">Point Deductions Audit History</h5>
+                  <h5 className="font-bold text-slate-800 text-sm">Point History & Audit Trail (Deducted / Earned)</h5>
                 </div>
                 <div className="max-h-40 overflow-y-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -1549,7 +1549,7 @@ export default function EdpmsDashboardView({
                       <tr className="bg-slate-50 text-slate-400 font-bold uppercase border-b border-slate-100">
                         <th className="px-4 py-2">Date</th>
                         <th className="px-4 py-2">Reason</th>
-                        <th className="px-4 py-2">Deducted</th>
+                        <th className="px-4 py-2">Points Change</th>
                         <th className="px-4 py-2">Balance</th>
                       </tr>
                     </thead>
