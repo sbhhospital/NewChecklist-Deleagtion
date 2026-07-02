@@ -178,7 +178,7 @@ const LoginPage = () => {
       else if (userAgent.indexOf("Chrome") > -1) browserName = "Chrome";
       else if (userAgent.indexOf("Safari") > -1) browserName = "Safari";
       else if (userAgent.indexOf("MSIE") > -1 || !!document.documentMode === true) browserName = "IE";
-      
+
       // Detect Device/OS
       let devicePlatform = navigator.platform || "Unknown";
 
@@ -377,27 +377,27 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
-      <div className="w-full max-w-md shadow-lg border border-blue-200 rounded-lg bg-white">
-        <div className="space-y-1 p-5 bg-gradient-to-r from-blue-100 to-purple-100 rounded-t-lg">
-          <div className="flex flex-col items-center justify-center mb-2 gap-2">
-            <img src={sbhLogo} alt="SBH Group of Hospitals" className="h-12 object-contain" />
-            <h2 className="text-2xl font-bold text-blue-700">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4">
+      <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300">
+        <div className="space-y-2 p-6 login-header-gradient rounded-t-3xl border-b-4 border-emerald-500 text-center">
+          <div className="flex flex-col items-center justify-center mb-1 gap-2">
+            <img src={sbhLogo} alt="SBH Group of Hospitals" className="w-56 h-auto object-contain drop-shadow-md mb-1" />
+            <h2 className="text-2xl font-black text-indigo-900 tracking-tight">
               Checklist & Delegation
             </h2>
           </div>
-          <p className="text-center text-blue-600">
+          <p className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider">
             Login to access your tasks and delegations
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="space-y-2">
             <label
               htmlFor="username"
-              className="flex items-center text-blue-700"
+              className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
             >
-              <i className="fas fa-user h-4 w-4 mr-2"></i>
+              <i className="fas fa-user h-3.5 w-3.5 mr-2 text-indigo-600"></i>
               Username
             </label>
             <input
@@ -408,16 +408,16 @@ const LoginPage = () => {
               required
               value={formData.username}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm text-slate-800 font-medium"
             />
           </div>
 
           <div className="space-y-2">
             <label
               htmlFor="password"
-              className="flex items-center text-blue-700"
+              className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
             >
-              <i className="fas fa-key h-4 w-4 mr-2"></i>
+              <i className="fas fa-key h-3.5 w-3.5 mr-2 text-indigo-600"></i>
               Password
             </label>
             <div className="relative">
@@ -429,22 +429,22 @@ const LoginPage = () => {
                 required
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm text-slate-800 font-medium pr-10"
               />
               <button
                 type="button"
                 onClick={togglePasswordVisibility}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-600 hover:text-blue-700"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-indigo-600"
               >
                 {visible ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
 
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 -mx-4 -mb-4 mt-4 rounded-b-lg">
+          <div className="pt-2">
             <button
               type="submit"
-              className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="w-full login-btn-gradient py-3.5 px-4 text-white font-extrabold rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg text-sm tracking-wide"
               disabled={isLoginLoading || isDataLoading}
             >
               {isLoginLoading
@@ -460,7 +460,7 @@ const LoginPage = () => {
       {/* Toast Notification */}
       {toast.show && (
         <div
-          className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${toast.type === "success"
+          className={`fixed bottom-12 right-4 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 z-[9999] ${toast.type === "success"
             ? "bg-green-100 text-green-800 border-l-4 border-green-500"
             : "bg-red-100 text-red-800 border-l-4 border-red-500"
             }`}
@@ -513,7 +513,7 @@ const LoginPage = () => {
           </div>
         </div>
       )}
-      <div className="fixed left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-[999] font-medium">
+      <div className="fixed left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
         Architecture by Naman Mishra
       </div>
     </div>

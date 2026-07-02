@@ -8,6 +8,24 @@
     background: linear-gradient(to right, #7E22CE, #BE185D);
 }
 
+.login-header-gradient {
+    background: linear-gradient(135deg, #eef2ff 0%, #ecfdf5 100%) !important;
+}
+
+.login-btn-gradient {
+    background: linear-gradient(135deg, #10b981 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+}
+
+.login-btn-gradient:hover {
+    background: linear-gradient(135deg, #059669 0%, #4338ca 100%) !important;
+}
+
+.login-footer-gradient {
+    background: linear-gradient(135deg, #10b981 0%, #4f46e5 100%) !important;
+    color: #ffffff !important;
+}
+
 /* Improve scrolling performance for large tables */
 .h-\[calc\(100vh-250px\)\] {
   transform: translateZ(0);

@@ -150,7 +150,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       label: "License",
       icon: KeyRound,
       active: location.pathname === "/dashboard/license",
-      showFor: ["admin", "user"] // show both
+      showFor: [] // hidden
     },
 
     {
@@ -612,7 +612,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 gradient-bg text-white text-center text-sm shadow-md z-[999] font-medium">
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
             Architecture by Naman Mishra
           </div>
         </main>

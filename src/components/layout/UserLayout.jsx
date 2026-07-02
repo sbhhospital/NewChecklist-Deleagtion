@@ -202,7 +202,12 @@ const UserLayout = ({ children }) => {
             {isAdmin ? 'Admin Dashboard' : 'Staff Dashboard'}
           </h1>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-12 relative">
+          {children}
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
+            Architecture by Naman Mishra
+          </div>
+        </main>
       </div>
     </div>
   )
