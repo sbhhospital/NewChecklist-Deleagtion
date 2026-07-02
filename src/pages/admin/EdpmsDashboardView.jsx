@@ -538,8 +538,12 @@ export default function EdpmsDashboardView({
 
     // Calculate aggregated net score
     const avgScore = staffCalculated.length > 0 ? Math.round(staffCalculated.reduce((sum, s) => sum + s.aiScore, 0) / staffCalculated.length) : 1000
+    const missedChecklistDays = activeSource === "checklist"
+      ? calculateChecklistPenalties(filteredTasks).missedDays
+      : 0
 
     return {
+      missedChecklistDays,
       totalTasks: filteredTasks.length,
       activeDelegations: activeTasks.length,
       completedToday: completedTasks.length,
@@ -576,6 +580,14 @@ export default function EdpmsDashboardView({
       return match ? match.missedLoginDays : 0
     }
     return processedStats.staffMembersDetail.reduce((sum, s) => sum + s.missedLoginDays, 0)
+  }, [selectedEmployee, processedStats])
+
+  const displayMissedChecklistDays = useMemo(() => {
+    if (selectedEmployee && selectedEmployee !== "all") {
+      const match = processedStats.staffMembersDetail.find(s => s.name.toLowerCase() === selectedEmployee.toLowerCase())
+      return match && match.dynamicPointLogs ? match.dynamicPointLogs.filter(l => l.type === "penalty").length : 0
+    }
+    return processedStats.missedChecklistDays
   }, [selectedEmployee, processedStats])
 
   // Filter staff by department and search queries
@@ -1138,6 +1150,19 @@ export default function EdpmsDashboardView({
             <span className="text-[9px] text-rose-500 block font-medium mt-0.5">Deduction logged</span>
           </div>
         </div>
+
+        {activeSource === "checklist" && (
+          <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+            <div className="flex justify-between items-center text-slate-400">
+              <span className="text-[9px] font-bold uppercase tracking-wider">Missed Checklist Days</span>
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
+            </div>
+            <div className="mt-2">
+              <span className="text-lg font-extrabold text-rose-600">{displayMissedChecklistDays} Days</span>
+              <span className="text-[9px] text-rose-500 block font-medium mt-0.5">Total Missed Days</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Rankings, Statistics and Lists */}
