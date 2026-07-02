@@ -630,6 +630,22 @@ export default function EdpmsDashboardView({
     return processedStats.staffMembersDetail.reduce((sum, s) => sum + (s.totalBonuses || 0), 0)
   }, [selectedEmployee, processedStats])
 
+  const displayNet1000Score = useMemo(() => {
+    if (selectedEmployee && selectedEmployee !== "all") {
+      const match = processedStats.staffMembersDetail.find(s => s.name.toLowerCase() === selectedEmployee.toLowerCase())
+      return match ? match.aiScore : 0
+    }
+    return processedStats.net1000Score
+  }, [selectedEmployee, processedStats])
+
+  const displayTotalPenalties = useMemo(() => {
+    if (selectedEmployee && selectedEmployee !== "all") {
+      const match = processedStats.staffMembersDetail.find(s => s.name.toLowerCase() === selectedEmployee.toLowerCase())
+      return match ? match.totalPenalties : 0
+    }
+    return processedStats.totalPenalties
+  }, [selectedEmployee, processedStats])
+
   // Filter staff by department and search queries
   const filteredStaff = useMemo(() => {
     return processedStats.staffMembersDetail.filter(s => {
@@ -1149,14 +1165,14 @@ export default function EdpmsDashboardView({
             <Award className="h-3.5 w-3.5 text-indigo-600" />
           </div>
           <div className="mt-2">
-            <span className={`text-sm font-black block ${processedStats.net1000Score >= 950 ? "text-emerald-600" : processedStats.net1000Score >= 700 ? "text-indigo-600" : processedStats.net1000Score >= 0 ? "text-amber-600" : "text-rose-600"}`}>
-              {processedStats.net1000Score}/1000
+            <span className={`text-sm font-black block ${displayNet1000Score >= 950 ? "text-emerald-600" : displayNet1000Score >= 700 ? "text-indigo-600" : displayNet1000Score >= 0 ? "text-amber-600" : "text-rose-600"}`}>
+              {displayNet1000Score}/1000
             </span>
             <span className="text-[8px] text-emerald-600 block mt-0.5 truncate font-bold">
               Bonus: +{displayTotalBonuses} pts
             </span>
             <span className="text-[8px] text-rose-500 block mt-0.5 truncate font-bold">
-              Penalties: -{processedStats.totalPenalties} pts
+              Penalties: -{displayTotalPenalties} pts
             </span>
           </div>
         </div>
