@@ -1424,13 +1424,13 @@ function runDailyLoginCheck() {
     var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
     var emailColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "email"; });
     var deptColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "department"; });
-    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number"; });
+    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
     
     if (usernameColIndex === -1) usernameColIndex = 2; 
     if (roleColIndex === -1) roleColIndex = 4; 
     if (emailColIndex === -1) emailColIndex = 5; 
     if (deptColIndex === -1) deptColIndex = 1; 
-    if (phoneColIndex === -1) phoneColIndex = 3; 
+    if (phoneColIndex === -1) phoneColIndex = 6; 
 
     var activeUsers = [];
     var userEmails = {};
@@ -1617,11 +1617,11 @@ function sendSameDayLoginReminder() {
     var masterData = masterSheet.getDataRange().getValues();
     var headers = masterData[0];
     var usernameColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
-    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number"; });
+    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
     var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
     
     if (usernameColIndex === -1) usernameColIndex = 2;
-    if (phoneColIndex === -1) phoneColIndex = 3;
+    if (phoneColIndex === -1) phoneColIndex = 6;
     if (roleColIndex === -1) roleColIndex = 4;
     
     var activeUsers = [];
