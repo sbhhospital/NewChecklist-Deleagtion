@@ -107,7 +107,9 @@ const calculateChecklistPenalties = (tasks) => {
   });
 
   let totalPenalties = 0;
+  let totalBonuses = 0;
   let missedDays = 0;
+  let completedDays = 0;
   const today = new Date();
   today.setHours(0,0,0,0);
 
@@ -120,8 +122,18 @@ const calculateChecklistPenalties = (tasks) => {
     
     if (groupDate >= today) return;
 
+    const allCompleted = group.tasks.every(t => t.status === "completed");
     const allMissed = group.tasks.every(t => t.status !== "completed");
-    if (allMissed && group.tasks.length > 0) {
+
+    if (allCompleted && group.tasks.length > 0) {
+      totalBonuses += 25;
+      completedDays++;
+      missedDates.push({
+        date: group.date,
+        reason: `Daily Checklist Completed (${group.tasks.length} tasks)`,
+        deducted: -25
+      });
+    } else if (allMissed && group.tasks.length > 0) {
       totalPenalties += 50;
       missedDays++;
       missedDates.push({
@@ -132,7 +144,7 @@ const calculateChecklistPenalties = (tasks) => {
     }
   });
 
-  return { totalPenalties, missedDays, missedDates };
+  return { totalPenalties, totalBonuses, missedDays, completedDays, missedDates };
 };
 
 export default function EdpmsDashboardView({
@@ -308,12 +320,12 @@ export default function EdpmsDashboardView({
     const slaCompliance = totalFinishedTasks > 0 ? Math.round((onTimeTasksCount / totalFinishedTasks) * 100) : 100
 
     // Dynamic 1000-Point Performance Score calculation for active filtered tasks
-    const totalPenalties = activeSource === "checklist"
-      ? calculateChecklistPenalties(filteredTasks).totalPenalties
-      : filteredTasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
-    const onTimeCompletedCount = filteredTasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length
-    const totalBonuses = onTimeCompletedCount * 20
-    const net1000Score = Math.min(1000, Math.round(1000 - totalPenalties + totalBonuses))
+    const checklistStatsResult = activeSource === "checklist" ? calculateChecklistPenalties(filteredTasks) : null
+    const totalPenalties = checklistStatsResult ? checklistStatsResult.totalPenalties : filteredTasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
+    const totalBonuses = checklistStatsResult
+      ? checklistStatsResult.totalBonuses
+      : filteredTasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length * 20
+    const net1000Score = Math.max(0, Math.min(1000, Math.round(1000 - totalPenalties + totalBonuses)))
 
     // Calculate details per staff
     const staffCalculated = filteredStaffMembers.map(staff => {
@@ -328,22 +340,28 @@ export default function EdpmsDashboardView({
       
       const extensions = tasks.reduce((sum, t) => sum + (t.extensionCount || 0), 0)
       const delayTasks = tasks.reduce((sum, t) => sum + (t.delayDays || 0), 0)
-      const totalPenalties = activeSource === "checklist"
-        ? calculateChecklistPenalties(tasks).totalPenalties
+      const checklistStaffRes = activeSource === "checklist" ? calculateChecklistPenalties(tasks) : null
+      const totalPenalties = checklistStaffRes
+        ? checklistStaffRes.totalPenalties
         : tasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
+      const totalBonuses = checklistStaffRes
+        ? checklistStaffRes.totalBonuses
+        : tasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length * 20
+
       const reopens = tasks.filter(t => t.title.toLowerCase().includes("reopen")).length
 
       const dynamicPointLogs = [];
       if (activeSource === "checklist") {
-        const { missedDates } = calculateChecklistPenalties(tasks);
-        missedDates.forEach(md => {
-          dynamicPointLogs.push({
-            date: md.date,
-            reason: md.reason,
-            deducted: md.deducted,
-            type: "penalty"
+        if (checklistStaffRes) {
+          checklistStaffRes.missedDates.forEach(md => {
+            dynamicPointLogs.push({
+              date: md.date,
+              reason: md.reason,
+              deducted: md.deducted,
+              type: md.deducted < 0 ? "bonus" : "penalty"
+            });
           });
-        });
+        }
       } else {
         tasks.forEach(t => {
           if (t.penalty > 0) {
@@ -463,11 +481,11 @@ export default function EdpmsDashboardView({
 
       // 1000 Points Score breakdown
       const scoreTaskCompletion = tasks.length > 0 ? Math.round((completed.length / tasks.length) * 500) : 500
-      const scoreTaskQuality = Math.max(0, 200 - totalPenalties)
+      const scoreTaskQuality = Math.max(0, Math.min(200, 200 - totalPenalties + totalBonuses))
       const scoreRatings = 100 // Base Rating points
       const scoreLoginDiscipline = Math.max(0, 200 - loginDisciplineDeduction)
       
-      const finalScore = Math.min(1000, scoreTaskCompletion + scoreTaskQuality + scoreRatings + scoreLoginDiscipline)
+      const finalScore = Math.max(0, Math.min(1000, scoreTaskCompletion + scoreTaskQuality + scoreRatings + scoreLoginDiscipline))
       const performancePercent = Math.round((finalScore / 1000) * 100)
 
       let tier = "Bronze"
@@ -523,6 +541,7 @@ export default function EdpmsDashboardView({
         missedLoginDays: totalMissedLoginDays,
         loginDeductions: loginDisciplineDeduction,
         dynamicPointLogs,
+        totalBonuses,
         scoreBreakdown: {
           completion: scoreTaskCompletion,
           quality: scoreTaskQuality,
@@ -588,6 +607,14 @@ export default function EdpmsDashboardView({
       return match && match.dynamicPointLogs ? match.dynamicPointLogs.filter(l => l.type === "penalty").length : 0
     }
     return processedStats.missedChecklistDays
+  }, [selectedEmployee, processedStats])
+
+  const displayTotalBonuses = useMemo(() => {
+    if (selectedEmployee && selectedEmployee !== "all") {
+      const match = processedStats.staffMembersDetail.find(s => s.name.toLowerCase() === selectedEmployee.toLowerCase())
+      return match ? match.totalBonuses : 0
+    }
+    return processedStats.staffMembersDetail.reduce((sum, s) => sum + (s.totalBonuses || 0), 0)
   }, [selectedEmployee, processedStats])
 
   // Filter staff by department and search queries
@@ -1112,7 +1139,10 @@ export default function EdpmsDashboardView({
             <span className={`text-sm font-black block ${processedStats.net1000Score >= 950 ? "text-emerald-600" : processedStats.net1000Score >= 700 ? "text-indigo-600" : processedStats.net1000Score >= 0 ? "text-amber-600" : "text-rose-600"}`}>
               {processedStats.net1000Score}/1000
             </span>
-            <span className="text-[8px] text-slate-400 block mt-0.5 truncate">
+            <span className="text-[8px] text-emerald-600 block mt-0.5 truncate font-bold">
+              Bonus: +{displayTotalBonuses} pts
+            </span>
+            <span className="text-[8px] text-rose-500 block mt-0.5 truncate font-bold">
               Penalties: -{processedStats.totalPenalties} pts
             </span>
           </div>
