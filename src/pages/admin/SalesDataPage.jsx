@@ -34,6 +34,26 @@ const isEmpty = (value) => {
   return value === null || value === undefined || (typeof value === "string" && value.trim() === "")
 }
 
+const getGoogleDriveThumbnailUrl = (url) => {
+  if (!url || typeof url !== "string") return url;
+  
+  let fileId = "";
+  const ucExportMatch = url.match(/export=view&id=([^&]+)/);
+  const directMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  const openMatch = url.match(/open\?id=([^&]+)/);
+  const anyIdMatch = url.match(/id=([^&]+)/);
+
+  if (ucExportMatch) fileId = ucExportMatch[1];
+  else if (directMatch) fileId = directMatch[1];
+  else if (openMatch) fileId = openMatch[1];
+  else if (anyIdMatch) fileId = anyIdMatch[1];
+
+  if (fileId) {
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`;
+  }
+  return url;
+};
+
 const getTaskStatus = (
   actualValue,
   adminDoneValue,
@@ -240,9 +260,11 @@ const MemoizedTaskRow = memo(({
           <div className="flex items-center">
             <img
               src={
-                typeof account.image === "string"
-                  ? account.image
-                  : URL.createObjectURL(account.image)
+                getGoogleDriveThumbnailUrl(
+                  typeof account.image === "string"
+                    ? account.image
+                    : URL.createObjectURL(account.image)
+                )
               }
               alt="Receipt"
               className="h-10 w-10 object-cover rounded-md mr-2 flex-shrink-0"
@@ -2264,8 +2286,10 @@ function AccountDataPage() {
                                   >
                                     <img
                                       src={
-                                        history["col14"] ||
-                                        "/placeholder.svg?height=32&width=32"
+                                        getGoogleDriveThumbnailUrl(
+                                          history["col14"] ||
+                                          "/placeholder.svg?height=32&width=32"
+                                        )
                                       }
                                       alt="Attachment"
                                       className="h-8 w-8 object-cover rounded-md mr-2 flex-shrink-0"
@@ -2752,9 +2776,11 @@ function AccountDataPage() {
                               <div className="flex items-center">
                                 <img
                                   src={
-                                    typeof account.image === "string"
-                                      ? account.image
-                                      : URL.createObjectURL(account.image)
+                                    getGoogleDriveThumbnailUrl(
+                                      typeof account.image === "string"
+                                        ? account.image
+                                        : URL.createObjectURL(account.image)
+                                    )
                                   }
                                   alt="Receipt"
                                   className="h-10 w-10 object-cover rounded-md mr-2 flex-shrink-0"

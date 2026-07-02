@@ -126,6 +126,26 @@ function DelegationDataPage() {
     }
   }, []);
 
+  const getGoogleDriveThumbnailUrl = (url) => {
+    if (!url || typeof url !== "string") return url;
+    
+    let fileId = "";
+    const ucExportMatch = url.match(/export=view&id=([^&]+)/);
+    const directMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+    const openMatch = url.match(/open\?id=([^&]+)/);
+    const anyIdMatch = url.match(/id=([^&]+)/);
+
+    if (ucExportMatch) fileId = ucExportMatch[1];
+    else if (directMatch) fileId = directMatch[1];
+    else if (openMatch) fileId = openMatch[1];
+    else if (anyIdMatch) fileId = anyIdMatch[1];
+
+    if (fileId) {
+      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w600`;
+    }
+    return url;
+  };
+
   const createGoogleSheetsDate = useCallback((date) => {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
   }, []);
@@ -2280,8 +2300,10 @@ function DelegationDataPage() {
                                   >
                                     <img
                                       src={
-                                        history["col5"] ||
-                                        "/api/placeholder/32/32"
+                                        getGoogleDriveThumbnailUrl(
+                                          history["col5"] ||
+                                          "/api/placeholder/32/32"
+                                        )
                                       }
                                       alt="Attachment"
                                       className="h-8 w-8 object-cover rounded-md mr-2"
@@ -2452,7 +2474,7 @@ function DelegationDataPage() {
                             <div>
                               {account.image ? (
                                 <div className="flex items-center gap-2">
-                                  <img src={typeof account.image === "string" ? account.image : URL.createObjectURL(account.image)} alt="Receipt" className="h-10 w-10 object-cover rounded-md" />
+                                  <img src={getGoogleDriveThumbnailUrl(typeof account.image === "string" ? account.image : URL.createObjectURL(account.image))} alt="Receipt" className="h-10 w-10 object-cover rounded-md" />
                                   <div className="text-xs text-gray-600">{account.image instanceof File ? "Ready to upload" : <button className="text-purple-600" onClick={() => window.open(account.image, "_blank")}>View</button>}</div>
                                 </div>
                               ) : (
@@ -2775,7 +2797,7 @@ function DelegationDataPage() {
                               </td>
 
                               <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-orange-50" : ""
+                                  className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-orange-50" : ""
                                   }`}
                               >
                                 {account.image ? (
@@ -2783,7 +2805,7 @@ function DelegationDataPage() {
                                     <img
                                       src={
                                         typeof account.image === "string"
-                                          ? account.image
+                                          ? getGoogleDriveThumbnailUrl(account.image)
                                           : URL.createObjectURL(account.image)
                                       }
                                       alt="Receipt"
