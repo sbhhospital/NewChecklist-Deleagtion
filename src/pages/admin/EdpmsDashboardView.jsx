@@ -717,17 +717,30 @@ export default function EdpmsDashboardView({
           rows.push([])
           
           rows.push(["METRICS SUMMARY CARD POINTS"])
-          rows.push(["Total Tasks", "Active Tasks", "Completed Tasks", "On-Time Rate", "Score (1000)", "Late Tasks", "Extended Tasks", "Missed Logins"])
-          rows.push([
+          const isChecklist = activeSource === "checklist";
+          const headerRow = ["Total Tasks", "Active Tasks", "Completed Tasks", "On-Time Rate", "Score (1000)", "Bonus", "Penalties", "Late Tasks", "Extended Tasks", "Missed Logins"];
+          if (isChecklist) {
+            headerRow.push("Missed Checklist Days");
+          }
+          rows.push(headerRow);
+
+          const valueRow = [
             staff.totalTasks,
             staff.activeTasks,
             staff.completedTasks,
             `${staff.indexes.slaIndex}%`,
             `${staff.aiScore} / 1000`,
+            `+${staff.totalBonuses || 0} pts`,
+            `-${staff.totalPenalties || 0} pts`,
             staff.overdueTasks,
             staff.extensions,
             `${staff.missedLoginDays} Days (-${staff.loginDeductions} Pts)`
-          ])
+          ];
+          if (isChecklist) {
+            const checklistRes = calculateChecklistPenalties(staffTasks);
+            valueRow.push(`${checklistRes.missedDays} Days`);
+          }
+          rows.push(valueRow);
           rows.push([])
 
           const staffTasks = displayTasksList.filter(t => t.assignedTo.toLowerCase() === staff.name.toLowerCase())
@@ -1112,7 +1125,7 @@ export default function EdpmsDashboardView({
       ) : (
         <>
           {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className={`grid grid-cols-2 sm:grid-cols-4 ${activeSource === "checklist" ? "lg:grid-cols-9" : "lg:grid-cols-8"} gap-3`}>
         <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
           <div className="flex justify-between items-center text-slate-400">
             <span className="text-[9px] font-bold uppercase tracking-wider">Total Tasks</span>
