@@ -270,7 +270,7 @@ function doPost(e) {
     
     // NEW: Add updateAdminDone action handling
     if (params.action === 'updateAdminDone') {
-      var result = updateAdminDone(sheetName, rowDataString);
+      var result = updateAdminDone(params.sheetName, params.rowData);
       return ContentService.createTextOutput(JSON.stringify(result))
         .setMimeType(ContentService.MimeType.JSON);
     }
