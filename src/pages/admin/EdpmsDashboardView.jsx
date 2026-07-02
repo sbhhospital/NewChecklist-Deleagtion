@@ -90,16 +90,67 @@ const insightRecommendation = (level) => {
 
 const calculateChecklistPenalties = (tasks) => {
   const groups = {};
+  
   tasks.forEach(t => {
     if (!t.taskStartDate || !t.assignedTo) return;
     const dateStr = t.taskStartDate;
     const user = t.assignedTo.toLowerCase().trim();
-    const key = `${user}_${dateStr}`;
+    const dateObj = parseDateFromDDMMYYYY(dateStr);
+    if (!dateObj) return;
+
+    const year = dateObj.getFullYear();
+    const month = dateObj.getMonth();
+    const day = dateObj.getDate();
+
+    const getWeekNumber = (d) => {
+      const tempDate = new Date(d.getTime());
+      tempDate.setHours(0, 0, 0, 0);
+      tempDate.setDate(tempDate.getDate() + 3 - (tempDate.getDay() + 6) % 7);
+      const week1 = new Date(tempDate.getFullYear(), 0, 4);
+      return 1 + Math.round(((tempDate.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    };
+    const weekNumber = getWeekNumber(dateObj);
+
+    const freq = String(t.frequency || "daily").toLowerCase().trim();
     
+    let periodKey = "";
+    let periodLabel = "";
+    
+    if (freq === "daily") {
+      periodKey = `daily_${dateStr}`;
+      periodLabel = `Daily (${dateStr})`;
+    } else if (freq === "weekly") {
+      periodKey = `weekly_${year}_w${weekNumber}`;
+      periodLabel = `Weekly (Week ${weekNumber}, ${year})`;
+    } else if (freq === "fortnightly") {
+      const fn = day <= 15 ? 1 : 2;
+      periodKey = `fortnightly_${year}_m${month}_f${fn}`;
+      periodLabel = `Fortnightly (${fn === 1 ? "1st-15th" : "16th-End"}, ${month + 1}/${year})`;
+    } else if (freq === "monthly") {
+      periodKey = `monthly_${year}_m${month}`;
+      periodLabel = `Monthly (${month + 1}/${year})`;
+    } else if (freq === "quarterly") {
+      const q = Math.floor(month / 3) + 1;
+      periodKey = `quarterly_${year}_q${q}`;
+      periodLabel = `Quarterly (Q${q}, ${year})`;
+    } else if (freq === "yearly") {
+      periodKey = `yearly_${year}`;
+      periodLabel = `Yearly (${year})`;
+    } else if (freq.includes("week")) {
+      periodKey = `special_${freq.replace(/\s+/g, '_')}_${year}_m${month}`;
+      periodLabel = `${t.frequency} (${month + 1}/${year})`;
+    } else {
+      periodKey = `daily_${dateStr}`;
+      periodLabel = `Daily (${dateStr})`;
+    }
+
+    const key = `${user}_${periodKey}`;
     if (!groups[key]) {
       groups[key] = {
         user: t.assignedTo,
         date: dateStr,
+        periodLabel: periodLabel,
+        frequency: t.frequency || "Daily",
         tasks: []
       };
     }
@@ -130,7 +181,7 @@ const calculateChecklistPenalties = (tasks) => {
       completedDays++;
       missedDates.push({
         date: group.date,
-        reason: `Daily Checklist Completed (${group.tasks.length} tasks)`,
+        reason: `${group.frequency} Checklist Completed - ${group.periodLabel} (${group.tasks.length} tasks)`,
         deducted: -25
       });
     } else if (allMissed && group.tasks.length > 0) {
@@ -138,7 +189,7 @@ const calculateChecklistPenalties = (tasks) => {
       missedDays++;
       missedDates.push({
         date: group.date,
-        reason: `Daily Checklist Missed (${group.tasks.length} tasks)`,
+        reason: `${group.frequency} Checklist Missed - ${group.periodLabel} (${group.tasks.length} tasks)`,
         deducted: 50
       });
     }
