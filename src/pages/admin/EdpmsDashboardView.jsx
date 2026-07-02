@@ -88,6 +88,53 @@ const insightRecommendation = (level) => {
   return "Workload balanced. Suitable for high priority deliverables."
 }
 
+const calculateChecklistPenalties = (tasks) => {
+  const groups = {};
+  tasks.forEach(t => {
+    if (!t.taskStartDate || !t.assignedTo) return;
+    const dateStr = t.taskStartDate;
+    const user = t.assignedTo.toLowerCase().trim();
+    const key = `${user}_${dateStr}`;
+    
+    if (!groups[key]) {
+      groups[key] = {
+        user: t.assignedTo,
+        date: dateStr,
+        tasks: []
+      };
+    }
+    groups[key].tasks.push(t);
+  });
+
+  let totalPenalties = 0;
+  let missedDays = 0;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const missedDates = [];
+
+  Object.keys(groups).forEach(key => {
+    const group = groups[key];
+    const groupDate = parseDateFromDDMMYYYY(group.date);
+    if (!groupDate) return;
+    
+    if (groupDate >= today) return;
+
+    const allMissed = group.tasks.every(t => t.status !== "completed");
+    if (allMissed && group.tasks.length > 0) {
+      totalPenalties += 50;
+      missedDays++;
+      missedDates.push({
+        date: group.date,
+        reason: `Daily Checklist Missed (${group.tasks.length} tasks)`,
+        deducted: 50
+      });
+    }
+  });
+
+  return { totalPenalties, missedDays, missedDates };
+};
+
 export default function EdpmsDashboardView({
   allTasks = [],
   staffMembers = [],
@@ -261,7 +308,9 @@ export default function EdpmsDashboardView({
     const slaCompliance = totalFinishedTasks > 0 ? Math.round((onTimeTasksCount / totalFinishedTasks) * 100) : 100
 
     // Dynamic 1000-Point Performance Score calculation for active filtered tasks
-    const totalPenalties = filteredTasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
+    const totalPenalties = activeSource === "checklist"
+      ? calculateChecklistPenalties(filteredTasks).totalPenalties
+      : filteredTasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
     const onTimeCompletedCount = filteredTasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length
     const totalBonuses = onTimeCompletedCount * 20
     const net1000Score = Math.min(1000, Math.round(1000 - totalPenalties + totalBonuses))
@@ -279,8 +328,42 @@ export default function EdpmsDashboardView({
       
       const extensions = tasks.reduce((sum, t) => sum + (t.extensionCount || 0), 0)
       const delayTasks = tasks.reduce((sum, t) => sum + (t.delayDays || 0), 0)
-      const totalPenalties = tasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
+      const totalPenalties = activeSource === "checklist"
+        ? calculateChecklistPenalties(tasks).totalPenalties
+        : tasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
       const reopens = tasks.filter(t => t.title.toLowerCase().includes("reopen")).length
+
+      const dynamicPointLogs = [];
+      if (activeSource === "checklist") {
+        const { missedDates } = calculateChecklistPenalties(tasks);
+        missedDates.forEach(md => {
+          dynamicPointLogs.push({
+            date: md.date,
+            reason: md.reason,
+            deducted: md.deducted,
+            type: "penalty"
+          });
+        });
+      } else {
+        tasks.forEach(t => {
+          if (t.penalty > 0) {
+            dynamicPointLogs.push({
+              date: t.completionDate || t.taskStartDate || "—",
+              reason: `Task ID ${t.id} Overdue/Extension Penalty`,
+              deducted: t.penalty,
+              type: "penalty"
+            });
+          }
+          if (t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0) {
+            dynamicPointLogs.push({
+              date: t.completionDate || "—",
+              reason: `Task ID ${t.id} On-Time Completion Bonus`,
+              deducted: -20,
+              type: "bonus"
+            });
+          }
+        });
+      }
 
       // Login tracking calculations
       const userLogins = (loginHistory || []).filter(l => l.username && typeof l.username === 'string' && l.username.toLowerCase() === name.toLowerCase())
@@ -439,6 +522,7 @@ export default function EdpmsDashboardView({
         longestStreak,
         missedLoginDays: totalMissedLoginDays,
         loginDeductions: loginDisciplineDeduction,
+        dynamicPointLogs,
         scoreBreakdown: {
           completion: scoreTaskCompletion,
           quality: scoreTaskQuality,
@@ -1390,19 +1474,51 @@ export default function EdpmsDashboardView({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {(pointDeductions || []).filter(d => d && d.username && typeof d.username === "string" && d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).map((d, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 font-medium text-slate-500">{d.date}</td>
-                          <td className="px-4 py-2 font-semibold text-rose-600">{d.reason}</td>
-                          <td className="px-4 py-2 font-bold text-rose-600">-{d.deducted} pts</td>
-                          <td className="px-4 py-2 font-extrabold text-slate-800">{d.balance} pts</td>
-                        </tr>
-                      ))}
-                      {(pointDeductions || []).filter(d => d && d.username && typeof d.username === "string" && d.username.toLowerCase() === activeStaffProfile.name.toLowerCase()).length === 0 && (
-                        <tr>
-                          <td colSpan="4" className="px-4 py-4 text-center text-slate-400">No point deductions logged. Perfect compliance!</td>
-                        </tr>
-                      )}
+                      {(() => {
+                        const staticDeductions = (pointDeductions || [])
+                          .filter(d => d && d.username && typeof d.username === "string" && d.username.toLowerCase() === activeStaffProfile.name.toLowerCase())
+                          .map(d => ({
+                            date: d.date,
+                            reason: d.reason,
+                            deducted: d.deducted,
+                            balance: d.balance
+                          }));
+
+                        const dynamicDeductions = (activeStaffProfile.dynamicPointLogs || [])
+                          .map(d => ({
+                            date: d.date,
+                            reason: d.reason,
+                            deducted: d.deducted,
+                            balance: "—"
+                          }));
+
+                        const combined = [...staticDeductions, ...dynamicDeductions];
+                        
+                        combined.sort((a, b) => {
+                          const dateA = parseDateFromDDMMYYYY(a.date) || new Date(0);
+                          const dateB = parseDateFromDDMMYYYY(b.date) || new Date(0);
+                          return dateB - dateA;
+                        });
+
+                        if (combined.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan="4" className="px-4 py-4 text-center text-slate-400">No point deductions logged. Perfect compliance!</td>
+                            </tr>
+                          );
+                        }
+
+                        return combined.map((d, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="px-4 py-2 font-medium text-slate-500">{d.date}</td>
+                            <td className={`px-4 py-2 font-semibold ${d.deducted < 0 ? "text-emerald-600" : "text-rose-600"}`}>{d.reason}</td>
+                            <td className={`px-4 py-2 font-bold ${d.deducted < 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {d.deducted < 0 ? `+${Math.abs(d.deducted)}` : `-${d.deducted}`} pts
+                            </td>
+                            <td className="px-4 py-2 font-extrabold text-slate-800">{d.balance !== "—" ? `${d.balance} pts` : "—"}</td>
+                          </tr>
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
