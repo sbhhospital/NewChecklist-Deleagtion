@@ -344,9 +344,7 @@ export default function EdpmsDashboardView({
       const totalPenalties = checklistStaffRes
         ? checklistStaffRes.totalPenalties
         : tasks.reduce((sum, t) => sum + (t.penalty || 0), 0)
-      const totalBonuses = checklistStaffRes
-        ? checklistStaffRes.totalBonuses
-        : tasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length * 20
+      let totalBonuses = 0
 
       const reopens = tasks.filter(t => t.title.toLowerCase().includes("reopen")).length
 
@@ -387,6 +385,21 @@ export default function EdpmsDashboardView({
       const userLogins = (loginHistory || []).filter(l => l.username && typeof l.username === 'string' && l.username.toLowerCase() === name.toLowerCase())
       const uniqueDates = [...new Set(userLogins.map(l => l.date))].map(d => parseDateFromDDMMYYYY(d)).filter(Boolean)
       uniqueDates.sort((a, b) => b - a)
+
+      const loginBonus = [...new Set(userLogins.map(l => l.date))].length * 20
+      totalBonuses = (checklistStaffRes
+        ? checklistStaffRes.totalBonuses
+        : tasks.filter(t => t.status === "completed" && (t.extensionCount || 0) === 0 && (t.delayDays || 0) === 0).length * 20) + loginBonus
+
+      const uniqueLoginDatesList = [...new Set(userLogins.map(l => l.date))]
+      uniqueLoginDatesList.forEach(dateStr => {
+        dynamicPointLogs.push({
+          date: dateStr,
+          reason: "Daily Login Reward",
+          deducted: -20,
+          type: "bonus"
+        });
+      });
 
       // Calculate current & longest login streaks
       let currentStreak = 0
