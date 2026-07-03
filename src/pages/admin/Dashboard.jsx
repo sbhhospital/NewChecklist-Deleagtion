@@ -1188,10 +1188,7 @@ export default function AdminDashboard() {
                     }}
                     onClick={() => setShowImageUploadModal(true)}
                     onError={(e) => {
-                      const originalUrl = userProfileImage
-                        .replace("thumbnail?", "uc?export=view&")
-                        .replace("&sz=w150", "");
-                      e.target.src = originalUrl;
+                      e.target.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
                     }}
                   />
                   <div

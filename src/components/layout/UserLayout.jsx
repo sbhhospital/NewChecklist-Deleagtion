@@ -63,13 +63,13 @@ const UserLayout = ({ children }) => {
   return (
     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-green-50 to-teal-50 dark:from-gray-900 dark:to-teal-950">
       {/* Sidebar for desktop */}
-      <aside className="hidden w-64 flex-shrink-0 border-r border-green-200 dark:border-teal-800 bg-white dark:bg-gray-950 md:flex md:flex-col">
-        <div className="flex h-14 items-center border-b border-green-200 dark:border-teal-800 px-4 bg-gradient-to-r from-green-100 to-teal-100 dark:from-green-900 dark:to-teal-900">
+      <aside className="hidden w-64 flex-shrink-0 border-r border-purple-200 md:flex md:flex-col menu-container-bg">
+        <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
           <Link
             to={isAdmin ? "/admin/dashboard" : "/user/dashboard"}
-            className="flex items-center gap-2 font-semibold text-green-700 dark:text-green-300"
+            className="flex items-center gap-2 font-semibold text-purple-700"
           >
-            <i className="fas fa-clipboard-list h-5 w-5 text-green-600 dark:text-green-400"></i>
+            <i className="fas fa-clipboard-list h-5 w-5 text-purple-600"></i>
             <span>Checklist & Delegation</span>
           </Link>
         </div>
@@ -81,8 +81,8 @@ const UserLayout = ({ children }) => {
                   to={route.href}
                   className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                     location.pathname === route.href
-                      ? "bg-gradient-to-r from-green-100 to-teal-100 text-green-700 dark:from-green-900 dark:to-teal-900 dark:text-green-300"
-                      : "text-gray-700 hover:bg-green-50 dark:text-gray-300 dark:hover:bg-gray-800"
+                      ? "menu-active-gradient font-bold"
+                      : "text-gray-700 hover:bg-purple-50/50"
                   }`}
                 >
                   {getIcon(route.icon)}
@@ -92,7 +92,7 @@ const UserLayout = ({ children }) => {
             ))}
           </ul>
         </nav>
-        <div className="border-t border-green-200 dark:border-teal-800 p-4 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-950 dark:to-teal-950">
+        <div className="border-t border-purple-200 p-4 menu-header-gradient">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center">
@@ -128,19 +128,19 @@ const UserLayout = ({ children }) => {
 
       {/* Mobile sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-950 transform ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-200 ease-in-out md:hidden`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 menu-container-bg transform ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-200 ease-in-out md:hidden`}
       >
-        <div className="flex h-14 items-center border-b border-green-200 dark:border-teal-800 px-4 bg-gradient-to-r from-green-100 to-teal-100 dark:from-green-900 dark:to-teal-900">
+        <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
           <Link
             to={isAdmin ? "/admin/dashboard" : "/user/dashboard"}
-            className="flex items-center gap-2 font-semibold text-green-700 dark:text-green-300"
+            className="flex items-center gap-2 font-semibold text-purple-700"
             onClick={() => setIsMobileMenuOpen(false)}
           >
-            <i className="fas fa-clipboard-list h-5 w-5 text-green-600 dark:text-green-400"></i>
+            <i className="fas fa-clipboard-list h-5 w-5 text-purple-600"></i>
             <span>Checklist & Delegation</span>
           </Link>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2 bg-white dark:bg-gray-950">
+        <nav className="flex-1 overflow-y-auto p-2 menu-container-bg">
           <ul className="space-y-1">
             {routes.map((route) => (
               <li key={route.href}>
@@ -148,8 +148,8 @@ const UserLayout = ({ children }) => {
                   to={route.href}
                   className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                     location.pathname === route.href
-                      ? "bg-gradient-to-r from-green-100 to-teal-100 text-green-700 dark:from-green-900 dark:to-teal-900 dark:text-green-300"
-                      : "text-gray-700 hover:bg-green-50 dark:text-gray-300 dark:hover:bg-gray-800"
+                      ? "menu-active-gradient font-bold"
+                      : "text-gray-700 hover:bg-purple-50/50"
                   }`}
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
@@ -160,26 +160,26 @@ const UserLayout = ({ children }) => {
             ))}
           </ul>
         </nav>
-        <div className="border-t border-green-200 dark:border-teal-800 p-4 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-950 dark:to-teal-950">
+        <div className="border-t border-purple-200 p-4 menu-header-gradient">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center">
+              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
                 <span className="text-sm font-medium text-white">
                   {username ? username.charAt(0).toUpperCase() : 'U'}
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                <p className="text-sm font-medium text-purple-700">
                   {isAdmin ? 'Admin' : 'Staff Member'}
                 </p>
-                <p className="text-xs text-green-600 dark:text-green-400">
+                <p className="text-xs text-purple-600">
                   {username}
                 </p>
               </div>
             </div>
             <button
               onClick={handleLogout}
-              className="text-green-700 hover:text-green-900 dark:text-green-300 dark:hover:text-green-100"
+              className="text-purple-700 hover:text-purple-900"
             >
               <i className="fas fa-sign-out-alt h-4 w-4"></i>
               <span className="sr-only">Log out</span>
@@ -190,15 +190,15 @@ const UserLayout = ({ children }) => {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center justify-between border-b border-green-200 dark:border-teal-800 bg-white dark:bg-gray-950 px-4 md:px-6">
+        <header className="flex h-14 items-center justify-between border-b border-purple-200 menu-header-gradient px-4 md:px-6">
           <button 
-            className="md:hidden text-green-700 dark:text-green-300" 
+            className="md:hidden text-purple-700" 
             onClick={() => setIsMobileMenuOpen(true)}
           >
             <i className="fas fa-bars h-5 w-5"></i>
             <span className="sr-only">Toggle menu</span>
           </button>
-          <h1 className="text-lg font-semibold text-green-700 dark:text-green-300">
+          <h1 className="text-lg font-semibold text-purple-700">
             {isAdmin ? 'Admin Dashboard' : 'Staff Dashboard'}
           </h1>
         </header>

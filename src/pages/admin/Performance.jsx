@@ -90,17 +90,18 @@ const calculateTaskScore = (taskObj, historyList) => {
   let delayDays = 0
   const deadlineDate = parseDateFromDDMMYYYY(taskObj.dueDate || taskObj.taskStartDate)
   const isDone = taskObj.originalStatus === "Done"
+  const isVerifyPending = taskObj.originalStatus === "Verify Pending"
   const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate)
 
   const cutoffDate = new Date(2026, 5, 24) // June 24, 2026
   cutoffDate.setHours(0, 0, 0, 0)
 
-  if (isDone && actualDate && actualDate < cutoffDate) {
+  if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
     extensionCount = 0
     delayDays = 0
   } else {
     if (deadlineDate) {
-      if (isDone) {
+      if (isDone || isVerifyPending) {
         if (actualDate && actualDate > deadlineDate) {
           const diffTime = actualDate - deadlineDate
           delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))

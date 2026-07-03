@@ -210,11 +210,11 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       className={`flex h-screen overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50`}
     >
       {/* Sidebar for desktop */}
-      <aside className="hidden w-64 flex-shrink-0 border-r border-blue-200 bg-white md:flex md:flex-col">
-        <div className="flex h-14 items-center border-b border-blue-200 px-4 bg-gradient-to-r from-blue-100 to-purple-100">
+      <aside className="hidden w-64 flex-shrink-0 border-r border-purple-200 menu-container-bg md:flex md:flex-col">
+        <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
           <Link
             to="/dashboard/admin"
-            className="flex items-center gap-2 font-semibold text-blue-700"
+            className="flex items-center gap-2 font-semibold text-purple-700"
           >
             <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8" />
           </Link>
@@ -228,13 +228,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                     <button
                       onClick={() => setIsDataSubmenuOpen(!isDataSubmenuOpen)}
                       className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                        ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                        : "text-gray-700 hover:bg-blue-50"
+                        ? "menu-active-gradient font-bold"
+                        : "text-gray-700 hover:bg-purple-50/50"
                         }`}
                     >
                       <div className="flex items-center gap-3">
                         <route.icon
-                          className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                          className={`h-4 w-4 ${route.active ? "text-white" : ""
                             }`}
                         />
                         {route.label}
@@ -246,7 +246,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                       )}
                     </button>
                     {isDataSubmenuOpen && (
-                      <ul className="mt-1 ml-6 space-y-1 border-l border-blue-100 pl-2">
+                      <ul className="mt-1 ml-6 space-y-1 border-l border-purple-100 pl-2">
                         {accessibleDepartments.map((category) => (
                           <li key={category.id}>
                             <Link
@@ -257,8 +257,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                 (category.link ||
                                   `/dashboard/data/${category.id}`)
-                                ? "bg-blue-50 text-blue-700 font-medium"
-                                : "text-gray-600 hover:bg-blue-50 hover:text-blue-700 "
+                                ? "bg-purple-50 text-purple-700 font-bold"
+                                : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
                                 }`}
                               onClick={() => setIsMobileMenuOpen(false)}
                             >
@@ -273,12 +273,12 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                   <Link
                     to={route.href}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                      ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                      : "text-gray-700 hover:bg-blue-50"
+                      ? "menu-active-gradient font-bold"
+                      : "text-gray-700 hover:bg-purple-50/50"
                       }`}
                   >
                     <route.icon
-                      className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                      className={`h-4 w-4 ${route.active ? "text-white" : ""
                         }`}
                     />
                     {route.label}
@@ -396,17 +396,17 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             className="fixed inset-0 bg-black/20"
             onClick={() => setIsMobileMenuOpen(false)}
           ></div>
-          <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-lg">
-            <div className="flex h-14 items-center border-b border-blue-200 px-4 bg-gradient-to-r from-blue-100 to-purple-100">
+          <div className="fixed inset-y-0 left-0 w-64 menu-container-bg shadow-lg">
+            <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
               <Link
                 to="/dashboard/admin"
-                className="flex items-center gap-2 font-semibold text-blue-700"
+                className="flex items-center gap-2 font-semibold text-purple-700"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
               </Link>
             </div>
-            <nav className="flex-1 overflow-y-auto p-2 bg-white">
+            <nav className="flex-1 overflow-y-auto p-2 menu-container-bg">
               <ul className="space-y-1">
                 {accessibleRoutes.map((route) => (
                   <li key={route.label}>
@@ -417,13 +417,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                             setIsDataSubmenuOpen(!isDataSubmenuOpen)
                           }
                           className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                            ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                            : "text-gray-700 hover:bg-blue-50"
+                            ? "menu-active-gradient font-bold"
+                            : "text-gray-700 hover:bg-purple-50/50"
                             }`}
                         >
                           <div className="flex items-center gap-3">
                             <route.icon
-                              className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                              className={`h-4 w-4 ${route.active ? "text-white" : ""
                                 }`}
                             />
                             {route.label}
@@ -435,7 +435,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                           )}
                         </button>
                         {isDataSubmenuOpen && (
-                          <ul className="mt-1 ml-6 space-y-1 border-l border-blue-100 pl-2">
+                          <ul className="mt-1 ml-6 space-y-1 border-l border-purple-100 pl-2">
                             {accessibleDepartments.map((category) => (
                               <li key={category.id}>
                                 <Link
@@ -446,8 +446,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                                   className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                     (category.link ||
                                       `/dashboard/data/${category.id}`)
-                                    ? "bg-blue-50 text-blue-700 font-medium"
-                                    : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
+                                    ? "bg-purple-50 text-purple-700 font-bold"
+                                    : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
                                     }`}
                                   onClick={() => setIsMobileMenuOpen(false)}
                                 >
@@ -462,13 +462,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                       <Link
                         to={route.href}
                         className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                          ? "bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700"
-                          : "text-gray-700 hover:bg-blue-50"
+                          ? "menu-active-gradient font-bold"
+                          : "text-gray-700 hover:bg-purple-50/50"
                           }`}
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
                         <route.icon
-                          className={`h-4 w-4 ${route.active ? "text-blue-600" : ""
+                          className={`h-4 w-4 ${route.active ? "text-white" : ""
                             }`}
                         />
                         {route.label}

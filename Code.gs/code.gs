@@ -1415,8 +1415,10 @@ function runDailyLoginCheck() {
       attendanceSheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device"]);
     }
     
-    var today = new Date();
-    var dateStr = getFormattedDate(today);
+    // Evaluate compliance for the previous calendar day (yesterday)
+    var targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - 1);
+    var dateStr = getFormattedDate(targetDate);
     
     var masterData = masterSheet.getDataRange().getValues();
     var headers = masterData[0];
@@ -1463,6 +1465,7 @@ function runDailyLoginCheck() {
     
     var deductionsData = deductionsSheet.getDataRange().getValues();
     var results = [];
+    var absentUsersSummary = []; // Track non-compliance for consolidated admin reminder
     
     activeUsers.forEach(function(user) {
       var userKey = user.toLowerCase();
@@ -1503,7 +1506,7 @@ function runDailyLoginCheck() {
         }
 
         var consecutiveMissed = 1;
-        var checkDate = new Date();
+        var checkDate = new Date(targetDate);
         var limitDate = new Date(2026, 6, 1); // July 1, 2026
         limitDate.setHours(0,0,0,0);
         
@@ -1552,28 +1555,31 @@ function runDailyLoginCheck() {
           var newBalance = balance - pointsToDeduct;
           deductionsSheet.appendRow([dateStr, user, "Login Missed (" + consecutiveMissed + " Days)", pointsToDeduct, newBalance]);
 
-          // WhatsApp Notification & Escalation Rules (No Emails, No Department Name)
-          if (consecutiveMissed === 1) {
-            // Alert Employee
-            if (employeePhone) {
-              sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE REMINDER* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\nAs per company policy, *50 points* have been deducted from your performance rating. Please ensure timely login tomorrow to maintain your compliance status.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-            }
-            // Alert Manager
-            sendWhatsAppNotification("+919039080203", "⚠️ *STAFF LOGIN NON-COMPLIANCE ALERT* ⚠️\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Did not log in today.\n*Consecutive Days Missed:* 1 Day\n*Points Deducted:* -50 Pts\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-          } else if (consecutiveMissed >= 2) {
-            // Alert Employee
-            if (employeePhone) {
-              sendWhatsAppNotification(employeePhone, "🚨 *ATTENDANCE COMPLIANCE ALERT* 🚨\n\nDear *" + user + "*,\n\nYou have missed logging into the *SBH Group of Hospitals Delegation Management System* today (" + dateStr + ").\n\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nPlease ensure you log in immediately tomorrow to maintain compliance.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-            }
-            // Alert Manager & Escalation
-            sendWhatsAppNotification("+919039080203", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Non-compliant.\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-            sendWhatsAppNotification("+919644404741", "🚨 *CRITICAL COMPLIANCE ESCALATION* 🚨\n\n*Employee Name:* " + user + "\n*Date:* " + dateStr + "\n*Status:* Non-compliant.\n*Consecutive Days Missed:* " + consecutiveMissed + " Days\n*Points Deducted:* -" + pointsToDeduct + " Pts\n\nImmediate review is required as per compliance protocol.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
-          }
+          // Push to consolidated admin summary list
+          absentUsersSummary.push({
+            name: user,
+            missed: consecutiveMissed,
+            deducted: pointsToDeduct
+          });
         }
         
         results.push({ username: user, status: "absent", consecutiveMissed: consecutiveMissed });
       }
     });
+    
+    // Send ONE consolidated message to escalation managers if there are non-compliant users
+    if (absentUsersSummary.length > 0) {
+      var summaryMsg = "🚨 *STAFF ATTENDANCE ESCALATION SUMMARY* 🚨\n\n";
+      summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
+      summaryMsg += "The following staff members missed their check-in:\n";
+      absentUsersSummary.forEach(function(item, idx) {
+        summaryMsg += (idx + 1) + ". *" + item.name + "* — Missed: " + item.missed + " Day(s) (-" + item.deducted + " Pts)\n";
+      });
+      summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
+      
+      sendWhatsAppNotification("+919039080203", summaryMsg);
+      sendWhatsAppNotification("+919644404741", summaryMsg);
+    }
     
     return { success: true, processedCount: results.length, results: results };
   } catch (error) {
@@ -1653,7 +1659,7 @@ function sendSameDayLoginReminder() {
       if (!presentUsersToday[userKey]) {
         var phone = userPhones[user];
         if (phone) {
-          sendWhatsAppNotification(phone, "⚠️ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⚠️\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          sendWhatsAppNotification(phone, "⚠️ ⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰ ⚠️\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           count++;
         }
       }
@@ -1682,11 +1688,11 @@ function setupAttendanceTriggers() {
     .nearMinute(0)
     .create();
     
-  // 2. Trigger for runDailyLoginCheck at 11:50 PM daily
+  // 2. Trigger for runDailyLoginCheck at 11:00 AM daily
   ScriptApp.newTrigger("runDailyLoginCheck")
     .timeBased()
     .everyDays(1)
-    .atHour(23)
-    .nearMinute(50)
+    .atHour(11)
+    .nearMinute(0)
     .create();
 }

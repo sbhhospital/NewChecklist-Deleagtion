@@ -323,19 +323,20 @@ function DelegationDataPage() {
     const deadlineDate = parseDateFromDDMMYYYY(deadlineStr);
 
     const isDone = task["col20"] === "Done";
+    const isVerifyPending = task["col20"] === "Verify Pending";
     const actualStr = task["col11"] || "";
     const actualDate = parseDateFromDDMMYYYY(actualStr);
 
     const cutoffDate = new Date(2026, 5, 24); // June 24, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
-    if (isDone && actualDate && actualDate < cutoffDate) {
+    if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
       // Forgive penalties for tasks completed before June 24, 2026
       extensionCount = 0;
       delayDays = 0;
     } else {
       if (deadlineDate) {
-        if (isDone) {
+        if (isDone || isVerifyPending) {
           if (actualDate && actualDate > deadlineDate) {
             const diffTime = actualDate - deadlineDate;
             delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -1856,17 +1857,19 @@ function DelegationDataPage() {
 
         {/* Scoring Summary Cards */}
         <div className="grid gap-4 grid-cols-2 md:grid-cols-6 mt-4">
-          <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
-            <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Avg Rating</span>
-            <div className="flex flex-col mt-2">
-              <span className={`text-3xl font-extrabold ${
-                scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
-              }`}>
-                {scoringSummary.avgScore}%
-              </span>
+          {userRole === "admin" && (
+            <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
+              <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Avg Rating</span>
+              <div className="flex flex-col mt-2">
+                <span className={`text-3xl font-extrabold ${
+                  scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
+                }`}>
+                  {scoringSummary.avgScore}%
+                </span>
+              </div>
+              <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
             </div>
-            <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
-          </div>
+          )}
 
           <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/20 to-white shadow-sm flex flex-col justify-between">
             <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending Tasks</span>
@@ -2005,9 +2008,11 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Submission Status
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Task Score
-                        </th>
+                        {userRole === "admin" && (
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Task Score
+                          </th>
+                        )}
                         {/* Admin Select Column Header */}
                         {userRole === "admin" && (
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
@@ -2152,44 +2157,46 @@ function DelegationDataPage() {
                                 </span>
                               </td>
                               {/* Task Score Column */}
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-semibold">
-                                  {(() => {
-                                    if (matchingTask) {
-                                      const scoreDetails = calculateTaskScore(matchingTask, historyData);
-                                      let scoreColor = "text-red-600";
-                                      if (scoreDetails.score >= 80) scoreColor = "text-green-600";
-                                      return (
-                                        <div className="flex flex-col text-xs space-y-0.5">
-                                          <span className={`font-bold ${scoreColor}`}>
-                                            Score: {scoreDetails.score} Pts
-                                          </span>
-                                          {scoreDetails.penalty > 0 ? (
-                                            <>
-                                              <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
-                                                Total Penalty: {scoreDetails.penalty} Pts
-                                              </span>
-                                              {scoreDetails.extensionCount > 0 && (
-                                                <span className="text-gray-500">
-                                                  Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                              {userRole === "admin" && (
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-semibold">
+                                    {(() => {
+                                      if (matchingTask) {
+                                        const scoreDetails = calculateTaskScore(matchingTask, historyData);
+                                        let scoreColor = "text-red-600";
+                                        if (scoreDetails.score >= 80) scoreColor = "text-green-600";
+                                        return (
+                                          <div className="flex flex-col text-xs space-y-0.5">
+                                            <span className={`font-bold ${scoreColor}`}>
+                                              Score: {scoreDetails.score} Pts
+                                            </span>
+                                            {scoreDetails.penalty > 0 ? (
+                                              <>
+                                                <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
+                                                  Total Penalty: {scoreDetails.penalty} Pts
                                                 </span>
-                                              )}
-                                              {scoreDetails.delayDays > 0 && (
-                                                <span className="text-red-500">
-                                                  Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
-                                                </span>
-                                              )}
-                                            </>
-                                          ) : (
-                                            <span className="text-green-600 font-bold">0 Pts (On Time)</span>
-                                          )}
-                                        </div>
-                                      );
-                                    }
-                                    return <span className="text-gray-400">—</span>;
-                                  })()}
-                                </div>
-                              </td>
+                                                {scoreDetails.extensionCount > 0 && (
+                                                  <span className="text-gray-500">
+                                                    Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                                                  </span>
+                                                )}
+                                                {scoreDetails.delayDays > 0 && (
+                                                  <span className="text-red-500">
+                                                    Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
+                                                  </span>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <span className="text-green-600 font-bold">0 Pts (On Time)</span>
+                                            )}
+                                          </div>
+                                        );
+                                      }
+                                      return <span className="text-gray-400">—</span>;
+                                    })()}
+                                  </div>
+                                </td>
+                              )}
                               {/* Admin Select Checkbox */}
                               {userRole === "admin" && (
                                 <td className="px-3 py-4 w-12">
@@ -2526,9 +2533,11 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Task Score
-                        </th>
+                        {userRole === "admin" && (
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Task Score
+                          </th>
+                        )}
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Task Start Date
                         </th>
@@ -2623,43 +2632,45 @@ function DelegationDataPage() {
                                   {account["col20"] || "—"}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-semibold">
-                                  {(() => {
-                                    const scoreDetails = calculateTaskScore(account, historyData);
-                                    let scoreColor = "text-red-600";
-                                    if (scoreDetails.score >= 80) scoreColor = "text-green-600";
-                                    else if (scoreDetails.score >= 50) scoreColor = "text-yellow-600";
-                                    
-                                    return (
-                                        <div className="flex flex-col text-xs space-y-0.5">
-                                          <span className={`font-bold ${scoreColor}`}>
-                                            Score: {scoreDetails.score} Pts
-                                          </span>
-                                          {scoreDetails.penalty > 0 ? (
-                                            <>
-                                              <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
-                                                Total Penalty: {scoreDetails.penalty} Pts
-                                              </span>
-                                              {scoreDetails.extensionCount > 0 && (
-                                                <span className="text-gray-500">
-                                                  Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                              {userRole === "admin" && (
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-semibold">
+                                    {(() => {
+                                      const scoreDetails = calculateTaskScore(account, historyData);
+                                      let scoreColor = "text-red-600";
+                                      if (scoreDetails.score >= 80) scoreColor = "text-green-600";
+                                      else if (scoreDetails.score >= 50) scoreColor = "text-yellow-600";
+                                      
+                                      return (
+                                          <div className="flex flex-col text-xs space-y-0.5">
+                                            <span className={`font-bold ${scoreColor}`}>
+                                              Score: {scoreDetails.score} Pts
+                                            </span>
+                                            {scoreDetails.penalty > 0 ? (
+                                              <>
+                                                <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
+                                                  Total Penalty: {scoreDetails.penalty} Pts
                                                 </span>
-                                              )}
-                                              {scoreDetails.delayDays > 0 && (
-                                                <span className="text-red-500">
-                                                  Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
-                                                </span>
-                                              )}
-                                            </>
-                                          ) : (
-                                            <span className="text-green-600 font-bold">0 Pts (On Time)</span>
-                                          )}
-                                        </div>
-                                      );
-                                  })()}
-                                </div>
-                              </td>
+                                                {scoreDetails.extensionCount > 0 && (
+                                                  <span className="text-gray-500">
+                                                    Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
+                                                  </span>
+                                                )}
+                                                {scoreDetails.delayDays > 0 && (
+                                                  <span className="text-red-500">
+                                                    Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
+                                                  </span>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <span className="text-green-600 font-bold">0 Pts (On Time)</span>
+                                            )}
+                                          </div>
+                                        );
+                                    })()}
+                                  </div>
+                                </td>
+                              )}
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
                                   {formatDateForDisplay(account["col0"]) || "—"}

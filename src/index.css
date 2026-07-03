@@ -8,6 +8,19 @@
     background: linear-gradient(to right, #7E22CE, #BE185D);
 }
 
+.menu-header-gradient {
+    background: linear-gradient(to right, #f3e8ff, #fce7f3) !important;
+}
+
+.menu-active-gradient {
+    background: linear-gradient(to right, #9333EA, #DB2777) !important;
+    color: #ffffff !important;
+}
+
+.menu-container-bg {
+    background: linear-gradient(135deg, #faf5ff 0%, #fdf2f8 100%) !important;
+}
+
 .login-header-gradient {
     background: linear-gradient(135deg, #eef2ff 0%, #ecfdf5 100%) !important;
 }
