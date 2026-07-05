@@ -16,5 +16,6 @@ export default defineConfig({
   base: "/", // Changed from "./" to "/"
   build: {
     outDir: "dist",
+    chunkSizeWarningLimit: 2000,
   },
 })

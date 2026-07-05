@@ -1468,7 +1468,7 @@ function DelegationDataPage() {
     if (!isOpen) return null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(4px)' }}>
         <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
           <div className="flex items-center justify-center mb-4">
             <div className="bg-yellow-100 text-yellow-600 rounded-full p-3 mr-4">
