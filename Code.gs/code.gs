@@ -1304,13 +1304,65 @@ function getFormattedDate(date) {
   return day + "/" + month + "/" + year;
 }
 
+function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
+  var userKey = username.toLowerCase();
+  var consecutiveMissed = 0;
+  
+  var checkDate = new Date(asOfDate);
+  var limitDate = new Date(2026, 6, 1); // July 1, 2026
+  limitDate.setHours(0,0,0,0);
+  
+  while (true) {
+    if (checkDate < limitDate) {
+      break;
+    }
+    
+    // Skip Sundays
+    if (checkDate.getDay() === 0) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    var checkDateStr = getFormattedDate(checkDate);
+    var foundPresent = false;
+    
+    for (var h = 1; h < attendanceData.length; h++) {
+      var rowDate = attendanceData[h][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      if (rowDateStr === checkDateStr && String(attendanceData[h][1]).trim().toLowerCase() === userKey) {
+        if (String(attendanceData[h][2]).toLowerCase() === "present") {
+          foundPresent = true;
+        }
+        break;
+      }
+    }
+    
+    if (foundPresent) {
+      break;
+    } else {
+      consecutiveMissed++;
+      if (consecutiveMissed >= 10) break;
+    }
+    
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+  
+  return consecutiveMissed;
+}
+
 function recordLogin(username, ip, browser, device) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Attendance");
     if (!sheet) {
       sheet = ss.insertSheet("Attendance");
-      sheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device"]);
+      sheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device", "Consecutive Missed Days"]);
+    } else {
+      // Ensure header column is present in existing sheet
+      var headers = sheet.getDataRange().getValues()[0];
+      if (headers.indexOf("Consecutive Missed Days") === -1) {
+        sheet.getRange(1, 8).setValue("Consecutive Missed Days");
+      }
     }
     
     var now = new Date();
@@ -1333,6 +1385,7 @@ function recordLogin(username, ip, browser, device) {
           sheet.getRange(i + 1, 5).setValue(ip || "—");
           sheet.getRange(i + 1, 6).setValue(browser || "—");
           sheet.getRange(i + 1, 7).setValue(device || "—");
+          sheet.getRange(i + 1, 8).setValue(0); // Reset consecutive missed days to 0
           
           // Remove the "Login Missed" deduction logged for today
           var deductionsSheet = ss.getSheetByName("Point Deductions");
@@ -1356,7 +1409,7 @@ function recordLogin(username, ip, browser, device) {
     }
     
     if (!alreadyRecorded) {
-      sheet.appendRow([dateStr, username, "Present", timeStr, ip || "—", browser || "—", device || "—"]);
+      sheet.appendRow([dateStr, username, "Present", timeStr, ip || "—", browser || "—", device || "—", 0]);
     }
     
     var historySheet = ss.getSheetByName("Login History");
@@ -1412,21 +1465,32 @@ function runDailyLoginCheck() {
     var attendanceSheet = ss.getSheetByName("Attendance");
     if (!attendanceSheet) {
       attendanceSheet = ss.insertSheet("Attendance");
-      attendanceSheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device"]);
+      attendanceSheet.appendRow(["Date", "Username", "Status", "Login Time", "IP Address", "Browser", "Device", "Consecutive Missed Days"]);
+    } else {
+      var headers = attendanceSheet.getDataRange().getValues()[0];
+      if (headers.indexOf("Consecutive Missed Days") === -1) {
+        attendanceSheet.getRange(1, 8).setValue("Consecutive Missed Days");
+      }
     }
     
     // Evaluate compliance for the previous calendar day (yesterday)
     var targetDate = new Date();
     targetDate.setDate(targetDate.getDate() - 1);
+    
+    // Skip Sunday check completely (leave day)
+    if (targetDate.getDay() === 0) {
+      return { success: true, message: "Skipped checking compliance because yesterday was Sunday (leave day)." };
+    }
+    
     var dateStr = getFormattedDate(targetDate);
     
     var masterData = masterSheet.getDataRange().getValues();
-    var headers = masterData[0];
-    var usernameColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
-    var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
-    var emailColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "email"; });
-    var deptColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "department"; });
-    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
+    var masterHeaders = masterData[0];
+    var usernameColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
+    var roleColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+    var emailColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "email"; });
+    var deptColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "department"; });
+    var phoneColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
     
     if (usernameColIndex === -1) usernameColIndex = 2; 
     if (roleColIndex === -1) roleColIndex = 4; 
@@ -1487,9 +1551,17 @@ function runDailyLoginCheck() {
       if (presentUsersToday[userKey] || existingStatus === "present") {
         results.push({ username: user, status: "present" });
       } else {
+        // Calculate consecutive missed days prior to yesterday (excluding Sundays)
+        var checkDate = new Date(targetDate);
+        checkDate.setDate(checkDate.getDate() - 1);
+        var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+
         // Mark as Absent in Attendance sheet if not already recorded
         if (existingRowIndex === -1) {
-          attendanceSheet.appendRow([dateStr, user, "Absent", "—", "—", "—", "—"]);
+          attendanceSheet.appendRow([dateStr, user, "Absent", "—", "—", "—", "—", consecutiveMissed]);
+        } else {
+          // Update consecutive missed count
+          attendanceSheet.getRange(existingRowIndex + 1, 8).setValue(consecutiveMissed);
         }
 
         // Check if deduction already logged today
@@ -1502,34 +1574,6 @@ function runDailyLoginCheck() {
           if (dDateStr === dateStr && dUser === userKey && dReason.indexOf("Login Missed") !== -1) {
             deductionLogged = true;
             break;
-          }
-        }
-
-        var consecutiveMissed = 1;
-        var checkDate = new Date(targetDate);
-        var limitDate = new Date(2026, 6, 1); // July 1, 2026
-        limitDate.setHours(0,0,0,0);
-        
-        while (true) {
-          checkDate.setDate(checkDate.getDate() - 1);
-          if (checkDate < limitDate) {
-            break;
-          }
-          var checkDateStr = getFormattedDate(checkDate);
-          var foundPresent = false;
-          for (var h = 1; h < attendanceData.length; h++) {
-            var rowDate = attendanceData[h][0];
-            var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
-            if (rowDateStr === checkDateStr && String(attendanceData[h][1]).trim().toLowerCase() === userKey && String(attendanceData[h][2]).toLowerCase() === "present") {
-              foundPresent = true;
-              break;
-            }
-          }
-          if (foundPresent) {
-            break;
-          } else {
-            consecutiveMissed++;
-            if (consecutiveMissed > 10) break;
           }
         }
 
@@ -1618,6 +1662,12 @@ function sendSameDayLoginReminder() {
     if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
     
     var today = new Date();
+    
+    // Skip Sunday reminder completely (leave day)
+    if (today.getDay() === 0) {
+      return { success: true, message: "Skipped same day reminder because today is Sunday (leave day)." };
+    }
+    
     var dateStr = getFormattedDate(today);
     
     var masterData = masterSheet.getDataRange().getValues();
@@ -1659,7 +1709,12 @@ function sendSameDayLoginReminder() {
       if (!presentUsersToday[userKey]) {
         var phone = userPhones[user];
         if (phone) {
-          sendWhatsAppNotification(phone, "⚠️ ⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰ ⚠️\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          // Calculate consecutive missed days prior to today (excluding Sundays)
+          var checkDate = new Date(today);
+          checkDate.setDate(checkDate.getDate() - 1);
+          var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+
+          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\n*Consecutive Days Pending/Missed:* " + consecutiveMissed + " Day(s)\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           count++;
         }
       }
