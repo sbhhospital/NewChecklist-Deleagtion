@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("overview")
   const [userProfileImage, setUserProfileImage] = useState(null)
+  const [profileImageError, setProfileImageError] = useState(false)
   const [userEmail, setUserEmail] = useState("")
   const [showImageUploadModal, setShowImageUploadModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -1174,7 +1175,7 @@ export default function AdminDashboard() {
 
           <div className="flex items-center gap-4">
             <div className="relative group">
-              {userProfileImage ? (
+              {userProfileImage && !profileImageError ? (
                 <div className="relative">
                   <img
                     src={userProfileImage}
@@ -1187,8 +1188,8 @@ export default function AdminDashboard() {
                       objectPosition: "center",
                     }}
                     onClick={() => setShowImageUploadModal(true)}
-                    onError={(e) => {
-                      e.target.src = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                    onError={() => {
+                      setProfileImageError(true);
                     }}
                   />
                   <div
@@ -1201,15 +1202,18 @@ export default function AdminDashboard() {
               ) : (
                 <div className="relative group">
                   <div
-                    className="w-15 h-15 rounded-full bg-purple-500 flex items-center justify-center border-2 border-purple-600 cursor-pointer transition-all duration-200 group-hover:brightness-75"
+                    className="w-15 h-15 rounded-full bg-purple-600 flex items-center justify-center border-2 border-purple-100 cursor-pointer transition-all duration-200 group-hover:brightness-90 shadow-md text-white font-bold text-lg"
                     style={{ width: "60px", height: "60px" }}
-                    onClick={() => setShowLinkInputModal(true)}
+                    onClick={() => setShowImageUploadModal(true)}
                   >
-                    <User className="h-6 w-6 text-white" />
+                    {(() => {
+                      const name = sessionStorage.getItem("username") || "SBH";
+                      return name.substring(0, 2).toUpperCase();
+                    })()}
                   </div>
                   <div
                     className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-30 rounded-full cursor-pointer"
-                    onClick={() => setShowLinkInputModal(true)}
+                    onClick={() => setShowImageUploadModal(true)}
                   >
                     <Edit3 className="h-5 w-5 text-white" />
                   </div>

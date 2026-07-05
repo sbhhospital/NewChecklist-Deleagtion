@@ -127,21 +127,50 @@ const calculateTaskScore = (taskObj, historyList) => {
     extensionPenalty = 50
   }
 
-  // Calculate progressive delay penalty: 10/day for week 1, then 20/day
+  // Calculate progressive delay penalty: 10/day for week 1, then 20/day (completed tasks), or 3/day (pending tasks)
   let delayPenalty = 0
   if (delayDays > 0) {
-    if (delayDays <= 7) {
-      delayPenalty = delayDays * 10
+    if (isDone || isVerifyPending) {
+      if (delayDays <= 7) {
+        delayPenalty = delayDays * 10
+      } else {
+        delayPenalty = 70 + (delayDays - 7) * 20
+      }
     } else {
-      delayPenalty = 70 + (delayDays - 7) * 20
+      delayPenalty = delayDays * 3 // Mild penalty for pending delayed tasks
     }
   }
 
   const totalPenalty = extensionPenalty + delayPenalty
-  const score = Math.max(0, 100 - totalPenalty)
+  
+  let baseScore = 100
+  const ratingVal = parseInt(taskObj.rating, 10)
+  if (!isNaN(ratingVal)) {
+    if (ratingVal === 5) baseScore = 100
+    else if (ratingVal === 4) baseScore = 80
+    else if (ratingVal === 3) baseScore = 60
+    else if (ratingVal === 2) baseScore = 40
+    else if (ratingVal === 1) baseScore = 20
+  }
+
+  // Completion Reward: 25 for on-time no extension, 15 for on-time 1 extension
+  let completionReward = 0
+  if (isDone || isVerifyPending) {
+    if (delayDays === 0) {
+      if (extensionCount === 0) {
+        completionReward = 25
+      } else if (extensionCount === 1) {
+        completionReward = 15
+      }
+    }
+  }
+
+  const score = Math.max(0, baseScore + completionReward - totalPenalty)
 
   return {
     score,
+    baseScore,
+    completionReward,
     penalty: totalPenalty,
     extensionCount,
     delayDays,
@@ -349,15 +378,20 @@ export default function PerformanceDashboard() {
             completionDate,
             status,
             frequency: getCellValue(row, 7) || "one-time",
-            originalStatus: statusColumnU
+            originalStatus: statusColumnU,
+            rating: getCellValue(row, 17) || ""
           }
 
           // Compute penalty and score matching calculateTaskScore
           const scoreDetails = calculateTaskScore(rawTask, historyList)
           rawTask.score = scoreDetails.score
+          rawTask.baseScore = scoreDetails.baseScore
+          rawTask.completionReward = scoreDetails.completionReward
           rawTask.penalty = scoreDetails.penalty
           rawTask.extensionCount = scoreDetails.extensionCount
           rawTask.delayDays = scoreDetails.delayDays
+          rawTask.extensionPenalty = scoreDetails.extensionPenalty
+          rawTask.delayPenalty = scoreDetails.delayPenalty
 
           delegationTasks.push(rawTask)
 
@@ -429,9 +463,13 @@ export default function PerformanceDashboard() {
 
           const scoreDetails = calculateTaskScore(rawTask, [])
           rawTask.score = scoreDetails.score
+          rawTask.baseScore = scoreDetails.baseScore
+          rawTask.completionReward = scoreDetails.completionReward
           rawTask.penalty = scoreDetails.penalty
           rawTask.extensionCount = scoreDetails.extensionCount
           rawTask.delayDays = scoreDetails.delayDays
+          rawTask.extensionPenalty = scoreDetails.extensionPenalty
+          rawTask.delayPenalty = scoreDetails.delayPenalty
 
           checklistTasks.push(rawTask)
 

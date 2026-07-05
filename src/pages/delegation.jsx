@@ -357,19 +357,65 @@ function DelegationDataPage() {
       }
     }
 
-    // Progressive penalty: 1st extension = 10, 2nd = 20, 3rd = 30... (Sum of 10*i)
-    const extensionPenalty = 5 * extensionCount * (extensionCount + 1);
-    const delayPenalty = delayDays * 20;
+    // Aligned Extension Penalty: 1st = 10, 2nd = 20, 3rd+ = 50
+    let extensionPenalty = 0;
+    if (extensionCount === 1) {
+      extensionPenalty = 10;
+    } else if (extensionCount === 2) {
+      extensionPenalty = 20;
+    } else if (extensionCount >= 3) {
+      extensionPenalty = 50;
+    }
+
+    // Aligned Delay Penalty: 10/day for week 1, then 20/day (completed tasks), or 3/day (pending tasks)
+    let delayPenalty = 0;
+    if (delayDays > 0) {
+      if (isDone || isVerifyPending) {
+        if (delayDays <= 7) {
+          delayPenalty = delayDays * 10;
+        } else {
+          delayPenalty = 70 + (delayDays - 7) * 20;
+        }
+      } else {
+        delayPenalty = delayDays * 3; // Mild penalty for pending delayed tasks
+      }
+    }
+
     const penalty = extensionPenalty + delayPenalty;
-    const score = Math.max(0, 100 - penalty);
+
+    let baseScore = 100;
+    const ratingVal = parseInt(task["col17"], 10);
+    if (!isNaN(ratingVal)) {
+      if (ratingVal === 5) baseScore = 100;
+      else if (ratingVal === 4) baseScore = 80;
+      else if (ratingVal === 3) baseScore = 60;
+      else if (ratingVal === 2) baseScore = 40;
+      else if (ratingVal === 1) baseScore = 20;
+    }
+
+    // Completion Reward: 25 for on-time no extension, 15 for on-time 1 extension
+    let completionReward = 0;
+    if (isDone || isVerifyPending) {
+      if (delayDays === 0) {
+        if (extensionCount === 0) {
+          completionReward = 25;
+        } else if (extensionCount === 1) {
+          completionReward = 15;
+        }
+      }
+    }
+    
+    const score = Math.max(0, baseScore + completionReward - penalty);
 
     return {
       score,
+      baseScore,
+      completionReward,
       penalty,
       extensionCount,
       delayDays,
       extensionPenalty,
-      delayPenalty,
+      delayPenalty
     };
   }, [parseDateFromDDMMYYYY]);
 
@@ -421,7 +467,7 @@ function DelegationDataPage() {
           }
       }
       
-      if (task["col20"] === "Done") {
+      if (task["col20"] === "Done" || task["col20"] === "Verify Pending") {
         completedCount++;
       }
       if (scoreDetails.extensionCount > 0) {
@@ -433,7 +479,7 @@ function DelegationDataPage() {
     });
 
     return {
-      avgScore: Math.round(totalScoreSum / tasksToScore.length),
+      avgScore: Math.min(100, Math.round(totalScoreSum / tasksToScore.length)),
       avgPenalty: Math.round(totalPenaltySum / tasksToScore.length),
       totalPenaltyPoints: totalPenaltySum,
       thisMonthPenaltyPoints: thisMonthPenaltySum,
@@ -2163,31 +2209,33 @@ function DelegationDataPage() {
                                     {(() => {
                                       if (matchingTask) {
                                         const scoreDetails = calculateTaskScore(matchingTask, historyData);
-                                        let scoreColor = "text-red-600";
-                                        if (scoreDetails.score >= 80) scoreColor = "text-green-600";
                                         return (
-                                          <div className="flex flex-col text-xs space-y-0.5">
-                                            <span className={`font-bold ${scoreColor}`}>
+                                          <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
+                                            <span className="font-bold text-green-600">
                                               Score: {scoreDetails.score} Pts
                                             </span>
-                                            {scoreDetails.penalty > 0 ? (
-                                              <>
-                                                <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
-                                                  Total Penalty: {scoreDetails.penalty} Pts
-                                                </span>
-                                                {scoreDetails.extensionCount > 0 && (
-                                                  <span className="text-gray-500">
-                                                    Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
-                                                  </span>
-                                                )}
-                                                {scoreDetails.delayDays > 0 && (
-                                                  <span className="text-red-500">
-                                                    Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
-                                                  </span>
-                                                )}
-                                              </>
-                                            ) : (
-                                              <span className="text-green-600 font-bold">0 Pts (On Time)</span>
+                                            <span className="text-gray-600 font-medium">
+                                              Rating Base: {scoreDetails.baseScore} Pts
+                                            </span>
+                                            {scoreDetails.completionReward > 0 && (
+                                              <span className="text-green-600 font-medium">
+                                                Reward: +{scoreDetails.completionReward} Pts
+                                              </span>
+                                            )}
+                                            {scoreDetails.penalty > 0 && (
+                                              <span className="text-red-500 font-bold">
+                                                Total Penalty: -{scoreDetails.penalty} Pts
+                                              </span>
+                                            )}
+                                            {scoreDetails.extensionPenalty > 0 && (
+                                              <span className="text-red-500 font-medium pl-2">
+                                                ↳ Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
+                                              </span>
+                                            )}
+                                            {scoreDetails.delayPenalty > 0 && (
+                                              <span className="text-red-500 font-medium pl-2">
+                                                ↳ Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
+                                              </span>
                                             )}
                                           </div>
                                         );
@@ -2637,36 +2685,36 @@ function DelegationDataPage() {
                                   <div className="text-sm font-semibold">
                                     {(() => {
                                       const scoreDetails = calculateTaskScore(account, historyData);
-                                      let scoreColor = "text-red-600";
-                                      if (scoreDetails.score >= 80) scoreColor = "text-green-600";
-                                      else if (scoreDetails.score >= 50) scoreColor = "text-yellow-600";
-                                      
                                       return (
-                                          <div className="flex flex-col text-xs space-y-0.5">
-                                            <span className={`font-bold ${scoreColor}`}>
-                                              Score: {scoreDetails.score} Pts
+                                        <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
+                                          <span className="font-bold text-green-600">
+                                            Score: {scoreDetails.score} Pts
+                                          </span>
+                                          <span className="text-gray-600 font-medium">
+                                            Rating Base: {scoreDetails.baseScore} Pts
+                                          </span>
+                                          {scoreDetails.completionReward > 0 && (
+                                            <span className="text-green-600 font-medium">
+                                              Reward: +{scoreDetails.completionReward} Pts
                                             </span>
-                                            {scoreDetails.penalty > 0 ? (
-                                              <>
-                                                <span className={`font-bold ${scoreDetails.penalty > 100 ? "text-red-600" : "text-gray-700"}`}>
-                                                  Total Penalty: {scoreDetails.penalty} Pts
-                                                </span>
-                                                {scoreDetails.extensionCount > 0 && (
-                                                  <span className="text-gray-500">
-                                                    Ext: {scoreDetails.extensionCount} time(s) = {scoreDetails.extensionPenalty} pts
-                                                  </span>
-                                                )}
-                                                {scoreDetails.delayDays > 0 && (
-                                                  <span className="text-red-500">
-                                                    Delay: {scoreDetails.delayDays} day(s) = {scoreDetails.delayPenalty} pts
-                                                  </span>
-                                                )}
-                                              </>
-                                            ) : (
-                                              <span className="text-green-600 font-bold">0 Pts (On Time)</span>
-                                            )}
-                                          </div>
-                                        );
+                                          )}
+                                          {scoreDetails.penalty > 0 && (
+                                            <span className="text-red-500 font-bold">
+                                              Total Penalty: -{scoreDetails.penalty} Pts
+                                            </span>
+                                          )}
+                                          {scoreDetails.extensionPenalty > 0 && (
+                                            <span className="text-red-500 font-medium pl-2">
+                                              ↳ Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
+                                            </span>
+                                          )}
+                                          {scoreDetails.delayPenalty > 0 && (
+                                            <span className="text-red-500 font-medium pl-2">
+                                              ↳ Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
                                     })()}
                                   </div>
                                 </td>

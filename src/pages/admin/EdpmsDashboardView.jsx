@@ -1432,7 +1432,17 @@ export default function EdpmsDashboardView({
                           </td>
                           <td className="px-3.5 py-2.5 text-center font-bold text-slate-600">{task.extensionCount ?? 0}</td>
                           <td className="px-3.5 py-2.5 text-center font-bold text-rose-600">{task.delayDays ?? 0}d</td>
-                          <td className="px-3.5 py-2.5 text-center font-extrabold text-slate-800">{task.score}</td>
+                          <td className="px-3.5 py-2.5 text-center font-extrabold text-slate-800">
+                            <div className="flex flex-col items-center justify-center">
+                              <span>{task.score} Pts</span>
+                              <span className="text-[9px] text-gray-500 font-normal mt-0.5 whitespace-nowrap">
+                                Base: {task.baseScore || 100}
+                                {task.completionReward > 0 && ` | +${task.completionReward}`}
+                                {task.extensionPenalty > 0 && ` | -${task.extensionPenalty}`}
+                                {task.delayPenalty > 0 && ` | -${task.delayPenalty}`}
+                              </span>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
