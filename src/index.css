@@ -9,32 +9,39 @@
 }
 
 .menu-header-gradient {
+    background-color: #f3e8ff !important;
     background: linear-gradient(to right, #f3e8ff, #fce7f3) !important;
 }
 
 .menu-active-gradient {
+    background-color: #9333ea !important;
     background: linear-gradient(to right, #9333EA, #DB2777) !important;
     color: #ffffff !important;
 }
 
 .menu-container-bg {
+    background-color: #faf5ff !important;
     background: linear-gradient(135deg, #faf5ff 0%, #fdf2f8 100%) !important;
 }
 
 .login-header-gradient {
+    background-color: #eef2ff !important;
     background: linear-gradient(135deg, #eef2ff 0%, #ecfdf5 100%) !important;
 }
 
 .login-btn-gradient {
+    background-color: #10b981 !important;
     background: linear-gradient(135deg, #10b981 0%, #4f46e5 100%) !important;
     color: #ffffff !important;
 }
 
 .login-btn-gradient:hover {
+    background-color: #059669 !important;
     background: linear-gradient(135deg, #059669 0%, #4338ca 100%) !important;
 }
 
 .login-footer-gradient {
+    background-color: #10b981 !important;
     background: linear-gradient(135deg, #10b981 0%, #4f46e5 100%) !important;
     color: #ffffff !important;
 }

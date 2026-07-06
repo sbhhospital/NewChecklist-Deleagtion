@@ -377,16 +377,16 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4">
-      <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300">
-        <div className="space-y-2 p-6 login-header-gradient rounded-t-3xl border-b-4 border-emerald-500 text-center">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #e6f9f0 100%)', backgroundColor: '#f1f5f9' }}>
+      <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300" style={{ backgroundColor: '#ffffff' }}>
+        <div className="space-y-2 p-6 login-header-gradient rounded-t-3xl border-b-4 border-emerald-500 text-center" style={{ borderBottomColor: '#10b981' }}>
           <div className="flex flex-col items-center justify-center mb-1 gap-2">
             <img src={sbhLogo} alt="SBH Group of Hospitals" className="w-56 h-auto object-contain drop-shadow-md mb-1" />
-            <h2 className="text-2xl font-black text-indigo-900 tracking-tight">
+            <h2 className="text-2xl font-black text-indigo-900 tracking-tight" style={{ color: '#312e81' }}>
               Checklist & Delegation
             </h2>
           </div>
-          <p className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider">
+          <p className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#4f46e5' }}>
             Login to access your tasks and delegations
           </p>
         </div>
@@ -396,8 +396,9 @@ const LoginPage = () => {
             <label
               htmlFor="username"
               className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
+              style={{ color: '#334155' }}
             >
-              <i className="fas fa-user h-3.5 w-3.5 mr-2 text-indigo-600"></i>
+              <i className="fas fa-user h-3.5 w-3.5 mr-2 text-indigo-600" style={{ color: '#4f46e5' }}></i>
               Username
             </label>
             <input
@@ -416,8 +417,9 @@ const LoginPage = () => {
             <label
               htmlFor="password"
               className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
+              style={{ color: '#334155' }}
             >
-              <i className="fas fa-key h-3.5 w-3.5 mr-2 text-indigo-600"></i>
+              <i className="fas fa-key h-3.5 w-3.5 mr-2 text-indigo-600" style={{ color: '#4f46e5' }}></i>
               Password
             </label>
             <div className="relative">
