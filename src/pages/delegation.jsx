@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import {
   CheckCircle2,
   Upload,
@@ -15,6 +16,7 @@ import AdminLayout from "../components/layout/AdminLayout";
 const CONFIG = {
   APPS_SCRIPT_URL:
     "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
+  SPREADSHEET_ID: "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0",
 
   DRIVE_FOLDER_ID: "1aNvrucZButW0c4RwMBGDJiJ-wbOlpQIb",
 
@@ -28,6 +30,74 @@ const CONFIG = {
     historyDescription:
       "Read-only view of completed tasks with submission history",
   },
+};
+
+// Session-storage cache helpers (5-minute TTL)
+const getCachedData = (key) => {
+  try {
+    const cached = sessionStorage.getItem(key);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed.timestamp && (Date.now() - parsed.timestamp < 300000)) {
+        return parsed.data;
+      }
+    }
+  } catch (e) {
+    // ignore read errors
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  try {
+    const payload = JSON.stringify({ timestamp: Date.now(), data });
+    sessionStorage.setItem(key, payload);
+  } catch (e) {
+    // If quota exceeded, clear older delegation caches and retry once
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('delegation_sheet_cache_')) keysToRemove.push(k);
+      }
+      keysToRemove.forEach(k => sessionStorage.removeItem(k));
+      sessionStorage.setItem(key, JSON.stringify({ timestamp: Date.now(), data }));
+    } catch (e2) {
+      // silently skip if still over quota
+    }
+  }
+};
+
+// Module-level pure date parser — avoids useCallback closure issues
+// Handles gviz Date(year,month0,day) and Date(year,month0,day,h,m,s) formats
+const parseGoogleSheetsDateStr = (dateStr) => {
+  if (!dateStr) return "";
+  const s = String(dateStr);
+  // Already formatted DD/MM/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) return s.substring(0, 10);
+  // gviz Date(...) format
+  if (s.startsWith("Date(")) {
+    const match = /Date\((\d+),(\d+),(\d+)/.exec(s);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) + 1; // gviz month is 0-indexed
+      const day = parseInt(match[3], 10);
+      return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+    }
+  }
+  // Try native Date parse as fallback
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+    }
+  } catch (_) {}
+  return s;
+};
+
+// Clears delegation cache for a given sheet name
+const clearDelegationCache = (sheetName) => {
+  try { sessionStorage.removeItem(`delegation_sheet_cache_${sheetName}`); } catch(_) {}
 };
 
 function useDebounce(value, delay) {
@@ -47,6 +117,7 @@ function useDebounce(value, delay) {
 }
 
 function DelegationDataPage() {
+  const location = useLocation();
   const [accountData, setAccountData] = useState([]);
   const [unfilteredDelegationData, setUnfilteredDelegationData] = useState([]);
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -57,6 +128,27 @@ function DelegationDataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [remarksData, setRemarksData] = useState({});
+
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+  useEffect(() => {
+    if (!loading) return
+    const messages = [
+      "🏥 Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "☕ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📧 Drafting emails that could have been quick meetings...",
+      "✨ Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0;
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [loading])
   const [historyData, setHistoryData] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [statusData, setStatusData] = useState({});
@@ -800,25 +892,70 @@ function DelegationDataPage() {
   ]); // Added nameFilter dependency
   // Optimized data fetching with parallel requests
   // Optimized data fetching with parallel requests
+  const processFetchedData = (data, processedHistoryData, rawDelegationList, allDelegationData) => {
+    setHistoryData(processedHistoryData);
+    setUnfilteredDelegationData(rawDelegationList);
+    setAccountData(allDelegationData);
+    setDelegationData(allDelegationData);
+  };
+
   const fetchSheetData = useCallback(async (signal) => {
+    const cacheKey = `delegation_sheet_cache_${CONFIG.SOURCE_SHEET_NAME}`;
+    const cached = getCachedData(cacheKey);
+    let isCacheUsed = false;
+    if (cached && cached.allDelegationData && cached.processedHistoryData) {
+      processFetchedData(null, cached.processedHistoryData, cached.rawDelegationList, cached.allDelegationData);
+      setLoading(false);
+      isCacheUsed = true;
+    }
+
     try {
-      setLoading(true);
+      if (!isCacheUsed) {
+        setLoading(true);
+      }
       setError(null);
 
-      // Parallel fetch both sheets for better performance
-      const [mainResponse, historyResponse] = await Promise.all([
+      // Parallel fetch sheets for better performance
+      const [mainResponse, historyResponse, masterResponse] = await Promise.all([
         fetch(
-          `${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SOURCE_SHEET_NAME}&action=fetch`,
+          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.SOURCE_SHEET_NAME}&t=${Date.now()}`,
           { signal }
         ),
         fetch(
-          `${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.TARGET_SHEET_NAME}&action=fetch`,
+          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.TARGET_SHEET_NAME}&t=${Date.now()}`,
+          { signal }
+        ).catch(() => null),
+        fetch(
+          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`,
           { signal }
         ).catch(() => null),
       ]);
 
       if (!mainResponse.ok) {
         throw new Error(`Failed to fetch data: ${mainResponse.status}`);
+      }
+
+      // Process master sheet to get inactive users
+      const inactiveUsers = new Set();
+      if (masterResponse && masterResponse.ok) {
+        try {
+          const masterText = await masterResponse.text();
+          const start = masterText.indexOf("{");
+          const end = masterText.lastIndexOf("}");
+          const jsonStr = masterText.substring(start, end + 1);
+          const masterJson = JSON.parse(jsonStr);
+          if (masterJson.table && masterJson.table.rows) {
+            masterJson.table.rows.slice(1).forEach(row => {
+              const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : "";
+              const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
+              if (username && (role === "inactive" || role === "in active")) {
+                inactiveUsers.add(username.toLowerCase());
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing master sheet for inactive users:", e);
+        }
       }
 
       // Process main data
@@ -870,11 +1007,11 @@ function DelegationDataPage() {
                   )
                   : [];
 
-                // Map all columns including column H (col7) for user filtering, column I (col8) for Task, and column P (col15) for Admin Done
+                // Map all columns — use module-level parser to avoid closure issues
                 for (let i = 0; i < 16; i++) {
                   if (i === 0 || i === 6 || i === 10) {
                     rowData[`col${i}`] = rowValues[i]
-                      ? parseGoogleSheetsDate(String(rowValues[i]))
+                      ? parseGoogleSheetsDateStr(String(rowValues[i]))
                       : "";
                   } else {
                     rowData[`col${i}`] = rowValues[i] || "";
@@ -927,6 +1064,9 @@ function DelegationDataPage() {
 
         const googleSheetsRowIndex = rowIndex + 1;
         const taskId = rowValues[1] || "";
+        const assignedTo = rowValues[4] ? String(rowValues[4]).trim().toLowerCase() : "";
+        if (assignedTo && inactiveUsers.has(assignedTo)) return;
+
         const stableId = taskId
           ? `task_${taskId}_${googleSheetsRowIndex}`
           : `row_${googleSheetsRowIndex}_${Math.random()
@@ -939,12 +1079,12 @@ function DelegationDataPage() {
           _taskId: taskId,
         };
 
-        // Map all columns including timestamp (column A)
-        for (let i = 0; i < 21; i++) {
+        // Map all columns — use module-level parser to avoid closure issues
+        for (let i = 0; i < 23; i++) {
           if (i === 0 || i === 6 || i === 10) {
             // Column A (0), G (6), K (10) are dates
             rowData[`col${i}`] = rowValues[i]
-              ? parseGoogleSheetsDate(String(rowValues[i]))
+              ? parseGoogleSheetsDateStr(String(rowValues[i]))
               : "";
           } else {
             rowData[`col${i}`] = rowValues[i] || "";
@@ -981,9 +1121,12 @@ function DelegationDataPage() {
         allDelegationData.push(rowData);
       });
 
-      setUnfilteredDelegationData(rawDelegationList);
-      setAccountData(allDelegationData);
-      setDelegationData(allDelegationData);
+      setCachedData(cacheKey, {
+        processedHistoryData,
+        rawDelegationList,
+        allDelegationData
+      });
+      processFetchedData(data, processedHistoryData, rawDelegationList, allDelegationData);
       setLoading(false);
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -1002,11 +1145,16 @@ function DelegationDataPage() {
     username,
   ]);
 
+  // Clear cache and force fresh fetch on every navigation to this page
+  useEffect(() => {
+    clearDelegationCache(CONFIG.SOURCE_SHEET_NAME);
+  }, [location.key]);
+
   useEffect(() => {
     const controller = new AbortController();
     fetchSheetData(controller.signal);
     return () => controller.abort();
-  }, [fetchSheetData]);
+  }, [fetchSheetData, location.key]);
 
   const handleSelectItem = useCallback((id, isChecked) => {
     setSelectedItems((prev) => {
@@ -1234,9 +1382,11 @@ function DelegationDataPage() {
       setStatusData({});
       setNextTargetDate({});
 
+      // Silent background re-fetch after submit (no full page loading overlay)
       setTimeout(() => {
+        clearDelegationCache(CONFIG.SOURCE_SHEET_NAME);
         fetchSheetData();
-      }, 2000);
+      }, 1500);
     } catch (error) {
       console.error("Submission error:", error);
       alert("Failed to submit task records: " + error.message);
@@ -1295,7 +1445,83 @@ function DelegationDataPage() {
     }
   };
 
-  // NEW: Process Regular tasks (create new records)
+  const calculateSingleTaskPoints = (taskItem, statusDataVal, historyDataList) => {
+    const taskId = taskItem["col1"];
+    const taskWeight = parseInt(taskItem["col21"], 10) || 3; // Col V is col21
+    
+    // Count extensions
+    let extensionCount = 0;
+    if (historyDataList && Array.isArray(historyDataList)) {
+      extensionCount = historyDataList.filter(
+        (h) => String(h["col1"]).trim() === String(taskId).trim() && String(h["col2"]).toLowerCase() === "extend date"
+      ).length;
+    }
+    
+    if (statusDataVal === "Extend Date" || statusDataVal === "Extended") {
+      extensionCount += 1;
+    }
+
+    // Calculate delay days
+    let delayDays = 0;
+    const dueDateStr = taskItem["col10"];
+    const startDateStr = taskItem["col6"];
+    
+    const parseDDMMYYYY = (dStr) => {
+      if (!dStr) return null;
+      const parts = dStr.split("/");
+      if (parts.length === 3) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+      return null;
+    };
+
+    const deadlineDate = parseDDMMYYYY(dueDateStr || startDateStr);
+    if (deadlineDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (today > deadlineDate) {
+        const diffTime = today - deadlineDate;
+        delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      }
+    }
+
+    // Calculate extension penalty on task reward
+    let extensionPenalty = 0;
+    if (taskWeight === 3) {
+      if (extensionCount === 1) extensionPenalty = 1;
+      else if (extensionCount >= 2) extensionPenalty = 2;
+    } else if (taskWeight === 5) {
+      if (extensionCount === 1) extensionPenalty = 1;
+      else if (extensionCount >= 2) extensionPenalty = 3;
+    } else if (taskWeight === 10) {
+      if (extensionCount === 1) extensionPenalty = 2;
+      else if (extensionCount === 2) extensionPenalty = 4;
+      else if (extensionCount >= 3) extensionPenalty = 9;
+    }
+
+    // Calculate delay penalty on task reward
+    let delayPenaltyOnTask = 0;
+    if (delayDays > 0) {
+      if (taskWeight === 3) {
+        if (delayDays === 1) delayPenaltyOnTask = 1;
+        else if (delayDays === 2) delayPenaltyOnTask = 2;
+        else delayPenaltyOnTask = 3;
+      } else if (taskWeight === 5) {
+        if (delayDays === 1) delayPenaltyOnTask = 1;
+        else if (delayDays === 2) delayPenaltyOnTask = 3;
+        else delayPenaltyOnTask = 5;
+      } else if (taskWeight === 10) {
+        if (delayDays === 1) delayPenaltyOnTask = 1;
+        else if (delayDays === 2) delayPenaltyOnTask = 2;
+        else if (delayDays === 3) delayPenaltyOnTask = 5;
+        else delayPenaltyOnTask = 10;
+      }
+    }
+
+    const points = Math.max(0, taskWeight - extensionPenalty - delayPenaltyOnTask);
+    return points;
+  };
+
   const processRegularTasks = async (tasks, dateForSubmission, remarksData, nextTargetDate, statusData) => {
     const batchSize = 5;
 
@@ -1348,6 +1574,9 @@ function DelegationDataPage() {
             nextTargetDateForGoogleSheets = convertedDate.dateObject;
           }
 
+          // Calculate point value for this specific submission
+          const pointsEarned = calculateSingleTaskPoints(item, statusData[id], historyData);
+
           // Create new row for regular tasks
           const newRowData = [
             dateForSubmission.formatted,
@@ -1360,6 +1589,7 @@ function DelegationDataPage() {
             username, // Column H - Store the logged-in username
             item["col5"] || "", // Column I - Task description from col5
             item["col3"] || "", // Column J - Given By from original task
+            pointsEarned // Column K - Points earned
           ];
 
           const insertFormData = new FormData();
@@ -1576,7 +1806,28 @@ function DelegationDataPage() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 relative min-h-[500px]">
+        {loading && (
+          <div className="absolute inset-0 bg-white z-[99999]">
+            <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
+              <div className="relative flex items-center justify-center mb-6">
+                <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+                <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+                <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+                  <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+                </div>
+              </div>
+              <div className="space-y-2 text-center max-w-sm px-6">
+                <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
+                  {funnyMsg}
+                </p>
+                <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
+                  Optimizing SBH Dashboard Synergy
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="text-3xl font-bold tracking-tight text-purple-700 whitespace-nowrap">
             {showHistory
@@ -1651,11 +1902,21 @@ function DelegationDataPage() {
               <button
                 onClick={handleSubmit}
                 disabled={selectedItemsCount === 0 || isSubmitting}
-                className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                className={`flex items-center justify-center gap-2 w-full py-3 px-4 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg ${
+                  isSubmitting ? 'bg-purple-400' : 'gradient-bg hover:scale-[1.02] active:scale-95'
+                }`}
               >
-                {isSubmitting
-                  ? "Processing..."
-                  : `Submit Selected (${selectedItemsCount})`}
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <span>✅ Submit Selected ({selectedItemsCount})</span>
+                )}
               </button>
             )}
           </div>
@@ -1709,11 +1970,21 @@ function DelegationDataPage() {
               <button
                 onClick={handleSubmit}
                 disabled={selectedItemsCount === 0 || isSubmitting}
-                className="gradient-bg text-white px-6 py-2 rounded-md focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-medium shadow-sm"
+                className={`flex items-center justify-center gap-2 gradient-bg text-white px-6 py-2 rounded-full focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-medium shadow-md ${
+                  !isSubmitting && selectedItemsCount > 0 ? 'hover:scale-105 active:scale-95' : ''
+                }`}
               >
-                {isSubmitting
-                  ? "Processing..."
-                  : `Submit (${selectedItemsCount})`}
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <span>✅ Submit ({selectedItemsCount})</span>
+                )}
               </button>
             )}
           </div>
@@ -1950,7 +2221,7 @@ function DelegationDataPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
+        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative">
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4 flex justify-between items-center">
             <h2 className="text-purple-700 font-medium flex items-center gap-2">
               <span>
@@ -1970,12 +2241,7 @@ function DelegationDataPage() {
             </p>
           </div>
 
-          {loading ? (
-            <div className="text-center py-10">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-4"></div>
-              <p className="text-purple-600">Loading task data...</p>
-            </div>
-          ) : error ? (
+          {error ? (
             <div className="bg-red-50 p-4 rounded-md text-red-800 text-center">
               {error}{" "}
               <button
@@ -2128,8 +2394,19 @@ function DelegationDataPage() {
                           </th>
                         )}
                       </tr>
-                      {loading && <LoadingBuffer />}
                     </thead>
+                    {loading && (
+                      <tbody>
+                        <tr>
+                          <td colSpan="20" className="text-center py-3 bg-blue-50 border-t border-blue-200">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                              <span className="text-blue-600 text-sm">Loading data...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    )}
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredHistoryData.length > 0 ? (
                         filteredHistoryData.map((history) => {
@@ -2283,7 +2560,7 @@ function DelegationDataPage() {
                               )}
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-medium text-gray-900">
-                                  {history["col0"] || "—"}
+                                  {formatDateForDisplay(history["col0"]) || "—"}
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
@@ -2641,8 +2918,19 @@ function DelegationDataPage() {
                           Upload Image
                         </th>
                       </tr>
-                      {loading && <LoadingBuffer />}
                     </thead>
+                    {loading && (
+                      <tbody>
+                        <tr>
+                          <td colSpan="20" className="text-center py-3 bg-blue-50 border-t border-blue-200">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                              <span className="text-blue-600 text-sm">Loading data...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    )}
                     <tbody className="bg-white divide-y divide-gray-200">
                       {filteredAccountData.length > 0 ? (
                         filteredAccountData.map((account) => {

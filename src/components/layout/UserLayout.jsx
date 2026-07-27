@@ -204,8 +204,8 @@ const UserLayout = ({ children }) => {
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-12 relative">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
-            Architecture by Naman Mishra
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999999] font-bold tracking-wider">
+            Architecture by <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-emerald-100 transition-colors">Naman Mishra</a>
           </div>
         </main>
       </div>

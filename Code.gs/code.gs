@@ -12,9 +12,11 @@ function doGet(e) {
     
     // Existing functionality
     if (params.sheet && params.action === 'fetch') {
-      return fetchSheetData(params.sheet);
+      var bypass = params.bypassCache === 'true' || params.sheet === 'Unique' || params.sheet === 'master';
+      return fetchSheetData(params.sheet, bypass);
     } else if (params.sheet) {
-      return fetchSheetData(params.sheet);
+      var bypass = params.sheet === 'Unique' || params.sheet === 'master';
+      return fetchSheetData(params.sheet, bypass);
     }
     
     return ContentService.createTextOutput("Google Apps Script is running.")
@@ -78,8 +80,45 @@ function fetchUserEmail(username) {
 }
 
 
-function fetchSheetData(sheetName) {
+function clearSheetCache(sheetName) {
   try {
+    var cache = CacheService.getScriptCache();
+    cache.remove("sheet_data_" + sheetName);
+    console.log("Cleared cache for: " + sheetName);
+  } catch (e) {
+    console.warn("Failed to clear cache: " + e.message);
+  }
+}
+
+function clearAllCaches() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var sheets = ["Unique", "Checklist", "master", "Whatsapp", "Attendance", "Point Deductions", "Login History"];
+    sheets.forEach(function(s) {
+      cache.remove("sheet_data_" + s);
+    });
+    console.log("Cleared all sheet caches");
+  } catch (e) {
+    console.warn("Failed to clear all caches: " + e.message);
+  }
+}
+
+function fetchSheetData(sheetName, bypassCache) {
+  try {
+    if (!bypassCache) {
+      try {
+        var cache = CacheService.getScriptCache();
+        var cached = cache.get("sheet_data_" + sheetName);
+        if (cached) {
+          console.log("Returning cached data for: " + sheetName);
+          return ContentService.createTextOutput(cached)
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      } catch (e) {
+        console.warn("Cache read error: " + e.message);
+      }
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(sheetName);
     
@@ -126,7 +165,18 @@ function fetchSheetData(sheetName) {
       }
     };
     
-    return ContentService.createTextOutput(JSON.stringify(result))
+    var resultString = JSON.stringify(result);
+    if (resultString.length < 100000) {
+      try {
+        var cache = CacheService.getScriptCache();
+        cache.put("sheet_data_" + sheetName, resultString, 300); // cache for 5 minutes
+        console.log("Cached data for: " + sheetName);
+      } catch (e) {
+        console.warn("Cache write error: " + e.message);
+      }
+    }
+
+    return ContentService.createTextOutput(resultString)
       .setMimeType(ContentService.MimeType.JSON);
       
   } catch (error) {
@@ -233,6 +283,7 @@ function convertDDMMYYYYToDate(dateString) {
 
 function doPost(e) {
   try {
+    clearAllCaches();
     console.log("Received POST request with parameters:", JSON.stringify(e.parameter));
     var params = e.parameter;
     
@@ -275,6 +326,18 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     
+    if (params.action === 'manageUser') {
+      var result = manageUser(params);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    if (params.action === 'manageUniqueChecklist') {
+      var result = manageUniqueChecklist(params);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
     // NEW: Handle login recording actions
     if (params.action === 'recordLogin') {
       var result = recordLogin(params.username, params.ip, params.browser, params.device);
@@ -290,8 +353,13 @@ function doPost(e) {
     
     if (params.action === 'runDailyLoginCheck') {
       var result = runDailyLoginCheck();
-      return ContentService.createTextOutput(JSON.stringify(result))
-        .setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // NEW: Action to reset consecutive missed days to 0
+    if (params.action === 'resetAttendanceCounters') {
+      var result = resetAttendanceCounters();
+      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
     }
     
     var sheetName = params.sheetName;
@@ -360,7 +428,18 @@ var convertedStartDate = task.startDate ? convertDDMMYYYYToDate(task.startDate) 
               task.freq,
               task.enableReminders,
               task.requireAttachment,
-              task.endDate || ""  // Column K - Task End Date for one-time tasks
+              task.endDate || "",  // Column K
+              "", // Column L
+              "", // Column M
+              "", // Column N
+              "", // Column O
+              "", // Column P
+              "", // Column Q
+              "", // Column R
+              "", // Column S
+              "", // Column T
+              "", // Column U
+              task.taskValue || 3  // Column V (index 21) - Task Value Weight
             ];
           } else {
             // For other department sheets, use the original format
@@ -917,12 +996,57 @@ function processChecklistAndGenerateTasks() {
     // Check if today is a working day
     var isTodayWorkingDay = workingDates.includes(todayString);
     
+    // Load inactive users from Whatsapp sheet
+    var whatsappSheet = ss.getSheetByName("Whatsapp");
+    var inactiveUsers = {};
+    if (whatsappSheet) {
+      var whatsappData = whatsappSheet.getDataRange().getValues();
+      for (var u = 1; u < whatsappData.length; u++) {
+        var uName = String(whatsappData[u][2]).trim().toLowerCase(); // Column C is Username
+        var uRole = String(whatsappData[u][4]).trim().toLowerCase(); // Column E is Role
+        if (uName && (uRole === "inactive" || uRole === "in active")) {
+          inactiveUsers[uName] = true;
+        }
+      }
+    }
+    
+    // Load existing tasks from Checklist sheet into a map for fast lookup
+    var existingTasksMap = {};
+    var departmentSheet = ss.getSheetByName("Checklist");
+    if (departmentSheet) {
+      var deptData = departmentSheet.getDataRange().getValues();
+      for (var d = 1; d < deptData.length; d++) {
+        var rowTaskId = deptData[d][1]; // Column B (Task ID)
+        var rowDueDate = deptData[d][6]; // Column G (Due Date)
+        var formattedRowDueDate = rowDueDate;
+        if (rowDueDate instanceof Date) {
+          formattedRowDueDate = Utilities.formatDate(rowDueDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+        }
+        if (rowTaskId && formattedRowDueDate) {
+          existingTasksMap[rowTaskId + "_" + formattedRowDueDate] = true;
+        }
+      }
+    }
+    
     var tasksGenerated = 0;
     var processedItems = [];
+    var newTasksList = [];
+    
+    // Read all Column 17 (Column Q) values to update in bulk
+    var lastGeneratedDatesCol = [];
+    for (var r = 0; r < checklistData.length; r++) {
+      lastGeneratedDatesCol.push([checklistData[r][16]]);
+    }
     
     // Process each row in checklist for new tasks (skip header)
     for (var i = 2; i < checklistData.length; i++) {
       var row = checklistData[i];
+      
+      var doer = String(row[4]).trim().toLowerCase(); // Column E (index 4)
+      if (doer && inactiveUsers[doer]) {
+        Logger.log("Skipping checklist task generation for inactive user: " + doer);
+        continue;
+      }
       
       // Extract data from columns
       var department = row[2]; // Column C (index 2)
@@ -975,10 +1099,28 @@ function processChecklistAndGenerateTasks() {
                 }
                 break;
                 
+              case 'fortnightly':
+                // Generate if it's been 14+ days since last generation
+                var daysDifference = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+                if (daysDifference >= 14) {
+                  shouldGenerateTask = true;
+                  taskDueDate = todayString;
+                }
+                break;
+                
               case 'monthly':
                 // Generate if it's a new month
                 if (today.getMonth() !== lastDate.getMonth() || 
                     today.getFullYear() !== lastDate.getFullYear()) {
+                  shouldGenerateTask = true;
+                  taskDueDate = todayString;
+                }
+                break;
+                
+              case 'quarterly':
+                // Generate if it's a new quarter (every 3 months)
+                var monthDiff = (today.getFullYear() - lastDate.getFullYear()) * 12 + (today.getMonth() - lastDate.getMonth());
+                if (monthDiff >= 3) {
                   shouldGenerateTask = true;
                   taskDueDate = todayString;
                 }
@@ -1000,27 +1142,30 @@ function processChecklistAndGenerateTasks() {
         }
         
         if (shouldGenerateTask && taskDueDate) {
+          // Check if task already generated for today in department sheet to prevent duplicates
+          if (existingTasksMap[existingTaskId + "_" + taskDueDate]) {
+            Logger.log("Duplicate task found for ID: " + existingTaskId + " and Date: " + taskDueDate + ". Skipping generation.");
+            continue;
+          }
+ 
           // Prepare task data
           var taskData = [
-            // row[0] || "", // Column A (Timestamp)
-            new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-            // existingTaskId, // Column B (Task ID)
-            "",
+            new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), // Column A (Timestamp)
+            existingTaskId, // Column B (Task ID)
             row[2] || "", // Column C (Department)
             row[3] || "", // Column D (Given By)
             row[4] || "", // Column E (Doer)
-            row[5] || "", // Column G (Description)
-            taskDueDate, // Column H (Due Date)
-            row[7] || "", // Column I (Frequency)
-            row[8] || "", // Column J (Enable Reminders)
-            row[9] || "" // Column K (Require Attachment)
+            row[5] || "", // Column F (Description)
+            taskDueDate, // Column G (Due Date)
+            row[7] || "", // Column H (Frequency)
+            row[8] || "", // Column I (Enable Reminders)
+            row[9] || "" // Column J (Require Attachment)
           ];
           
-          // Add the task to department sheet
-          departmentSheet.appendRow(taskData);
+          newTasksList.push(taskData);
           
-          // Update last generated date in CHECKLIST sheet (Column S)
-          checklistSheet.getRange(i + 1, 17).setValue(taskDueDate);
+          // Update last generated date in Column Q array
+          lastGeneratedDatesCol[i] = [taskDueDate];
           
           tasksGenerated++;
           
@@ -1033,6 +1178,15 @@ function processChecklistAndGenerateTasks() {
         }
       }
     }
+    
+    // Bulk write new tasks to Checklist sheet
+    if (newTasksList.length > 0) {
+      var lastRow = departmentSheet.getLastRow();
+      departmentSheet.getRange(lastRow + 1, 1, newTasksList.length, newTasksList[0].length).setValues(newTasksList);
+    }
+    
+    // Bulk write last generated dates back to Unique sheet
+    checklistSheet.getRange(1, 17, lastGeneratedDatesCol.length, 1).setValues(lastGeneratedDatesCol);
     
     return {
       success: true,
@@ -1258,16 +1412,12 @@ function setupDailyTrigger() {
 // Daily trigger function
 function dailyChecklistProcessor() {
   try {
-    var result = processChecklistAndGenerateTasks();
-    Logger.log("Daily checklist processing result: " + JSON.stringify(result));
-    
-    // Auto check daily logins and mark absents / deduct points
+    // Run the daily login and absent deduction check
     var loginResult = runDailyLoginCheck();
     Logger.log("Daily login check result: " + JSON.stringify(loginResult));
     
     return {
       success: true,
-      checklistResult: result,
       loginResult: loginResult
     };
   } catch (error) {
@@ -1309,8 +1459,21 @@ function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
   var consecutiveMissed = 0;
   
   var checkDate = new Date(asOfDate);
-  var limitDate = new Date(2026, 6, 1); // July 1, 2026
+  var limitDate = new Date(2026, 6, 27); // July 27, 2026
   limitDate.setHours(0,0,0,0);
+  
+  // Build a presence map for this user to make lookups O(1)
+  var presenceMap = {};
+  for (var h = 1; h < attendanceData.length; h++) {
+    if (String(attendanceData[h][1]).trim().toLowerCase() === userKey) {
+      var rowDate = attendanceData[h][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      var status = String(attendanceData[h][2]).toLowerCase().trim();
+      if (status === "present") {
+        presenceMap[rowDateStr] = true;
+      }
+    }
+  }
   
   while (true) {
     if (checkDate < limitDate) {
@@ -1324,24 +1487,12 @@ function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
     }
     
     var checkDateStr = getFormattedDate(checkDate);
-    var foundPresent = false;
     
-    for (var h = 1; h < attendanceData.length; h++) {
-      var rowDate = attendanceData[h][0];
-      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
-      if (rowDateStr === checkDateStr && String(attendanceData[h][1]).trim().toLowerCase() === userKey) {
-        if (String(attendanceData[h][2]).toLowerCase() === "present") {
-          foundPresent = true;
-        }
-        break;
-      }
-    }
-    
-    if (foundPresent) {
+    if (presenceMap[checkDateStr]) {
       break;
     } else {
       consecutiveMissed++;
-      if (consecutiveMissed >= 10) break;
+      if (consecutiveMissed >= 365) break;
     }
     
     checkDate.setDate(checkDate.getDate() - 1);
@@ -1453,8 +1604,8 @@ function recordLogout(username) {
 function runDailyLoginCheck() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var masterSheet = ss.getSheetByName("master");
-    if (!masterSheet) return { success: false, error: "master sheet not found" };
+    var masterSheet = ss.getSheetByName("Whatsapp");
+    if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
     var deductionsSheet = ss.getSheetByName("Point Deductions");
     if (!deductionsSheet) {
@@ -1577,33 +1728,28 @@ function runDailyLoginCheck() {
           }
         }
 
-        var pointsToDeduct = 50;
-        if (consecutiveMissed === 1) {
-          pointsToDeduct = 50;
-        } else if (consecutiveMissed === 2) {
-          pointsToDeduct = 50; 
-        } else if (consecutiveMissed === 3) {
-          pointsToDeduct = 200; 
-        } else if (consecutiveMissed >= 4) {
-          pointsToDeduct = 100; 
-        }
-
         if (!deductionLogged) {
-          var balance = 1000;
+          var balance = 100; // HIGHEST SCORE IS 100
           for (var k = deductionsData.length - 1; k >= 1; k--) {
             if (String(deductionsData[k][1]).trim().toLowerCase() === userKey) {
               balance = parseInt(deductionsData[k][4]);
               break;
             }
           }
-          var newBalance = balance - pointsToDeduct;
-          deductionsSheet.appendRow([dateStr, user, "Login Missed (" + consecutiveMissed + " Days)", pointsToDeduct, newBalance]);
+          
+          // 1. Deduct 5 points for Checklist
+          var balanceAfterChecklist = balance - 5;
+          deductionsSheet.appendRow([dateStr, user, "Login Missed (Checklist) - " + formatAbsentTime(consecutiveMissed), 5, balanceAfterChecklist]);
+          
+          // 2. Deduct 5 points for Delegation
+          var balanceAfterDelegation = balanceAfterChecklist - 5;
+          deductionsSheet.appendRow([dateStr, user, "Login Missed (Delegation) - " + formatAbsentTime(consecutiveMissed), 5, balanceAfterDelegation]);
 
           // Push to consolidated admin summary list
           absentUsersSummary.push({
             name: user,
             missed: consecutiveMissed,
-            deducted: pointsToDeduct
+            deducted: 10
           });
         }
         
@@ -1612,14 +1758,14 @@ function runDailyLoginCheck() {
     });
     
     // Send ONE consolidated message to escalation managers if there are non-compliant users
-    if (absentUsersSummary.length > 0) {
-      var summaryMsg = "🚨 *STAFF ATTENDANCE ESCALATION SUMMARY* 🚨\n\n";
-      summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
-      summaryMsg += "The following staff members missed their check-in:\n";
-      absentUsersSummary.forEach(function(item, idx) {
-        summaryMsg += (idx + 1) + ". *" + item.name + "* — Missed: " + item.missed + " Day(s) (-" + item.deducted + " Pts)\n";
-      });
-      summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
+      if (absentUsersSummary.length > 0) {
+        var summaryMsg = "🚨 *STAFF ATTENDANCE ESCALATION SUMMARY* 🚨\n\n";
+        summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
+        summaryMsg += "The following staff members missed their check-in:\n";
+        absentUsersSummary.forEach(function(item, idx) {
+          summaryMsg += (idx + 1) + ". *" + item.name + "*\n   ⏳ Days Missed: " + item.missed + "\n   ❌ Points Deducted: " + item.deducted + " Pts (5 Delegation + 5 Checklist)\n";
+        });
+        summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
       
       sendWhatsAppNotification("+919039080203", summaryMsg);
       sendWhatsAppNotification("+919644404741", summaryMsg);
@@ -1655,8 +1801,8 @@ function sendWhatsAppNotification(phoneNumber, message) {
 function sendSameDayLoginReminder() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var masterSheet = ss.getSheetByName("master");
-    if (!masterSheet) return { success: false, error: "master sheet not found" };
+    var masterSheet = ss.getSheetByName("Whatsapp");
+    if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
     var attendanceSheet = ss.getSheetByName("Attendance");
     if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
@@ -1713,14 +1859,47 @@ function sendSameDayLoginReminder() {
           var checkDate = new Date(today);
           checkDate.setDate(checkDate.getDate() - 1);
           var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+          
+          var totalPointsDeducted = consecutiveMissed * 10;
 
-          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\n*Consecutive Days Pending/Missed:* " + consecutiveMissed + " Day(s)\n\nPlease log in immediately to complete your pending delegations and checklists to prevent score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\n*Consecutive Absent Duration:* " + formatAbsentTime(consecutiveMissed) + "\n*Total Points Deducted:* -" + totalPointsDeducted + " Points (" + consecutiveMissed + " days x 10 pts)\n\nPlease log in immediately to complete your pending delegations and checklists to prevent further score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           count++;
         }
       }
     });
     
     return { success: true, remindedCount: count };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+// Temporary function to reset consecutive missed days for all users
+function resetAttendanceCounters() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var attendanceSheet = ss.getSheetByName("Attendance");
+    if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
+    
+    var data = attendanceSheet.getDataRange().getValues();
+    var headers = data[0];
+    var countColIndex = headers.indexOf("Consecutive Missed Days");
+    
+    if (countColIndex === -1) {
+      countColIndex = 7; // Column H (8th column)
+      attendanceSheet.getRange(1, countColIndex + 1).setValue("Consecutive Missed Days");
+    }
+    
+    var updatedCount = 0;
+    // Set all values in the column to 0 (except header)
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][countColIndex] !== 0 && String(data[i][countColIndex]) !== "") {
+        attendanceSheet.getRange(i + 1, countColIndex + 1).setValue(0);
+        updatedCount++;
+      }
+    }
+    
+    return { success: true, message: "Reset " + updatedCount + " attendance records to 0 consecutive missed days." };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
@@ -1735,12 +1914,12 @@ function setupAttendanceTriggers() {
     }
   }
   
-  // 1. Trigger for sendSameDayLoginReminder at 5:00 PM daily
+  // 1. Trigger for sendSameDayLoginReminder at 6:10 PM daily
   ScriptApp.newTrigger("sendSameDayLoginReminder")
     .timeBased()
     .everyDays(1)
-    .atHour(17)
-    .nearMinute(0)
+    .atHour(18)
+    .nearMinute(10)
     .create();
     
   // 2. Trigger for runDailyLoginCheck at 11:00 AM daily
@@ -1750,4 +1929,224 @@ function setupAttendanceTriggers() {
     .atHour(11)
     .nearMinute(0)
     .create();
+}
+
+function manageUser(params) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("master");
+    if (!sheet) {
+      throw new Error("Master sheet not found");
+    }
+    
+    var subAction = params.subAction; // 'insert', 'update', 'delete'
+    var rowData = JSON.parse(params.rowData);
+    
+    if (subAction === 'delete') {
+      var rowIndex = parseInt(params.rowIndex);
+      if (isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid row index: " + params.rowIndex);
+      }
+      // ONLY clear Columns C to H (index 3 to 8) to preserve Columns A & B
+      sheet.getRange(rowIndex, 3, 1, 6).clearContent();
+      return { success: true, message: "User deleted successfully" };
+    }
+    
+    if (subAction === 'insert') {
+      // Find the first empty row in Column C to preserve Column A & B lists
+      var colCValues = sheet.getRange("C:C").getValues();
+      var targetRow = -1;
+      for (var r = 1; r < colCValues.length; r++) {
+        if (!colCValues[r][0] || String(colCValues[r][0]).trim() === "") {
+          targetRow = r + 1;
+          break;
+        }
+      }
+      if (targetRow === -1) {
+        targetRow = colCValues.length + 1;
+      }
+      
+      // Write user details to Columns C to H:
+      var roleVal = String(rowData[4]).trim();
+      if (roleVal.toLowerCase() === "inactive" || roleVal.toLowerCase() === "in active") {
+        roleVal = "In Active";
+      }
+      sheet.getRange(targetRow, 3).setValue(rowData[2]); // Username
+      sheet.getRange(targetRow, 4).setValue(rowData[3]); // Password
+      sheet.getRange(targetRow, 5).setValue(roleVal);    // Role
+      sheet.getRange(targetRow, 6).setValue(rowData[5]); // Email
+      sheet.getRange(targetRow, 7).setValue(rowData[6]); // Phone
+      sheet.getRange(targetRow, 8).setValue(rowData[7]); // PhotoUrl
+      
+      return { success: true, message: "User added successfully" };
+    }
+    
+    if (subAction === 'update') {
+      var rowIndex = parseInt(params.rowIndex);
+      if (isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid row index: " + params.rowIndex);
+      }
+      
+      var oldUsername = String(sheet.getRange(rowIndex, 3).getValue()).trim();
+      var newUsername = String(rowData[2]).trim();
+      
+      // Write user details to Columns C to H:
+      var roleVal = String(rowData[4]).trim();
+      if (roleVal.toLowerCase() === "inactive" || roleVal.toLowerCase() === "in active") {
+        roleVal = "In Active";
+      }
+      
+      sheet.getRange(rowIndex, 3).setValue(rowData[2]); // Username
+      sheet.getRange(rowIndex, 4).setValue(rowData[3]); // Password
+      sheet.getRange(rowIndex, 5).setValue(roleVal);    // Role
+      sheet.getRange(rowIndex, 6).setValue(rowData[5]); // Email
+      sheet.getRange(rowIndex, 7).setValue(rowData[6]); // Phone
+      sheet.getRange(rowIndex, 8).setValue(rowData[7]); // PhotoUrl
+      
+      // If username changed, update all corresponding doer names in the Unique sheet
+      if (oldUsername && newUsername && oldUsername.toLowerCase() !== newUsername.toLowerCase()) {
+        var uniqueSheet = ss.getSheetByName("Unique");
+        if (uniqueSheet) {
+          var uniqueData = uniqueSheet.getDataRange().getValues();
+          for (var q = 1; q < uniqueData.length; q++) {
+            var currentDoer = String(uniqueData[q][4]).trim();
+            if (currentDoer.toLowerCase() === oldUsername.toLowerCase()) {
+              uniqueSheet.getRange(q + 1, 5).setValue(newUsername); // Column E (index 5) is Doer
+            }
+          }
+          Logger.log("Updated Unique sheet checklist items doer name from: " + oldUsername + " to: " + newUsername);
+        }
+      }
+      
+      return { success: true, message: "User updated successfully" };
+    }
+    
+    throw new Error("Unknown subAction: " + subAction);
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function manageUniqueChecklist(params) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("Unique");
+    if (!sheet) {
+      throw new Error("Unique checklist sheet not found");
+    }
+    
+    var subAction = params.subAction; // 'insert', 'update', 'delete'
+    var rowData = JSON.parse(params.rowData);
+    
+    if (subAction === 'delete') {
+      var taskId = params.taskId;
+      var rowIndex = -1;
+      
+      if (taskId) {
+        var data = sheet.getDataRange().getValues();
+        for (var r = 1; r < data.length; r++) {
+          if (data[r][1] && String(data[r][1]).trim() === String(taskId).trim()) {
+            rowIndex = r + 1;
+            break;
+          }
+        }
+      }
+      
+      if (rowIndex === -1 && params.rowIndex) {
+        rowIndex = parseInt(params.rowIndex);
+      }
+      
+      if (rowIndex === -1 || isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid or unfound row index for delete");
+      }
+      
+      sheet.deleteRow(rowIndex);
+      return { success: true, message: "Checklist deleted successfully" };
+    }
+    
+    if (subAction === 'insert') {
+      // Check if duplicate checklist template already exists in Unique sheet (same doer and description)
+      var uniqueData = sheet.getDataRange().getValues();
+      var newDoer = String(rowData[4]).trim().toLowerCase();
+      var newDesc = String(rowData[5]).trim().toLowerCase();
+      
+      for (var r = 1; r < uniqueData.length; r++) {
+        var existingDoer = String(uniqueData[r][4]).trim().toLowerCase();
+        var existingDesc = String(uniqueData[r][5]).trim().toLowerCase();
+        
+        if (existingDoer === newDoer && existingDesc === newDesc) {
+          throw new Error("This checklist task already exists for this user in the templates/configurations.");
+        }
+      }
+      
+      sheet.appendRow(rowData);
+      return { success: true, message: "Checklist added successfully" };
+    }
+    
+    if (subAction === 'update') {
+      var taskId = rowData[1];
+      var rowIndex = -1;
+      
+      if (taskId) {
+        var data = sheet.getDataRange().getValues();
+        for (var r = 1; r < data.length; r++) {
+          if (data[r][1] && String(data[r][1]).trim() === String(taskId).trim()) {
+            rowIndex = r + 1;
+            break;
+          }
+        }
+      }
+      
+      if (rowIndex === -1 && params.rowIndex) {
+        rowIndex = parseInt(params.rowIndex);
+      }
+      
+      if (rowIndex === -1 || isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid or unfound row index for update");
+      }
+      
+      for (var i = 0; i < rowData.length; i++) {
+        sheet.getRange(rowIndex, i + 1).setValue(rowData[i]);
+      }
+      return { success: true, message: "Checklist updated successfully" };
+    }
+    
+    throw new Error("Unknown subAction: " + subAction);
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function formatAbsentTime(days) {
+  if (days <= 0) return "0 Days (0 Days)";
+  var years = Math.floor(days / 365);
+  var remainingDays = days % 365;
+  var months = Math.floor(remainingDays / 30);
+  var finalDays = remainingDays % 30;
+  
+  var parts = [];
+  if (years > 0) {
+    parts.push(years + (years === 1 ? " Year" : " Years"));
+  }
+  if (months > 0) {
+    parts.push(months + (months === 1 ? " Month" : " Months"));
+  }
+  if (finalDays > 0 || parts.length === 0) {
+    parts.push(finalDays + (finalDays === 1 ? " Day" : " Days"));
+  }
+  
+  return parts.join(" ") + " (" + days + " Days)";
+}
+
+function cleanAllDuplicateTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var deletedCount = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    var funcName = triggers[i].getHandlerFunction();
+    if (funcName === "testChecklistProcessing") {
+      ScriptApp.deleteTrigger(triggers[i]);
+      deletedCount++;
+    }
+  }
+  Logger.log("Successfully deleted " + deletedCount + " active triggers for testChecklistProcessing.");
 }

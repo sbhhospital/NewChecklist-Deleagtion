@@ -8,6 +8,7 @@ import DelegationPage from "./delegation-data";
 export default function QuickTask() {
     const [tasks, setTasks] = useState([]);
     const [delegationTasks, setDelegationTasks] = useState([]);
+    const [inactiveUsers, setInactiveUsers] = useState(new Set());
     const [loading, setLoading] = useState(false);
     const [delegationLoading, setDelegationLoading] = useState(false);
     const [userLoading, setUserLoading] = useState(true);
@@ -23,6 +24,27 @@ export default function QuickTask() {
         name: false,
         frequency: false
     });
+
+    const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+    useEffect(() => {
+        if (!loading && !delegationLoading) return
+        const messages = [
+            "🏥 Updating SBH Group of Hospitals analytics...",
+            "💼 Assembling the management team for synergy...",
+            "☕ NM is approving the latest entries... please hold!",
+            "📊 Polishing employee scorecards for the monthly review...",
+            "📁 Finding files that were definitely archived correctly...",
+            "📧 Drafting emails that could have been quick meetings...",
+            "✨ Boosting team performance metrics by 200%...",
+            "🍪 Stealing biscuits from the office breakroom..."
+        ]
+        let idx = 0;
+        const timer = setInterval(() => {
+            idx = (idx + 1) % messages.length
+            setFunnyMsg(messages[idx])
+        }, 2500)
+        return () => clearInterval(timer)
+    }, [loading, delegationLoading])
 
     const CONFIG = {
         SHEET_ID: "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0",
@@ -63,18 +85,24 @@ export default function QuickTask() {
 
             if (data?.table?.rows) {
                 let foundUser = null;
+                const inactiveSet = new Set();
 
                 // Skip header row and search for user
                 data.table.rows.slice(1).forEach((row) => {
                     if (row.c) {
                         const doerName = row.c[2]?.v || ""; // Column C - Doer's Name
                         const role = row.c[4]?.v || "user"; // Column E - Role
+                        const roleLower = role.toLowerCase().trim();
+
+                        if (roleLower === "inactive" || roleLower === "in active") {
+                            inactiveSet.add(doerName.toLowerCase().trim());
+                        }
 
                         // Match by username (case-insensitive)
                         if (doerName.toLowerCase().trim() === loggedInUsername.toLowerCase().trim()) {
                             foundUser = {
                                 name: doerName,
-                                role: role.toLowerCase().trim(),
+                                role: roleLower,
                                 department: row.c[0]?.v || "", // Column A - Department
                                 givenBy: row.c[1]?.v || "", // Column B - Given By
                                 email: row.c[5]?.v || "" // Column F - ID/Email
@@ -82,6 +110,7 @@ export default function QuickTask() {
                         }
                     }
                 });
+                setInactiveUsers(inactiveSet);
 
                 if (foundUser) {
                     setCurrentUser(foundUser.name);
@@ -108,7 +137,7 @@ export default function QuickTask() {
             setLoading(true);
 
             // Fetch from Checklist sheet
-            const checklistUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.CHECKLIST_SHEET}`;
+            const checklistUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.CHECKLIST_SHEET}&t=${Date.now()}`;
             const response = await fetch(checklistUrl);
             const text = await response.text();
 
@@ -160,9 +189,12 @@ export default function QuickTask() {
                 // Apply role-based filtering
                 let filteredData;
                 if (userRole === 'admin') {
-                    // Admin sees all unique tasks
-                    filteredData = uniqueTasks;
-                    console.log("Admin access: showing all unique checklist tasks");
+                    // Admin sees all unique tasks except for inactive users
+                    filteredData = uniqueTasks.filter(item => {
+                        const itemName = (item.Name || '').toString().toLowerCase().trim();
+                        return !inactiveUsers.has(itemName);
+                    });
+                    console.log("Admin access: showing all unique checklist tasks (excluding inactive users)");
                 } else {
                     // Regular user sees only their tasks (where Name matches current user)
                     filteredData = uniqueTasks.filter(item => {
@@ -193,7 +225,7 @@ export default function QuickTask() {
             setDelegationLoading(true);
 
             // Fetch from Delegation sheet
-            const delegationUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.DELEGATION_SHEET}`;
+            const delegationUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.DELEGATION_SHEET}&t=${Date.now()}`;
             const response = await fetch(delegationUrl);
             const text = await response.text();
 
@@ -228,9 +260,12 @@ export default function QuickTask() {
                 // Apply role-based filtering (unchanged from original)
                 let filteredData;
                 if (userRole === 'admin') {
-                    // Admin sees all tasks
-                    filteredData = transformedData;
-                    console.log("Admin access: showing all delegation tasks");
+                    // Admin sees all tasks except for inactive users
+                    filteredData = transformedData.filter(item => {
+                        const itemName = (item.Name || '').toString().toLowerCase().trim();
+                        return !inactiveUsers.has(itemName);
+                    });
+                    console.log("Admin access: showing all delegation tasks (excluding inactive users)");
                 } else {
                     // Regular user sees only their tasks
                     filteredData = transformedData.filter(item => {
@@ -379,20 +414,6 @@ export default function QuickTask() {
         }
     }, [fetchChecklistData, fetchDelegationData, currentUser, userRole, userLoading]);
 
-    // Show loading while fetching user data
-    if (userLoading) {
-        return (
-            <AdminLayout>
-                <div className="flex items-center justify-center min-h-screen">
-                    <div className="text-center">
-                        <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mb-4"></div>
-                        <p className="text-purple-600 text-lg">Loading user session...</p>
-                    </div>
-                </div>
-            </AdminLayout>
-        );
-    }
-
     // Show error if user not found or not logged in
     if (error) {
         return (
@@ -420,9 +441,33 @@ export default function QuickTask() {
         );
     }
 
+    const isAnyLoading = userLoading || loading || delegationLoading;
+
     return (
       <AdminLayout>
-        <div className="sticky top-0 z-30 bg-white pb-4 border-b border-gray-200">
+        <div className="relative min-h-[500px]">
+          {isAnyLoading && (
+            <div className="absolute inset-0 bg-white z-[99999]">
+              <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
+                <div className="relative flex items-center justify-center mb-6">
+                  <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+                  <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+                  <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+                    <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+                  </div>
+                </div>
+                <div className="space-y-2 text-center max-w-sm px-6">
+                  <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
+                    {funnyMsg}
+                  </p>
+                  <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
+                    Optimizing SBH Dashboard Synergy
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="sticky top-0 z-30 bg-white pb-4 border-b border-gray-200">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-purple-700 pl-3">
@@ -636,18 +681,7 @@ export default function QuickTask() {
                     </thead>
 
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {loading ? (
-                        <tr>
-                          <td colSpan={8} className="px-6 py-8 text-center">
-                            <div className="flex flex-col items-center justify-center">
-                              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-2"></div>
-                              <p className="text-purple-600">
-                                Loading checklist data...
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : filteredChecklistTasks.length > 0 ? (
+                      {filteredChecklistTasks.length > 0 ? (
                         filteredChecklistTasks.map((task) => (
                           <tr key={task._id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -725,6 +759,7 @@ export default function QuickTask() {
             )}
           </>
         )}
+        </div>
       </AdminLayout>
     );
-}
+}

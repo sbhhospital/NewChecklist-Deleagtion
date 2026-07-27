@@ -47,6 +47,51 @@ const isDateToday = (dateStr) => {
   return date.getTime() === today.getTime()
 }
 
+const isChecklistTaskOverdue = (taskStartDateStr, frequencyStr) => {
+  const dateObj = parseDateFromDDMMYYYY(taskStartDateStr)
+  if (!dateObj) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  const freq = String(frequencyStr || "daily").toLowerCase().trim()
+  let deadline = new Date(dateObj)
+  
+  if (freq === "daily") {
+    deadline.setHours(23, 59, 59, 999)
+  } else if (freq === "weekly" || freq.includes("week")) {
+    const day = dateObj.getDay()
+    const diffToSunday = day === 0 ? 0 : 7 - day
+    deadline.setDate(dateObj.getDate() + diffToSunday)
+    deadline.setHours(23, 59, 59, 999)
+  } else if (freq === "fortnightly") {
+    if (dateObj.getDate() <= 15) {
+      deadline.setDate(15)
+    } else {
+      deadline.setMonth(deadline.getMonth() + 1)
+      deadline.setDate(0)
+    }
+    deadline.setHours(23, 59, 59, 999)
+  } else if (freq === "monthly") {
+    deadline.setMonth(deadline.getMonth() + 1)
+    deadline.setDate(0)
+    deadline.setHours(23, 59, 59, 999)
+  } else if (freq === "quarterly") {
+    const month = dateObj.getMonth()
+    const quarterEndMonth = Math.floor(month / 3) * 3 + 2
+    deadline = new Date(dateObj.getFullYear(), quarterEndMonth + 1, 0, 23, 59, 59, 999)
+  } else if (freq === "yearly") {
+    deadline = new Date(dateObj.getFullYear(), 11, 31, 23, 59, 59, 999)
+  } else {
+    deadline.setHours(23, 59, 59, 999)
+  }
+  
+  // 3 days margin/grace period
+  const marginDate = new Date(deadline)
+  marginDate.setDate(deadline.getDate() + 3)
+  return today > marginDate
+}
+
+
 const parseGoogleSheetsDate = (dateStr) => {
   if (!dateStr) return ""
   if (typeof dateStr === "string" && dateStr.startsWith("Date(")) {
@@ -67,115 +112,222 @@ const getCellValue = (row, index) => {
   return cell && "v" in cell ? cell.v : null
 }
 
-// Progressive scoring system matching user's custom specs:
-// - 1st Extension: -10 points
-// - 2nd Extension: -20 points
-// - 3rd or more: -50 points
-// - Delay Days: -10 points daily for first 7 days, then -20 points daily
-const calculateTaskScore = (taskObj, historyList) => {
-  const taskId = taskObj.id
+const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
+  const taskId = taskObj.id;
+
+  const cutoffDateGlobal = new Date(2026, 6, 27); // July 27, 2026
+  cutoffDateGlobal.setHours(0, 0, 0, 0);
+  const taskRefDate = parseDateFromDDMMYYYY(taskObj.taskStartDate || taskObj.dueDate);
   
-  // Count extensions
-  let extensionCount = 0
-  if (historyList && Array.isArray(historyList)) {
-    extensionCount = historyList.filter(
-      (h) => String(h.taskId).trim() === String(taskId).trim() && String(h.action).toLowerCase() === "extend date"
-    ).length
+  if (taskRefDate && taskRefDate < cutoffDateGlobal) {
+    return {
+      score: 0,
+      baseScore: 100,
+      completionReward: 0,
+      penalty: 0,
+      extensionCount: 0,
+      delayDays: 0,
+      extensionPenalty: 0,
+      delayPenalty: 0,
+      mainScorePenalty: 0
+    };
   }
-  
-  if (extensionCount === 0 && taskObj.dueDate && taskObj.taskStartDate && taskObj.dueDate !== taskObj.taskStartDate) {
-    extensionCount = 1
-  }
 
-  let delayDays = 0
-  const deadlineDate = parseDateFromDDMMYYYY(taskObj.dueDate || taskObj.taskStartDate)
-  const isDone = taskObj.originalStatus === "Done"
-  const isVerifyPending = taskObj.originalStatus === "Verify Pending"
-  const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate)
+  if (isChecklist) {
+    // Count extensions
+    let extensionCount = 0;
+    if (historyList && Array.isArray(historyList)) {
+      extensionCount = historyList.filter(
+        (h) => String(h.taskId).trim() === String(taskId).trim() && String(h.action).toLowerCase() === "extend date"
+      ).length;
+    }
+    
+    if (extensionCount === 0 && taskObj.dueDate && taskObj.taskStartDate && taskObj.dueDate !== taskObj.taskStartDate) {
+      extensionCount = 1;
+    }
 
-  const cutoffDate = new Date(2026, 5, 24) // June 24, 2026
-  cutoffDate.setHours(0, 0, 0, 0)
+    let delayDays = 0;
+    const deadlineDate = parseDateFromDDMMYYYY(taskObj.dueDate || taskObj.taskStartDate);
+    const isDone = taskObj.originalStatus === "Done";
+    const isVerifyPending = taskObj.originalStatus === "Verify Pending";
+    const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
 
-  if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
-    extensionCount = 0
-    delayDays = 0
+    const cutoffDate = new Date(2026, 5, 24); // June 24, 2026
+    cutoffDate.setHours(0, 0, 0, 0);
+
+    if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
+      extensionCount = 0;
+      delayDays = 0;
+    } else {
+      if (deadlineDate) {
+        if (isDone || isVerifyPending) {
+          if (actualDate && actualDate > deadlineDate) {
+            const diffTime = actualDate - deadlineDate;
+            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          }
+        } else {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (today > deadlineDate) {
+            const diffTime = today - deadlineDate;
+            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          }
+        }
+      }
+    }
+
+    // Calculate custom extension penalty
+    let extensionPenalty = 0;
+    if (extensionCount === 1) {
+      extensionPenalty = 10;
+    } else if (extensionCount === 2) {
+      extensionPenalty = 20;
+    } else if (extensionCount >= 3) {
+      extensionPenalty = 50;
+    }
+
+    // Calculate progressive delay penalty
+    let delayPenalty = 0;
+    if (delayDays > 0) {
+      if (isDone || isVerifyPending) {
+        if (delayDays <= 7) {
+          delayPenalty = delayDays * 10;
+        } else {
+          delayPenalty = 70 + (delayDays - 7) * 20;
+        }
+      } else {
+        delayPenalty = delayDays * 3;
+      }
+    }
+
+    const totalPenalty = extensionPenalty + delayPenalty;
+    
+    let baseScore = 100;
+    const ratingVal = parseInt(taskObj.rating, 10);
+    if (!isNaN(ratingVal)) {
+      if (ratingVal === 5) baseScore = 100;
+      else if (ratingVal === 4) baseScore = 80;
+      else if (ratingVal === 3) baseScore = 60;
+      else if (ratingVal === 2) baseScore = 40;
+      else if (ratingVal === 1) baseScore = 20;
+    }
+
+    let completionReward = 0;
+    if (isDone || isVerifyPending) {
+      if (delayDays === 0) {
+        if (extensionCount === 0) {
+          completionReward = 25;
+        } else if (extensionCount === 1) {
+          completionReward = 15;
+        }
+      }
+    }
+
+    const score = Math.max(0, baseScore + completionReward - totalPenalty);
+
+    return {
+      score,
+      baseScore,
+      completionReward,
+      penalty: totalPenalty,
+      extensionCount,
+      delayDays,
+      extensionPenalty,
+      delayPenalty,
+      mainScorePenalty: 0
+    };
   } else {
+    // --- DELEGATION SCORING LOGIC ---
+    const taskWeight = parseInt(taskObj.weight, 10) || 3; // 3, 5, or 10
+
+    // Count extensions
+    let extensionCount = 0;
+    if (historyList && Array.isArray(historyList)) {
+      extensionCount = historyList.filter(
+        (h) => String(h.taskId).trim() === String(taskId).trim() && String(h.action).toLowerCase() === "extend date"
+      ).length;
+    }
+    if (taskObj.sheetExtensionCount) {
+      extensionCount = Math.max(extensionCount, taskObj.sheetExtensionCount);
+    }
+    if (extensionCount === 0 && taskObj.dueDate && taskObj.taskStartDate && taskObj.dueDate !== taskObj.taskStartDate) {
+      extensionCount = 1;
+    }
+
+    let delayDays = 0;
+    const deadlineDate = parseDateFromDDMMYYYY(taskObj.dueDate || taskObj.taskStartDate);
+    const isDone = taskObj.originalStatus === "Done";
+    const isVerifyPending = taskObj.originalStatus === "Verify Pending";
+    const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
+
     if (deadlineDate) {
       if (isDone || isVerifyPending) {
         if (actualDate && actualDate > deadlineDate) {
-          const diffTime = actualDate - deadlineDate
-          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+          const diffTime = actualDate - deadlineDate;
+          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         }
       } else {
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         if (today > deadlineDate) {
-          const diffTime = today - deadlineDate
-          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+          const diffTime = today - deadlineDate;
+          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         }
       }
     }
-  }
 
-  // Calculate custom extension penalty
-  let extensionPenalty = 0
-  if (extensionCount === 1) {
-    extensionPenalty = 10
-  } else if (extensionCount === 2) {
-    extensionPenalty = 20
-  } else if (extensionCount >= 3) {
-    extensionPenalty = 50
-  }
+    // Calculate extension and delay penalties based on task value
+    let extensionPenalty = 0;
+    let delayPenaltyOnTask = 0;
+    let mainScorePenalty = 0;
 
-  // Calculate progressive delay penalty: 10/day for week 1, then 20/day (completed tasks), or 3/day (pending tasks)
-  let delayPenalty = 0
-  if (delayDays > 0) {
+    if (taskWeight === 3) {
+      if (extensionCount === 1) extensionPenalty = 1;
+      else if (extensionCount >= 2) extensionPenalty = 3;
+      if (extensionCount > 2) mainScorePenalty += (extensionCount - 2) * 3;
+
+      if (delayDays === 1) delayPenaltyOnTask = 1;
+      else if (delayDays === 2) delayPenaltyOnTask = 3;
+      else if (delayDays >= 3) delayPenaltyOnTask = 3;
+      if (delayDays > 2) mainScorePenalty += (delayDays - 2) * 3;
+    } else if (taskWeight === 5) {
+      if (extensionCount === 1) extensionPenalty = 2;
+      else if (extensionCount >= 2) extensionPenalty = 5;
+      if (extensionCount > 2) mainScorePenalty += (extensionCount - 2) * 5;
+
+      if (delayDays === 1) delayPenaltyOnTask = 1;
+      else if (delayDays === 2) delayPenaltyOnTask = 3;
+      else if (delayDays >= 3) delayPenaltyOnTask = 5;
+      if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 5;
+    } else if (taskWeight >= 10) {
+      if (extensionCount === 1) extensionPenalty = 2;
+      else if (extensionCount === 2) extensionPenalty = 5;
+      else if (extensionCount >= 3) extensionPenalty = 10;
+      if (extensionCount > 3) mainScorePenalty += (extensionCount - 3) * 10;
+
+      if (delayDays === 1) delayPenaltyOnTask = 2;
+      else if (delayDays === 2) delayPenaltyOnTask = 5;
+      else if (delayDays >= 3) delayPenaltyOnTask = 10;
+      if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 10;
+    }
+
+    // Task Reward is added to score only if completed
+    let taskReward = 0;
     if (isDone || isVerifyPending) {
-      if (delayDays <= 7) {
-        delayPenalty = delayDays * 10
-      } else {
-        delayPenalty = 70 + (delayDays - 7) * 20
-      }
-    } else {
-      delayPenalty = delayDays * 3 // Mild penalty for pending delayed tasks
+      taskReward = Math.max(0, taskWeight - extensionPenalty - delayPenaltyOnTask);
     }
-  }
 
-  const totalPenalty = extensionPenalty + delayPenalty
-  
-  let baseScore = 100
-  const ratingVal = parseInt(taskObj.rating, 10)
-  if (!isNaN(ratingVal)) {
-    if (ratingVal === 5) baseScore = 100
-    else if (ratingVal === 4) baseScore = 80
-    else if (ratingVal === 3) baseScore = 60
-    else if (ratingVal === 2) baseScore = 40
-    else if (ratingVal === 1) baseScore = 20
-  }
-
-  // Completion Reward: 25 for on-time no extension, 15 for on-time 1 extension
-  let completionReward = 0
-  if (isDone || isVerifyPending) {
-    if (delayDays === 0) {
-      if (extensionCount === 0) {
-        completionReward = 25
-      } else if (extensionCount === 1) {
-        completionReward = 15
-      }
-    }
-  }
-
-  const score = Math.max(0, baseScore + completionReward - totalPenalty)
-
-  return {
-    score,
-    baseScore,
-    completionReward,
-    penalty: totalPenalty,
-    extensionCount,
-    delayDays,
-    extensionPenalty,
-    delayPenalty
+    return {
+      score: taskReward,
+      baseScore: taskWeight,
+      completionReward: taskReward,
+      penalty: extensionPenalty + delayPenaltyOnTask,
+      extensionCount,
+      delayDays,
+      extensionPenalty,
+      delayPenalty: delayPenaltyOnTask,
+      mainScorePenalty
+    };
   }
 }
 
@@ -184,6 +336,27 @@ export default function PerformanceDashboard() {
   const [error, setError] = useState(null)
   const [activeSource, setActiveSource] = useState("delegation") // delegation or checklist
   const [tabLoading, setTabLoading] = useState(false)
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+
+  useEffect(() => {
+    if (!loading && !tabLoading) return
+    const messages = [
+      "🏥 Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "☕ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📧 Drafting emails that could have been quick meetings...",
+      "✨ Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [loading, tabLoading])
   
   const handleTabChange = (source) => {
     setTabLoading(true)
@@ -214,58 +387,89 @@ export default function PerformanceDashboard() {
     return role === "admin" || isAdminFlag === "true"
   }
 
-  const fetchPerformanceData = async (signal) => {
-    setLoading(true)
-    setError(null)
+  const fetchPerformanceData = async (signal, forceRefresh = false) => {
+    let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null;
+
+    // Check if raw prefetch data exists and is fresh (less than 5 mins old)
+    const cachedPrefetch = window.sbh_prefetch_performance_raw;
+    const cachedTime = window.sbh_prefetch_performance_raw_time;
+    let parsedPayload = null;
+
+    if (cachedPrefetch && cachedTime && !forceRefresh) {
+      if (Date.now() - Number(cachedTime) < 5 * 60 * 1000) {
+        parsedPayload = cachedPrefetch;
+      }
+    }
 
     try {
-      const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
-      
-      const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master`
-      const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION`
-      const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist`
-      const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE`
-      const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History`
-      const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions`
+      if (parsedPayload) {
+        masterJson = parsedPayload.masterJson;
+        delegationJson = parsedPayload.delegationJson;
+        checklistJson = parsedPayload.checklistJson;
+        historyJson = parsedPayload.historyJson;
+        loginJson = parsedPayload.loginJson;
+        deductionsJson = parsedPayload.deductionsJson;
+      } else {
+        setLoading(true)
+        setError(null)
+        
+        const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+        
+        const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`
+        const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION&t=${Date.now()}`
+        const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist&t=${Date.now()}`
+        const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE&t=${Date.now()}`
+        const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History&t=${Date.now()}`
+        const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
 
-      const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes] = await Promise.all([
-        fetch(masterUrl, { signal }),
-        fetch(delegationUrl, { signal }),
-        fetch(checklistUrl, { signal }),
-        fetch(historyUrl, { signal }).catch(() => null),
-        fetch(loginUrl, { signal }).catch(() => null),
-        fetch(deductionsUrl, { signal }).catch(() => null)
-      ])
+        const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes] = await Promise.all([
+          fetch(masterUrl, { signal }),
+          fetch(delegationUrl, { signal }),
+          fetch(checklistUrl, { signal }),
+          fetch(historyUrl, { signal }).catch(() => null),
+          fetch(loginUrl, { signal }).catch(() => null),
+          fetch(deductionsUrl, { signal }).catch(() => null)
+        ])
 
-      if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok) {
-        throw new Error("Failed to retrieve Google Sheet performance datasets.")
-      }
+        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok) {
+          throw new Error("Failed to retrieve Google Sheet performance datasets.")
+        }
 
-      const parseResponseJson = async (res) => {
-        const text = await res.text()
-        const start = text.indexOf("{")
-        const end = text.lastIndexOf("}")
-        const jsonStr = text.substring(start, end + 1)
-        return JSON.parse(jsonStr)
-      }
+        const parseResponseJson = async (res) => {
+          const text = await res.text()
+          const start = text.indexOf("{")
+          const end = text.lastIndexOf("}")
+          const jsonStr = text.substring(start, end + 1)
+          return JSON.parse(jsonStr)
+        }
 
-      const masterJson = await parseResponseJson(masterRes)
-      const delegationJson = await parseResponseJson(delegationRes)
-      const checklistJson = await parseResponseJson(checklistRes)
-      
-      let historyJson = null
-      if (historyRes && historyRes.ok) {
-        historyJson = await parseResponseJson(historyRes)
-      }
+        masterJson = await parseResponseJson(masterRes)
+        delegationJson = await parseResponseJson(delegationRes)
+        checklistJson = await parseResponseJson(checklistRes)
+        
+        if (historyRes && historyRes.ok) {
+          historyJson = await parseResponseJson(historyRes)
+        }
 
-      let loginJson = null
-      if (loginRes && loginRes.ok) {
-        loginJson = await parseResponseJson(loginRes).catch(() => null)
-      }
+        if (loginRes && loginRes.ok) {
+          loginJson = await parseResponseJson(loginRes).catch(() => null)
+        }
 
-      let deductionsJson = null
-      if (deductionsRes && deductionsRes.ok) {
-        deductionsJson = await parseResponseJson(deductionsRes).catch(() => null)
+        if (deductionsRes && deductionsRes.ok) {
+          deductionsJson = await parseResponseJson(deductionsRes).catch(() => null)
+        }
+
+        // Cache the raw data
+        const payload = {
+          masterJson,
+          delegationJson,
+          checklistJson,
+          historyJson,
+          loginJson,
+          deductionsJson
+        }
+        window.sbh_prefetch_performance_raw = payload
+        window.sbh_prefetch_performance_raw_time = Date.now()
       }
 
       const loginList = []
@@ -315,15 +519,23 @@ export default function PerformanceDashboard() {
       // Process master sheet options
       const departments = []
       const doers = []
+      const inactiveUsers = new Set()
       if (masterJson.table && masterJson.table.rows) {
         masterJson.table.rows.slice(1).forEach((row) => {
+          const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : ""
+          const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : ""
+          
+          if (username && (role === "inactive" || role === "in active")) {
+            inactiveUsers.add(username.toLowerCase())
+            return
+          }
+          
           if (row.c && row.c[0] && row.c[0].v) {
             const val = row.c[0].v.toString().trim()
             if (val !== "") departments.push(val)
           }
-          if (row.c && row.c[2] && row.c[2].v) {
-            const val = row.c[2].v.toString().trim()
-            if (val !== "") doers.push(val)
+          if (username !== "") {
+            doers.push(username)
           }
         })
       }
@@ -343,6 +555,7 @@ export default function PerformanceDashboard() {
           const assignedTo = assignedToRaw ? String(assignedToRaw).trim() : ""
 
           if (!taskId || taskId === "" || !assignedTo || assignedTo === "") return
+          if (assignedTo && inactiveUsers.has(assignedTo.toLowerCase())) return
 
           // Skip Leave
           const columnQValue = getCellValue(row, 16)
@@ -379,11 +592,18 @@ export default function PerformanceDashboard() {
             status,
             frequency: getCellValue(row, 7) || "one-time",
             originalStatus: statusColumnU,
-            rating: getCellValue(row, 17) || ""
+            rating: getCellValue(row, 17) || "",
+            weight: parseInt(getCellValue(row, 21), 10) || 3,
+            sheetExtensionCount: parseInt(getCellValue(row, 22), 10) || 0
           }
 
           // Compute penalty and score matching calculateTaskScore
-          const scoreDetails = calculateTaskScore(rawTask, historyList)
+          let scoreDetails = { score: 0, baseScore: 3, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0, mainScorePenalty: 0 }
+          try {
+            scoreDetails = calculateTaskScore(rawTask, historyList, false)
+          } catch (scoreErr) {
+            console.error("Error calculating delegation task score:", scoreErr, rawTask)
+          }
           rawTask.score = scoreDetails.score
           rawTask.baseScore = scoreDetails.baseScore
           rawTask.completionReward = scoreDetails.completionReward
@@ -392,6 +612,7 @@ export default function PerformanceDashboard() {
           rawTask.delayDays = scoreDetails.delayDays
           rawTask.extensionPenalty = scoreDetails.extensionPenalty
           rawTask.delayPenalty = scoreDetails.delayPenalty
+          rawTask.mainScorePenalty = scoreDetails.mainScorePenalty
 
           delegationTasks.push(rawTask)
 
@@ -420,11 +641,16 @@ export default function PerformanceDashboard() {
         checklistJson.table.rows.forEach((row, rowIndex) => {
           if (rowIndex === 0) return
 
-          const taskId = getCellValue(row, 1) // Column B
+          let taskId = getCellValue(row, 1) // Column B
           const assignedToRaw = getCellValue(row, 4) // Column E
           const assignedTo = assignedToRaw ? String(assignedToRaw).trim() : ""
 
-          if (!taskId || taskId === "" || !assignedTo || assignedTo === "") return
+          if (!assignedTo || assignedTo === "") return
+          if (assignedTo && inactiveUsers.has(assignedTo.toLowerCase())) return
+
+          if (!taskId || taskId === "" || String(taskId).trim().toLowerCase() === "null") {
+            taskId = `row_${rowIndex}`
+          }
 
           // Skip Leave
           const columnQValue = getCellValue(row, 16)
@@ -443,9 +669,10 @@ export default function PerformanceDashboard() {
           }
 
           let status = "pending"
+          const freq = getCellValue(row, 7) || "daily"
           if (completionDate && completionDate !== "") {
             status = "completed"
-          } else if (isDateInPast(taskStartDate) && !isDateToday(taskStartDate)) {
+          } else if (isChecklistTaskOverdue(taskStartDate, freq)) {
             status = "overdue"
           }
 
@@ -461,7 +688,12 @@ export default function PerformanceDashboard() {
             originalStatus: completionDate ? "Done" : "Pending"
           }
 
-          const scoreDetails = calculateTaskScore(rawTask, [])
+          let scoreDetails = { score: 100, baseScore: 100, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0 }
+          try {
+            scoreDetails = calculateTaskScore(rawTask, [], true)
+          } catch (scoreErr) {
+            console.error("Error calculating checklist task score:", scoreErr, rawTask)
+          }
           rawTask.score = scoreDetails.score
           rawTask.baseScore = scoreDetails.baseScore
           rawTask.completionReward = scoreDetails.completionReward
@@ -480,15 +712,17 @@ export default function PerformanceDashboard() {
         })
       }
 
-      const checklistStaff = Array.from(checklistStaffTracking.values()).map(staff => ({
-        id: staff.name.replace(/\s+/g, "-").toLowerCase(),
-        name: staff.name,
-        email: `${staff.name.toLowerCase().replace(/\s+/g, ".")}@example.com`,
-        totalTasks: staff.totalTasks,
-        completedTasks: staff.completedTasks,
-        pendingTasks: staff.pendingTasks,
-        progress: staff.totalTasks > 0 ? Math.round((staff.completedTasks / staff.totalTasks) * 100) : 0
-      }))
+      const checklistStaff = Array.from(checklistStaffTracking.values())
+        .filter(staff => !inactiveUsers.has(staff.name.toLowerCase()))
+        .map(staff => ({
+          id: staff.name.replace(/\s+/g, "-").toLowerCase(),
+          name: staff.name,
+          email: `${staff.name.toLowerCase().replace(/\s+/g, ".")}@example.com`,
+          totalTasks: staff.totalTasks,
+          completedTasks: staff.completedTasks,
+          pendingTasks: staff.pendingTasks,
+          progress: staff.totalTasks > 0 ? Math.round((staff.completedTasks / staff.totalTasks) * 100) : 0
+        }))
 
       setData({
         delegationTasks,
@@ -499,7 +733,8 @@ export default function PerformanceDashboard() {
         doerOptions,
         historyData: historyList,
         loginHistory: loginList,
-        pointDeductions: deductionsList
+        pointDeductions: deductionsList,
+        inactiveUsers: Array.from(inactiveUsers)
       })
 
     } catch (err) {
@@ -519,38 +754,55 @@ export default function PerformanceDashboard() {
 
   return (
     <AdminLayout>
-      {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
-          <p className="text-slate-500 font-semibold animate-pulse text-sm">
-            Loading SBH Performance Intelligence Engine...
-          </p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl text-center max-w-md mx-auto my-12">
-          <p className="font-semibold">{error}</p>
-          <button
-            onClick={() => fetchPerformanceData()}
-            className="mt-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all"
-          >
-            Retry Fetching Data
-          </button>
-        </div>
-      ) : (
-        <EdpmsDashboardView
-          allTasks={activeSource === "delegation" ? data.delegationTasks : data.checklistTasks}
-          staffMembers={activeSource === "delegation" ? data.delegationStaff : data.checklistStaff}
-          isAdmin={isAdminUser()}
-          currentUsername={sessionStorage.getItem("username") || ""}
-          departmentOptions={data.departmentOptions}
-          doerOptions={data.doerOptions}
-          activeSource={activeSource}
-          setActiveSource={handleTabChange}
-          loginHistory={data.loginHistory}
-          pointDeductions={data.pointDeductions}
-          tabLoading={tabLoading}
-        />
-      )}
+      <div className="relative min-h-[500px]">
+        {loading ? (
+          <div className="absolute inset-0 bg-white z-[99999]">
+            <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
+              <div className="relative flex items-center justify-center mb-6">
+                <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+                <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+                <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+                  <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+                </div>
+              </div>
+              <div className="space-y-2 text-center max-w-sm px-6">
+                <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
+                  {funnyMsg}
+                </p>
+                <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
+                  Optimizing SBH Dashboard Synergy
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl text-center max-w-md mx-auto my-12">
+            <p className="font-semibold">{error}</p>
+            <button
+              onClick={() => fetchPerformanceData()}
+              className="mt-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all"
+            >
+              Retry Fetching Data
+            </button>
+          </div>
+        ) : (
+          <EdpmsDashboardView
+            allTasks={activeSource === "delegation" ? data.delegationTasks : data.checklistTasks}
+            staffMembers={activeSource === "delegation" ? data.delegationStaff : data.checklistStaff}
+            isAdmin={isAdminUser()}
+            currentUsername={sessionStorage.getItem("username") || ""}
+            departmentOptions={data.departmentOptions}
+            doerOptions={data.doerOptions}
+            activeSource={activeSource}
+            setActiveSource={handleTabChange}
+            loginHistory={data.loginHistory}
+            pointDeductions={data.pointDeductions}
+            tabLoading={tabLoading}
+            inactiveUsers={data.inactiveUsers || []}
+            onRefresh={() => fetchPerformanceData(null, true)}
+          />
+        )}
+      </div>
     </AdminLayout>
   )
 }

@@ -23,6 +23,27 @@ const LoginPage = () => {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [loggedInUsername, setLoggedInUsername] = useState("");
 
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+  useEffect(() => {
+    if (!isLoginLoading && !isDataLoading) return
+    const messages = [
+      "🏥 Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "☕ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📧 Drafting emails that could have been quick meetings...",
+      "✨ Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [isLoginLoading, isDataLoading])
+
   // Function to check if a role is any variation of "inactive"
   const isInactiveRole = (role) => {
     if (!role) return false;
@@ -377,7 +398,21 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #e6f9f0 100%)', backgroundColor: '#f1f5f9' }}>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4 relative" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #e6f9f0 100%)', backgroundColor: '#f1f5f9' }}>
+      {isLoginLoading && (
+        <div className="absolute inset-0 bg-white z-[9999] flex flex-col items-center justify-center min-h-[300px] transition-all duration-300">
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+            <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+            <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+              <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+            </div>
+          </div>
+          <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide text-center max-w-xs px-4">
+            {funnyMsg}
+          </p>
+        </div>
+      )}
       <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300" style={{ backgroundColor: '#ffffff' }}>
         <div className="space-y-2 p-6 login-header-gradient rounded-t-3xl border-b-4 border-emerald-500 text-center" style={{ borderBottomColor: '#10b981' }}>
           <div className="flex flex-col items-center justify-center mb-1 gap-2">
@@ -515,8 +550,8 @@ const LoginPage = () => {
           </div>
         </div>
       )}
-      <div className="fixed left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
-        Architecture by Naman Mishra
+      <div className="fixed left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999999] font-bold tracking-wider">
+        Architecture by <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-emerald-100 transition-colors">Naman Mishra</a>
       </div>
     </div>
   );

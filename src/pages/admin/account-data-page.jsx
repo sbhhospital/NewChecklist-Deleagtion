@@ -33,6 +33,7 @@ function AccountDataPage() {
   const [additionalData, setAdditionalData] = useState({})
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
+  const [funnyMsg, setFunnyMsg] = useState("⏳ Updating SBH Group of Hospitals analytics...")
   const [error, setError] = useState(null)
   const [remarksData, setRemarksData] = useState({})
   const [historyData, setHistoryData] = useState([])
@@ -43,6 +44,26 @@ function AccountDataPage() {
   const [endDate, setEndDate] = useState("")
   const [userRole, setUserRole] = useState("")
   const [username, setUsername] = useState("")
+
+  useEffect(() => {
+    if (!loading) return
+    const messages = [
+      "⏳ Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "✅ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📝 Drafting emails that could have been quick meetings...",
+      "🚀 Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [loading])
 
   const formatDateToDDMMYYYY = (date) => {
     const day = date.getDate().toString().padStart(2, "0")
@@ -249,6 +270,35 @@ function AccountDataPage() {
 
       console.log("Filtering dates:", { todayStr, tomorrowStr })
 
+      // Fetch active users from master sheet
+      let activeUsersSet = null;
+      try {
+        const masterUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=master`;
+        const masterRes = await fetch(masterUrl);
+        if (masterRes.ok) {
+          const mText = await masterRes.text();
+          const mJsonStart = mText.indexOf("{");
+          const mJsonEnd = mText.lastIndexOf("}");
+          if (mJsonStart !== -1 && mJsonEnd !== -1) {
+            const mData = JSON.parse(mText.substring(mJsonStart, mJsonEnd + 1));
+            activeUsersSet = new Set();
+            if (mData.table && mData.table.rows) {
+              mData.table.rows.forEach(r => {
+                if (r.c && r.c[2] && r.c[2].v) {
+                  const name = r.c[2].v.toString().trim();
+                  const role = r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
+                  if (name && role !== "inactive" && role !== "in active") {
+                    activeUsersSet.add(name.toLowerCase());
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch master data for active users", e);
+      }
+
       const membersSet = new Set()
 
       let rows = []
@@ -274,7 +324,10 @@ function AccountDataPage() {
         }
 
         const assignedTo = rowValues[4] || "Unassigned"
-        membersSet.add(assignedTo)
+        // Only add to dropdown if user is active (or if master fetch failed)
+        if (!activeUsersSet || activeUsersSet.has(assignedTo.trim().toLowerCase())) {
+          membersSet.add(assignedTo)
+        }
 
         const isUserMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
         if (!isUserMatch && currentUserRole !== "admin") return
@@ -439,8 +492,12 @@ function AccountDataPage() {
   }
 
   const toggleHistory = () => {
-    setShowHistory((prev) => !prev)
-    resetFilters()
+    setLoading(true);
+    setTimeout(() => {
+      setShowHistory((prev) => !prev);
+      resetFilters();
+      setTimeout(() => setLoading(false), 600);
+    }, 100);
   }
 
   const handleSubmit = async () => {
@@ -573,9 +630,31 @@ function AccountDataPage() {
   // Convert Set to Array for display
   const selectedItemsCount = selectedItems.size
 
+  const DashboardLoadingEffect = () => (
+    <div className="absolute inset-0 bg-white z-[99999] rounded-lg">
+      <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
+        <div className="relative flex items-center justify-center mb-6">
+          <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+          <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+          <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+            <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>⏳</span>
+          </div>
+        </div>
+        <div className="space-y-2 text-center max-w-sm px-6">
+          <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
+            {funnyMsg}
+          </p>
+          <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
+            Optimizing SBH Dashboard Synergy
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 relative min-h-[500px]">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <h1 className="text-2xl font-bold tracking-tight text-purple-700">
             {showHistory ? CONFIG.PAGE_CONFIG.historyTitle : CONFIG.PAGE_CONFIG.title}
@@ -644,12 +723,8 @@ function AccountDataPage() {
             </p>
           </div>
 
-          {loading ? (
-            <div className="text-center py-10">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500 mb-4"></div>
-              <p className="text-purple-600">Loading task data...</p>
-            </div>
-          ) : error ? (
+          {loading && <DashboardLoadingEffect />}
+          {error ? (
             <div className="bg-red-50 p-4 rounded-md text-red-800 text-center">
               {error}{" "}
               <button className="underline ml-2" onClick={() => window.location.reload()}>

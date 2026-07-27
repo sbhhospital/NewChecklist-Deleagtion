@@ -31,6 +31,28 @@ export default function AdminDashboard() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showLinkInputModal, setShowLinkInputModal] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+
+  useEffect(() => {
+    if (!pageLoading) return
+    const messages = [
+      "🏥 Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "☕ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📧 Drafting emails that could have been quick meetings...",
+      "✨ Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [pageLoading])
 
   // State for department data
   const [departmentData, setDepartmentData] = useState({
@@ -51,6 +73,7 @@ export default function AdminDashboard() {
 
   // State to store all staff profile images (username -> imageUrl)
   const [staffImages, setStaffImages] = useState({});
+  const [inactiveUsers, setInactiveUsers] = useState(new Set());
 
   // Store the current date for overdue calculation
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -209,6 +232,7 @@ export default function AdminDashboard() {
       const masterResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=master`);
 
       const imagesMap = {};
+      const inactiveUsersSet = new Set();
 
       if (masterResponse.ok) {
         const masterText = await masterResponse.text();
@@ -217,11 +241,16 @@ export default function AdminDashboard() {
         const masterJsonString = masterText.substring(masterJsonStart, masterJsonEnd + 1);
         const masterData = JSON.parse(masterJsonString);
 
-        // Iterate through rows to get username (Col C) and image (Col H)
+        // Iterate through rows to get username (Col C), role (Col E) and image (Col H)
         masterData.table.rows.forEach((row, index) => {
           if (index === 0) return; // Skip header
           const username = getCellValue(row, 2); // Column C
+          const role = getCellValue(row, 4); // Column E
           const imageUrl = getCellValue(row, 7); // Column H
+
+          if (username && role && (role.toLowerCase().trim() === "inactive" || role.toLowerCase().trim() === "in active")) {
+            inactiveUsersSet.add(username.toLowerCase().trim());
+          }
 
           if (username && imageUrl) {
             const displayableUrl = getDisplayableImageUrl(imageUrl);
@@ -231,6 +260,7 @@ export default function AdminDashboard() {
           }
         });
       }
+      setInactiveUsers(inactiveUsersSet);
 
       // 2. Fetch from WhatsApp Sheet (to fill gaps or overwrite if needed - prioritizing Master generally, but here treating as supplement)
       // Actually, let's stick to Master as primary source. If needed, we can check Whatsapp too.
@@ -462,6 +492,50 @@ export default function AdminDashboard() {
     return date.getTime() === tomorrow.getTime()
   }
 
+  const isChecklistTaskOverdue = (taskStartDateStr, frequencyStr) => {
+    const dateObj = parseDateFromDDMMYYYY(taskStartDateStr)
+    if (!dateObj) return false
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const freq = String(frequencyStr || "daily").toLowerCase().trim()
+    let deadline = new Date(dateObj)
+    
+    if (freq === "daily") {
+      deadline.setHours(23, 59, 59, 999)
+    } else if (freq === "weekly" || freq.includes("week")) {
+      const day = dateObj.getDay()
+      const diffToSunday = day === 0 ? 0 : 7 - day
+      deadline.setDate(dateObj.getDate() + diffToSunday)
+      deadline.setHours(23, 59, 59, 999)
+    } else if (freq === "fortnightly") {
+      if (dateObj.getDate() <= 15) {
+        deadline.setDate(15)
+      } else {
+        deadline.setMonth(deadline.getMonth() + 1)
+        deadline.setDate(0)
+      }
+      deadline.setHours(23, 59, 59, 999)
+    } else if (freq === "monthly") {
+      deadline.setMonth(deadline.getMonth() + 1)
+      deadline.setDate(0)
+      deadline.setHours(23, 59, 59, 999)
+    } else if (freq === "quarterly") {
+      const month = dateObj.getMonth()
+      const quarterEndMonth = Math.floor(month / 3) * 3 + 2
+      deadline = new Date(dateObj.getFullYear(), quarterEndMonth + 1, 0, 23, 59, 59, 999)
+    } else if (freq === "yearly") {
+      deadline = new Date(dateObj.getFullYear(), 11, 31, 23, 59, 59, 999)
+    } else {
+      deadline.setHours(23, 59, 59, 999)
+    }
+    
+    // 3 days margin/grace period
+    const marginDate = new Date(deadline)
+    marginDate.setDate(deadline.getDate() + 3)
+    return today > marginDate
+  }
+
   // Function to check if a date is in the future (from tomorrow onwards)
   const isDateFuture = (dateStr) => {
     const date = parseDateFromDDMMYYYY(dateStr)
@@ -543,7 +617,7 @@ export default function AdminDashboard() {
     const username = sessionStorage.getItem('username');
 
     try {
-      const response = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${sheetName}`, { signal });
+      const response = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${sheetName}&t=${Date.now()}`, { signal });
 
       if (!response.ok) {
         throw new Error(`Failed to fetch ${sheetName} sheet data: ${response.status}`);
@@ -595,6 +669,10 @@ export default function AdminDashboard() {
 
           const assignedTo = getCellValue(row, 4) || "Unassigned";
           const taskId = getCellValue(row, 1);
+
+          if (assignedTo && inactiveUsers.has(assignedTo.toLowerCase().trim())) {
+            return null;
+          }
 
           if (
             isRegularUser() &&
@@ -743,7 +821,7 @@ export default function AdminDashboard() {
             // For checklist mode:
             if (completionDate && completionDate !== "") {
               status = "completed";
-            } else if (isDateInPast(taskStartDate) && !isDateToday(taskStartDate)) {
+            } else if (isChecklistTaskOverdue(taskStartDate, frequency)) {
               status = "overdue";
             } else {
               status = "pending";
@@ -838,7 +916,7 @@ export default function AdminDashboard() {
               } else {
                 staffData.pendingTasks++;
 
-                if (isDateInPast(taskStartDate) && !isDateToday(taskStartDate)) {
+                if (isChecklistTaskOverdue(taskStartDate, frequency)) {
                   // Past dates (excluding today) = overdue
                   overdueTasks++;
                   statusData.Overdue++;
@@ -934,12 +1012,14 @@ export default function AdminDashboard() {
         completedRatingTwo,
         completedRatingThreePlus
       });
+      setPageLoading(false);
 
     } catch (error) {
       if (error.name === 'AbortError') {
         return; // Request was aborted, do nothing
       }
       console.error(`Error fetching ${sheetName} sheet data:`, error);
+      setPageLoading(false);
     }
   };
 
@@ -1018,7 +1098,7 @@ export default function AdminDashboard() {
             return isDateInPast(task.taskStartDate) && !isDateToday(task.taskStartDate);
           } else {
             // For CHECKLIST: Show tasks with start dates in the past (excluding today)
-            return isDateInPast(task.taskStartDate) && !isDateToday(task.taskStartDate);
+            return isChecklistTaskOverdue(task.taskStartDate, task.frequency);
           }
         default:
           return true;
@@ -1124,8 +1204,8 @@ export default function AdminDashboard() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {departmentData.staffMembers.map((staff) => (
-              <tr key={staff.id} className="hover:bg-gray-50">
+            {departmentData.staffMembers.map((staff, idx) => (
+              <tr key={`${staff.id}-${idx}`} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div>
                     <div className="text-sm font-medium text-gray-900">{staff.name}</div>
@@ -1168,7 +1248,28 @@ export default function AdminDashboard() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 relative min-h-[500px]">
+        {pageLoading && (
+          <div className="absolute inset-0 bg-white z-[99999]">
+            <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
+              <div className="relative flex items-center justify-center mb-6">
+                <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
+                <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
+                <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
+                  <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+                </div>
+              </div>
+              <div className="space-y-2 text-center max-w-sm px-6">
+                <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
+                  {funnyMsg}
+                </p>
+                <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
+                  Optimizing SBH Dashboard Synergy
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {/* MODIFIED: Updated header section to include profile image */}
         <div className="flex flex-col justify-end gap-4 sm:flex-row sm:items-center">
 
@@ -1413,8 +1514,8 @@ export default function AdminDashboard() {
                         staff.name.toLowerCase() ===
                         sessionStorage.getItem("username")?.toLowerCase()
                     )
-                    .map((staff) => (
-                      <option key={staff.id} value={staff.name}>
+                    .map((staff, idx) => (
+                      <option key={`${staff.id}-${idx}`} value={staff.name}>
                         {staff.name}
                       </option>
                     ))}
@@ -1932,9 +2033,9 @@ export default function AdminDashboard() {
                               <div className="grid gap-4 md:grid-cols-2">
                                 {sortedStaffMembers
                                   .filter((staff) => staff.progress >= 70)
-                                  .map((staff) => (
+                                  .map((staff, idx) => (
                                     <div
-                                      key={staff.id}
+                                      key={`${staff.id}-${idx}`}
                                       className="group flex items-center justify-between p-4 border border-gray-100 rounded-xl bg-white shadow-sm hover:shadow-lg hover:shadow-green-500/10 transition-all duration-300 hover:-translate-y-1"
                                     >
                                       <div className="flex items-center gap-4">
@@ -2000,9 +2101,9 @@ export default function AdminDashboard() {
                                       staff.progress >= 40 &&
                                       staff.progress < 70
                                   )
-                                  .map((staff) => (
+                                  .map((staff, idx) => (
                                     <div
-                                      key={staff.id}
+                                      key={`${staff.id}-${idx}`}
                                       className="group flex items-center justify-between p-4 border border-gray-100 rounded-xl bg-white shadow-sm hover:shadow-lg hover:shadow-amber-500/10 transition-all duration-300 hover:-translate-y-1"
                                     >
                                       <div className="flex items-center gap-4">
@@ -2066,9 +2167,9 @@ export default function AdminDashboard() {
                               <div className="grid gap-4 md:grid-cols-2">
                                 {sortedStaffMembers
                                   .filter((staff) => staff.progress < 40)
-                                  .map((staff) => (
+                                  .map((staff, idx) => (
                                     <div
-                                      key={staff.id}
+                                      key={`${staff.id}-${idx}`}
                                       className="group flex items-center justify-between p-4 border border-gray-100 rounded-xl bg-white shadow-sm hover:shadow-lg hover:shadow-red-500/10 transition-all duration-300 hover:-translate-y-1"
                                     >
                                       <div className="flex items-center gap-4">
@@ -2131,9 +2232,9 @@ export default function AdminDashboard() {
                                         .filter(
                                           (staff) => staff.totalTasks === 0
                                         )
-                                        .map((staff) => (
+                                        .map((staff, idx) => (
                                           <div
-                                            key={staff.id}
+                                            key={`${staff.id}-${idx}`}
                                             className="flex items-center justify-between p-4 border border-gray-200 rounded-xl bg-white"
                                           >
                                             <div className="flex items-center gap-4">

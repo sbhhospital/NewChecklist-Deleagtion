@@ -29,6 +29,27 @@ export default function AttendanceReport() {
   const [loading, setLoading] = useState(true)
   const [tabLoading, setTabLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+  useEffect(() => {
+    if (!loading) return
+    const messages = [
+      "🏥 Updating SBH Group of Hospitals analytics...",
+      "💼 Assembling the management team for synergy...",
+      "☕ NM is approving the latest entries... please hold!",
+      "📊 Polishing employee scorecards for the monthly review...",
+      "📁 Finding files that were definitely archived correctly...",
+      "📧 Drafting emails that could have been quick meetings...",
+      "✨ Boosting team performance metrics by 200%...",
+      "🍪 Stealing biscuits from the office breakroom..."
+    ]
+    let idx = 0
+    const timer = setInterval(() => {
+      idx = (idx + 1) % messages.length
+      setFunnyMsg(messages[idx])
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [loading])
   
   // Data lists
   const [attendanceLogs, setAttendanceLogs] = useState([])
@@ -612,9 +633,17 @@ export default function AttendanceReport() {
         {/* Dashboard Grid Content wrapper */}
         <div className="relative">
           {loading && (
-            <div className="flex flex-col items-center justify-center min-h-[300px] bg-white rounded-2xl border border-slate-100 shadow-sm py-12">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600"></div>
-              <p className="text-slate-500 text-xs font-bold mt-4 animate-pulse">Fetching Attendance Analytics...</p>
+            <div className="absolute inset-0 bg-white z-[40] rounded-2xl min-h-[300px]">
+              <div className="sticky top-0 h-[70vh] w-full flex flex-col items-center justify-center">
+                <div className="relative flex items-center justify-center mb-6">
+                  <div className="animate-ping absolute inline-flex h-16 w-16 rounded-full bg-emerald-400 opacity-40"></div>
+                  <div className="animate-pulse absolute inline-flex h-12 w-12 rounded-full bg-amber-400 opacity-50"></div>
+                  <div className="relative rounded-2xl h-10 w-10 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-lg">
+                    <span className="text-white text-base animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+                  </div>
+                </div>
+                <p className="text-emerald-800 text-xs font-bold animate-bounce text-center max-w-sm px-4">{funnyMsg}</p>
+              </div>
             </div>
           )}
 

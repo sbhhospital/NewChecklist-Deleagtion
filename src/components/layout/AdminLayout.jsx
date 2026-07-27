@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useTransition } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar, TrendingUp } from 'lucide-react'
+import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar, TrendingUp, Users } from 'lucide-react'
 import sbhLogo from '../../assets/logo.png'
 
 export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
@@ -14,8 +14,17 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   const [username, setUsername] = useState("")
   const [userRole, setUserRole] = useState("")
   const [userEmail, setUserEmail] = useState("")
+  const [isPending, startTransition] = useTransition()
 
-
+  const handleNavClick = (e, path) => {
+    e.preventDefault()
+    setIsMobileMenuOpen(false)
+    if (location.pathname !== path) {
+      startTransition(() => {
+        navigate(path)
+      })
+    }
+  }
   // Check authentication on component mount
   useEffect(() => {
     const storedUsername = sessionStorage.getItem('username')
@@ -109,6 +118,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       showFor: ["admin"]
     },
     {
+      href: "/dashboard/users",
+      label: "User Management",
+      icon: Users,
+      active: location.pathname === "/dashboard/users",
+      showFor: ["admin"]
+    },
+    {
       href: "/dashboard/quick-task",
       label: "Quick Task",
       icon: Zap,
@@ -187,6 +203,72 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     }
   }, [isDataPage, isDataSubmenuOpen])
 
+  // Background pre-fetch of performance data for admins
+  useEffect(() => {
+    const role = sessionStorage.getItem('role')
+    if (role !== 'admin') return
+
+    // If already cached and fresh (less than 5 minutes old), don't prefetch
+    const cachedTime = window.sbh_prefetch_performance_raw_time
+    if (cachedTime && (Date.now() - Number(cachedTime) < 5 * 60 * 1000)) return
+
+    const prefetch = async () => {
+      try {
+        console.log("Starting background prefetch of performance data...")
+        const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+        const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master`
+        const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION`
+        const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist`
+        const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE`
+        const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History`
+        const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions`
+
+        // Fetch sequentially to prevent Google Sheets 503 Rate Limits
+        const masterRes = await fetch(masterUrl);
+        const delegationRes = await fetch(delegationUrl);
+        const checklistRes = await fetch(checklistUrl);
+        const historyRes = await fetch(historyUrl).catch(() => null);
+        const loginRes = await fetch(loginUrl).catch(() => null);
+        const deductionsRes = await fetch(deductionsUrl).catch(() => null);
+
+        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok) return
+
+        const parseResponseJson = async (res) => {
+          const text = await res.text()
+          const start = text.indexOf("{")
+          const end = text.lastIndexOf("}")
+          const jsonStr = text.substring(start, end + 1)
+          return JSON.parse(jsonStr)
+        }
+
+        const masterJson = await parseResponseJson(masterRes)
+        const delegationJson = await parseResponseJson(delegationRes)
+        const checklistJson = await parseResponseJson(checklistRes)
+        const historyJson = historyRes && historyRes.ok ? await parseResponseJson(historyRes) : null
+        const loginJson = loginRes && loginRes.ok ? await parseResponseJson(loginRes).catch(() => null) : null
+        const deductionsJson = deductionsRes && deductionsRes.ok ? await parseResponseJson(deductionsRes).catch(() => null) : null
+
+        const payload = {
+          masterJson,
+          delegationJson,
+          checklistJson,
+          historyJson,
+          loginJson,
+          deductionsJson
+        }
+        window.sbh_prefetch_performance_raw = payload
+        window.sbh_prefetch_performance_raw_time = Date.now()
+        console.log("Background prefetch of performance data completed successfully!")
+      } catch (err) {
+        console.warn("Background prefetch failed", err)
+      }
+    }
+    
+    // Defer the fetch slightly (1.5 seconds) so it doesn't slow down the main layout load
+    const timer = setTimeout(prefetch, 1500)
+    return () => clearTimeout(timer)
+  }, [username])
+
   // Get accessible routes and departments
   const accessibleRoutes = getAccessibleRoutes()
   const accessibleDepartments = getAccessibleDepartments()
@@ -214,6 +296,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
           <Link
             to="/dashboard/admin"
+            onClick={(e) => handleNavClick(e, "/dashboard/admin")}
             className="flex items-center gap-2 font-semibold text-purple-700"
           >
             <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8" />
@@ -254,13 +337,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                                 category.link ||
                                 `/dashboard/data/${category.id}`
                               }
+                              onClick={(e) => handleNavClick(e, category.link || `/dashboard/data/${category.id}`)}
                               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                 (category.link ||
                                   `/dashboard/data/${category.id}`)
                                 ? "bg-purple-50 text-purple-700 font-bold"
                                 : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
                                 }`}
-                              onClick={() => setIsMobileMenuOpen(false)}
                             >
                               {category.name}
                             </Link>
@@ -272,6 +355,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                 ) : (
                   <Link
                     to={route.href}
+                    onClick={(e) => handleNavClick(e, route.href)}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
                       ? "menu-active-gradient font-bold"
                       : "text-gray-700 hover:bg-purple-50/50"
@@ -383,7 +467,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       {/* Mobile menu button */}
       <button
         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="md:hidden absolute left-4 top-3 z-50 text-blue-700 p-2 rounded-md hover:bg-blue-100"
+        className="md:hidden fixed left-4 top-3 z-[100002] text-blue-700 p-2 rounded-md hover:bg-blue-100 bg-white shadow-md"
       >
         <Menu className="h-5 w-5" />
         <span className="sr-only">Toggle menu</span>
@@ -391,7 +475,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
       {/* Mobile sidebar */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-[100001] md:hidden">
           <div
             className="fixed inset-0 bg-black/20"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -400,8 +484,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
               <Link
                 to="/dashboard/admin"
+                onClick={(e) => handleNavClick(e, "/dashboard/admin")}
                 className="flex items-center gap-2 font-semibold text-purple-700"
-                onClick={() => setIsMobileMenuOpen(false)}
               >
                 <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
               </Link>
@@ -443,13 +527,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                                     category.link ||
                                     `/dashboard/data/${category.id}`
                                   }
+                                  onClick={(e) => handleNavClick(e, category.link || `/dashboard/data/${category.id}`)}
                                   className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                     (category.link ||
                                       `/dashboard/data/${category.id}`)
                                     ? "bg-purple-50 text-purple-700 font-bold"
                                     : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
                                     }`}
-                                  onClick={() => setIsMobileMenuOpen(false)}
                                 >
                                   {category.name}
                                 </Link>
@@ -461,11 +545,11 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                     ) : (
                       <Link
                         to={route.href}
+                        onClick={(e) => handleNavClick(e, route.href)}
                         className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
                           ? "menu-active-gradient font-bold"
                           : "text-gray-700 hover:bg-purple-50/50"
                           }`}
-                        onClick={() => setIsMobileMenuOpen(false)}
                       >
                         <route.icon
                           className={`h-4 w-4 ${route.active ? "text-white" : ""
@@ -610,10 +694,10 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           </button>
           */}
         </header>
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50 relative">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999] font-bold tracking-wider">
-            Architecture by Naman Mishra
+          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999999] font-bold tracking-wider">
+            Architecture by <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-emerald-100 transition-colors">Naman Mishra</a>
           </div>
         </main>
       </div>

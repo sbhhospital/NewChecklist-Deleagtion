@@ -96,6 +96,75 @@ function AccountDataPage() {
     return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
+  const isChecklistTaskOverdueForUser = (dateObj, frequencyStr, assignedTo) => {
+    if (!dateObj) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const freq = String(frequencyStr || "daily").toLowerCase().trim();
+    let deadline = new Date(dateObj);
+    
+    if (freq === "daily") {
+      const usersWithGracePeriod = [
+        "ARCHANA DAY",
+        "AMITA, POONIYA",
+        "INDRAJEET",
+      ].map((name) => name.toUpperCase());
+
+      const assignedToUpper = assignedTo ? assignedTo.trim().toUpperCase() : "";
+      if (usersWithGracePeriod.includes(assignedToUpper)) {
+        deadline.setDate(dateObj.getDate() + 1);
+      }
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq === "weekly" || (freq.includes("week") && !freq.includes("end-of"))) {
+      const day = dateObj.getDay();
+      const diffToSunday = day === 0 ? 0 : 7 - day;
+      deadline.setDate(dateObj.getDate() + diffToSunday);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq === "fortnightly" || freq.includes("15")) {
+      if (dateObj.getDate() <= 15) {
+        deadline.setDate(15);
+      } else {
+        deadline.setMonth(deadline.getMonth() + 1);
+        deadline.setDate(0);
+      }
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq === "monthly") {
+      deadline.setMonth(deadline.getMonth() + 1);
+      deadline.setDate(0);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq.includes("1st-week") || freq.includes("1st week")) {
+      deadline.setDate(7);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq.includes("2nd-week") || freq.includes("2nd week")) {
+      deadline.setDate(14);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq.includes("3rd-week") || freq.includes("3rd week")) {
+      deadline.setDate(21);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq.includes("4th-week") || freq.includes("4th week")) {
+      deadline.setDate(28);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq.includes("last-week") || freq.includes("last week")) {
+      deadline.setMonth(deadline.getMonth() + 1);
+      deadline.setDate(0);
+      deadline.setHours(23, 59, 59, 999);
+    } else if (freq === "quarterly") {
+      const month = dateObj.getMonth();
+      const quarterEndMonth = Math.floor(month / 3) * 3 + 2;
+      deadline = new Date(dateObj.getFullYear(), quarterEndMonth + 1, 0, 23, 59, 59, 999);
+    } else if (freq === "yearly") {
+      deadline = new Date(dateObj.getFullYear(), 11, 31, 23, 59, 59, 999);
+    } else {
+      deadline.setHours(23, 59, 59, 999);
+    }
+    
+    // 3 days margin/grace period
+    const marginDate = new Date(deadline);
+    marginDate.setDate(deadline.getDate() + 3);
+    return today > marginDate;
+  };
+
   const sortDateWise = (a, b) => {
     const dateStrA = a["col6"] || ""
     const dateStrB = b["col6"] || ""
@@ -892,10 +961,13 @@ function AccountDataPage() {
                   {filteredAccountData.length > 0 ? (
                     filteredAccountData.map((account) => {
                       const isSelected = selectedItems.has(account._id)
+                      const taskDate = parseDateFromDDMMYYYY(account["col6"]);
+                      const isOverdue = isChecklistTaskOverdueForUser(taskDate, account["col7"], account["col4"]);
+                      const isDisabled = isOverdue;
                       return (
                         <tr
                           key={account._id}
-                          className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50`}
+                          className={`${isSelected ? "bg-purple-50" : ""} ${isOverdue ? "bg-white border-l-4 border-red-600 opacity-90" : "hover:bg-gray-50"}`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <input
@@ -903,10 +975,14 @@ function AccountDataPage() {
                               className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                               checked={isSelected}
                               onChange={(e) => handleCheckboxClick(e, account._id)}
+                              disabled={isDisabled}
                             />
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">{account["col1"] || "—"}</div>
+                            <div className={`text-sm ${isOverdue ? "text-red-600 font-bold" : "text-gray-900"}`}>
+                              {account["col1"] || "—"}
+                              {isOverdue && <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">Overdue</span>}
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">{account["col2"] || "—"}</div>

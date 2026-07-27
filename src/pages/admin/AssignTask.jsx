@@ -49,7 +49,7 @@ const TaskTypePopup = ({ isOpen, onClose, onSelect }) => {
 
 // Calendar Component (defined outside)
 const CalendarComponent = ({ date, onChange, onClose }) => {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(date || new Date());
 
   const getDaysInMonth = (year, month) => {
     return new Date(year, month + 1, 0).getDate();
@@ -246,6 +246,7 @@ export default function AssignTask() {
     frequency: "daily",
     enableReminders: true,
     requireAttachment: false,
+    taskValue: 3,
   });
 
   // Add this function to handle task type selection
@@ -273,8 +274,8 @@ export default function AssignTask() {
 
       // Check if it's delegation task with critical/urgent frequency
       if (selectedTaskType === "delegation" && (value === "critical" || value === "urgent")) {
-        setIsDateDisabled(true);
-        // Set date to today
+        setIsDateDisabled(false);
+        // Set date to today by default but allow change
         const today = new Date();
         setSelectedDate(today);
       } else {
@@ -339,7 +340,8 @@ export default function AssignTask() {
         // Column C - Doers
         if (row.c && row.c[2] && row.c[2].v) {
           const value = row.c[2].v.toString().trim();
-          if (value !== "") {
+          const role = row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
+          if (value !== "" && role !== "inactive" && role !== "in active") {
             doers.push(value);
           }
         }
@@ -421,6 +423,7 @@ export default function AssignTask() {
       frequency: "daily",
       enableReminders: true,
       requireAttachment: false,
+      taskValue: 3,
     };
 
     setFormData(resetFormData);
@@ -489,12 +492,15 @@ export default function AssignTask() {
           return;
         }
 
-        // Extract doers from column C (index 2)
+        // Extract doers from column C (index 2), excluding inactive users
         const allDoers = [];
         data.table.rows.slice(1).forEach((row) => {
           if (row.c && row.c[2] && row.c[2].v) {
             const value = row.c[2].v.toString().trim();
-            if (value !== "") allDoers.push(value);
+            const role = row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
+            if (value !== "" && role !== "inactive" && role !== "in active") {
+              allDoers.push(value);
+            }
           }
         });
 
@@ -904,6 +910,7 @@ export default function AssignTask() {
         frequency: formData.frequency,
         enableReminders: formData.enableReminders,
         requireAttachment: formData.requireAttachment,
+        taskValue: formData.taskValue,
       });
     }
     // Handle checklist tasks (all frequencies)
@@ -1144,6 +1151,7 @@ export default function AssignTask() {
         freq: task.frequency,
         enableReminders: task.enableReminders ? "Yes" : "No",
         requireAttachment: task.requireAttachment ? "Yes" : "No",
+        taskValue: task.taskValue || 3,
       }));
 
       // Submit to main sheet (Delegation / Checklist)
@@ -1227,6 +1235,7 @@ export default function AssignTask() {
         frequency: "daily",
         enableReminders: true,
         requireAttachment: false,
+        taskValue: 3,
       });
       setSelectedDate(null);
       setTime("09:00");
@@ -1335,7 +1344,7 @@ export default function AssignTask() {
               </button>
             </div>
 
-            <div className="rounded-lg border border-purple-200 bg-white shadow-md overflow-hidden">
+            <div className="rounded-lg border border-purple-200 bg-white shadow-md overflow-visible">
               <form onSubmit={handleSubmit}>
                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 border-b border-purple-100">
                   <h2 className="text-xl font-semibold text-purple-700">
@@ -1509,14 +1518,11 @@ export default function AssignTask() {
                   </div>
 
                   {/* Date, Time and Frequency */}
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2">
                     {/* Date Picker */}
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-purple-700">
-                        Task Deadline Date
-                        {(selectedTaskType === "delegation" && (formData.frequency === "critical" || formData.frequency === "urgent")) && (
-                          <span className="text-xs text-purple-600 ml-1"></span>
-                        )}
+                        Task Deadline Date *
                       </label>
                       <div className="relative">
                         <button
@@ -1527,13 +1533,10 @@ export default function AssignTask() {
                             }`}
                         >
                           <Calendar className="mr-2 h-4 w-4 text-purple-500" />
-                          {date ? getFormattedDate(date) : "Select a date"}
-                          {isDateDisabled && (
-                            <span className="ml-2 text-xs text-gray-500"></span>
-                          )}
+                          {date ? formatDate(date) : "Select a date"}
                         </button>
                         {showCalendar && !isDateDisabled && (
-                          <div className="absolute z-10 mt-1">
+                          <div className="absolute z-50 mt-1 left-0 shadow-2xl rounded-md bg-white min-w-[280px]">
                             <CalendarComponent
                               date={date}
                               onChange={setSelectedDate}
@@ -1544,13 +1547,13 @@ export default function AssignTask() {
                       </div>
                     </div>
 
-                    {/* NEW: Time Picker */}
+                    {/* Time Picker */}
                     <div className="space-y-2">
                       <label
                         htmlFor="time"
                         className="block text-sm font-medium text-purple-700"
                       >
-                        Time
+                        Time *
                       </label>
                       <div className="relative">
                         <input
@@ -1564,7 +1567,9 @@ export default function AssignTask() {
                         <Clock className="absolute left-2 top-2.5 h-4 w-4 text-purple-500" />
                       </div>
                     </div>
+                  </div>
 
+                  <div className={`grid gap-4 mt-2 ${selectedTaskType === "delegation" ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
                     {/* Frequency */}
                     <div className="space-y-2">
                       <label
@@ -1579,7 +1584,6 @@ export default function AssignTask() {
                         value={formData.frequency}
                         onChange={handleChange}
                         className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      // disabled={selectedTaskType === "delegation"} // Disable for delegation
                       >
                         {getFrequencies().map((freq) => (
                           <option key={freq.value} value={freq.value}>
@@ -1587,14 +1591,31 @@ export default function AssignTask() {
                           </option>
                         ))}
                       </select>
-                      {selectedTaskType === "delegation" && (
-                        <p className="text-xs text-purple-600">
-                          {/* Delegation tasks can only have One-Time frequency */}
-                        </p>
-                      )}
                     </div>
-                  </div>
 
+                    {/* Task Value (Delegation Only) */}
+                    {selectedTaskType === "delegation" && (
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="taskValue"
+                          className="block text-sm font-medium text-purple-700"
+                        >
+                          Task Value (Points)
+                        </label>
+                        <select
+                          id="taskValue"
+                          name="taskValue"
+                          value={formData.taskValue}
+                          onChange={(e) => setFormData(prev => ({ ...prev, taskValue: parseInt(e.target.value, 10) }))}
+                          className="w-full rounded-md border border-purple-200 p-2 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        >
+                          <option value={3}>3 Points</option>
+                          <option value={5}>5 Points</option>
+                          <option value={10}>10 Points</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                   {/* NEW: DateTime Display */}
                   {date && time && (
                     <div className="p-3 bg-purple-50 border border-purple-200 rounded-md">
