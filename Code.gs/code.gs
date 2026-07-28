@@ -1071,72 +1071,30 @@ function processChecklistAndGenerateTasks() {
         
         // Only proceed if today is a working day
         if (isTodayWorkingDay) {
-          // Check frequency and last generated date
-          if (!lastGeneratedDate) {
-            // If never generated before, generate today
-            shouldGenerateTask = true;
-            taskDueDate = todayString;
-          } else {
-            var lastDate = parseDate(lastGeneratedDate);
-            if (!lastDate) continue; // Skip if can't parse date
-            
-            switch (frequency.toLowerCase()) {
-              case 'daily':
-                // Generate every working day
-                // Check if we haven't already generated for today
-                if (!isSameDate(today, lastDate)) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              case 'weekly':
-                // Generate if it's been 7+ days since last generation
-                var daysDifference = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
-                if (daysDifference >= 7) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              case 'fortnightly':
-                // Generate if it's been 14+ days since last generation
-                var daysDifference = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
-                if (daysDifference >= 14) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              case 'monthly':
-                // Generate if it's a new month
-                if (today.getMonth() !== lastDate.getMonth() || 
-                    today.getFullYear() !== lastDate.getFullYear()) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              case 'quarterly':
-                // Generate if it's a new quarter (every 3 months)
-                var monthDiff = (today.getFullYear() - lastDate.getFullYear()) * 12 + (today.getMonth() - lastDate.getMonth());
-                if (monthDiff >= 3) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              case 'yearly':
-                // Generate if it's a new year
-                if (today.getFullYear() !== lastDate.getFullYear()) {
-                  shouldGenerateTask = true;
-                  taskDueDate = todayString;
-                }
-                break;
-                
-              default:
-                // Unknown frequency - don't generate
-                break;
+          var startDateRaw = row[6]; // Column G (index 6) - Start Date
+          var startDate = parseDate(startDateRaw);
+          
+          if (!startDate) {
+            // Fallback to today if no valid start date
+            startDate = new Date(today);
+            startDate.setHours(0,0,0,0);
+          }
+          
+          // Calculate expected occurrence date
+          var expectedDate = getMostRecentOccurrence(startDate, today, frequency.toLowerCase());
+          
+          if (expectedDate) {
+            if (!lastGeneratedDate) {
+              // Never generated, but start date is valid and reached
+              shouldGenerateTask = true;
+              taskDueDate = todayString;
+            } else {
+              var lastDate = parseDate(lastGeneratedDate);
+              if (lastDate && lastDate < expectedDate) {
+                // Last generated date is older than the expected recent occurrence
+                shouldGenerateTask = true;
+                taskDueDate = todayString;
+              }
             }
           }
         }
@@ -1255,6 +1213,83 @@ function findNextWorkingDate(currentDate, workingDates) {
     Logger.log("Error finding next working date: " + error.toString());
     return null;
   }
+}
+
+// Helper function to calculate the most recent occurrence of a recurring task
+function getMostRecentOccurrence(startDate, today, frequency) {
+  if (!startDate) return null;
+  var sDate = new Date(startDate);
+  sDate.setHours(0,0,0,0);
+  var tDate = new Date(today);
+  tDate.setHours(0,0,0,0);
+  
+  if (tDate < sDate) return null; // Hasn't started yet
+  
+  if (frequency === 'daily') {
+    return tDate;
+  }
+  
+  if (frequency === 'weekly') {
+    var daysDiff = tDate.getDay() - sDate.getDay();
+    if (daysDiff < 0) daysDiff += 7;
+    var mostRecent = new Date(tDate);
+    mostRecent.setDate(tDate.getDate() - daysDiff);
+    return mostRecent;
+  }
+  
+  if (frequency === 'fortnightly') {
+    var d1 = sDate.getDate();
+    var d2 = d1 <= 15 ? d1 + 15 : d1 - 15;
+    var candidates = [
+      new Date(tDate.getFullYear(), tDate.getMonth(), d1),
+      new Date(tDate.getFullYear(), tDate.getMonth(), d2),
+      new Date(tDate.getFullYear(), tDate.getMonth() - 1, d1),
+      new Date(tDate.getFullYear(), tDate.getMonth() - 1, d2)
+    ];
+    var mostRecent = null;
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i] <= tDate) {
+        if (!mostRecent || candidates[i] > mostRecent) {
+          mostRecent = candidates[i];
+        }
+      }
+    }
+    return mostRecent;
+  }
+  
+  if (frequency === 'monthly') {
+    var d = sDate.getDate();
+    var mostRecent = new Date(tDate.getFullYear(), tDate.getMonth(), d);
+    if (mostRecent > tDate) {
+      mostRecent = new Date(tDate.getFullYear(), tDate.getMonth() - 1, d);
+    }
+    return mostRecent;
+  }
+  
+  if (frequency === 'quarterly') {
+    var d = sDate.getDate();
+    var sMonth = sDate.getMonth();
+    var mDiff = tDate.getMonth() - sMonth;
+    var mDiffMod = mDiff >= 0 ? mDiff % 3 : (3 + (mDiff % 3)) % 3;
+    var targetMonth = tDate.getMonth() - mDiffMod;
+    var mostRecent = new Date(tDate.getFullYear(), targetMonth, d);
+    if (mostRecent > tDate) {
+      mostRecent = new Date(tDate.getFullYear(), targetMonth - 3, d);
+    }
+    return mostRecent;
+  }
+  
+  if (frequency === 'yearly') {
+    var d = sDate.getDate();
+    var m = sDate.getMonth();
+    var mostRecent = new Date(tDate.getFullYear(), m, d);
+    if (mostRecent > tDate) {
+      mostRecent = new Date(tDate.getFullYear() - 1, m, d);
+    }
+    return mostRecent;
+  }
+  
+  return null;
 }
 
 // Helper function to parse date string in DD/MM/YYYY format
