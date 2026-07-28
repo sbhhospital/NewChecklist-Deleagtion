@@ -650,7 +650,19 @@ function updateAdminDone(sheetName, rowDataString) {
         continue;
       }
       
-      // Update Column P (index 16) with "Done" text
+      var currentTaskId = sheet.getRange(rowIndex, 2).getValue();
+      if (currentTaskId.toString().trim() !== item.taskId.toString().trim()) {
+        console.log("Task ID mismatch in updateAdminDone for row " + rowIndex + " expected " + item.taskId + " but got " + currentTaskId);
+        var correctRow = findRowByTaskId(sheet, item.taskId);
+        if (correctRow > 0) {
+          rowIndex = correctRow;
+        } else {
+          console.error("Task ID not found in sheet: " + item.taskId);
+          continue;
+        }
+      }
+      
+      // Update Column P (index 16) with admin done text
       sheet.getRange(rowIndex, 16).setValue(adminDoneStatus);
       
       console.log("Updated row " + rowIndex + " - Column P set to: " + adminDoneStatus);
@@ -688,62 +700,72 @@ function updateTaskData(params) {
     
     var updateResults = [];
     
+    var dataRange = sheet.getDataRange();
+    var sheetValues = dataRange.getValues();
+    var isModified = false;
+    
     rowDataArray.forEach(function(taskData, index) {
-      console.log("Processing task " + (index + 1) + ":", JSON.stringify(taskData));
+      var rowIndex = parseInt(taskData.rowIndex) - 1; // 0-indexed for array
       
-      var rowIndex = parseInt(taskData.rowIndex);
-      
-      if (isNaN(rowIndex) || rowIndex < 2) {
-        throw new Error("Invalid row index: " + taskData.rowIndex + " (must be >= 2)");
+      if (isNaN(rowIndex) || rowIndex < 1 || rowIndex >= sheetValues.length) {
+         rowIndex = -1;
       }
       
-      // Verify Task ID matches
-      var currentTaskId = sheet.getRange(rowIndex, 2).getValue();
-      if (currentTaskId.toString().trim() !== taskData.taskId.toString().trim()) {
-        var correctRow = findRowByTaskId(sheet, taskData.taskId);
-        if (correctRow > 0) {
-          rowIndex = correctRow;
-        } else {
-          throw new Error("Task ID mismatch and could not find correct row for Task ID: " + taskData.taskId);
-        }
+      // Verify Task ID matches (Column B is index 1)
+      if (rowIndex >= 0 && sheetValues[rowIndex][1].toString().trim() !== taskData.taskId.toString().trim()) {
+        rowIndex = -1;
       }
       
-      // Prepare update details
+      if (rowIndex === -1) {
+         // Fallback search
+         for (var i = 1; i < sheetValues.length; i++) {
+            if (sheetValues[i][1].toString().trim() === taskData.taskId.toString().trim()) {
+               rowIndex = i;
+               break;
+            }
+         }
+      }
+      
+      if (rowIndex === -1) {
+         throw new Error("Task ID mismatch and could not find correct row for Task ID: " + taskData.taskId);
+      }
+      
       var rowUpdates = {
-        rowIndex: rowIndex,
+        rowIndex: rowIndex + 1,
         taskId: taskData.taskId,
         updates: []
       };
       
-      // Handle column K (Actual) update with proper timestamp formatting
-  // Handle column K (Actual) update - store as dd/mm/yyyy string
-if (taskData.actualDate) {
-  var actualCell = sheet.getRange(rowIndex, 11);
-  
-  // Store the date string directly without converting to Date object
-  actualCell.setValue(taskData.actualDate);
-  
-  rowUpdates.updates.push("Column K (Actual): " + taskData.actualDate);
-}
+      if (taskData.actualDate) {
+        sheetValues[rowIndex][10] = taskData.actualDate;
+        rowUpdates.updates.push("Column K (Actual): " + taskData.actualDate);
+        isModified = true;
+      }
       
-      // Update other columns as before
       if (taskData.status) {
-        sheet.getRange(rowIndex, 13).setValue(taskData.status);
+        sheetValues[rowIndex][12] = taskData.status;
         rowUpdates.updates.push("Column M (Status): " + taskData.status);
+        isModified = true;
       }
       
       if (taskData.remarks) {
-        sheet.getRange(rowIndex, 14).setValue(taskData.remarks);
+        sheetValues[rowIndex][13] = taskData.remarks;
         rowUpdates.updates.push("Column N (Remarks): " + taskData.remarks);
+        isModified = true;
       }
       
       if (taskData.imageUrl) {
-        sheet.getRange(rowIndex, 15).setValue(taskData.imageUrl);
+        sheetValues[rowIndex][14] = taskData.imageUrl;
         rowUpdates.updates.push("Column O (Image): " + taskData.imageUrl);
+        isModified = true;
       }
       
       updateResults.push(rowUpdates);
     });
+    
+    if (isModified) {
+      dataRange.setValues(sheetValues);
+    }
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -779,41 +801,49 @@ function updateSalesData(params) {
     
     var updateResults = [];
     
+    var dataRange = sheet.getDataRange();
+    var sheetValues = dataRange.getValues();
+    var isModified = false;
+    
     rowDataArray.forEach(function(taskData, index) {
-      console.log("Processing history task " + (index + 1) + " for marking as done:", JSON.stringify(taskData));
+      var rowIndex = parseInt(taskData.rowIndex) - 1; // 0-indexed
       
-      var rowIndex = parseInt(taskData.rowIndex);
-      
-      if (isNaN(rowIndex) || rowIndex < 2) {
-        throw new Error("Invalid row index: " + taskData.rowIndex);
+      if (isNaN(rowIndex) || rowIndex < 1 || rowIndex >= sheetValues.length) {
+         rowIndex = -1;
       }
       
-      var currentTaskId = sheet.getRange(rowIndex, 2).getValue();
-      console.log("Verifying Task ID for history item at row " + rowIndex + ":");
-      console.log("  Current Task ID: '" + currentTaskId + "'");
-      console.log("  Expected Task ID: '" + taskData.taskId + "'");
+      if (rowIndex >= 0 && sheetValues[rowIndex][1].toString().trim() !== taskData.taskId.toString().trim()) {
+        rowIndex = -1;
+      }
       
-      if (currentTaskId.toString().trim() !== taskData.taskId.toString().trim()) {
-        var correctRow = findRowByTaskId(sheet, taskData.taskId);
-        if (correctRow > 0) {
-          console.log("Found correct row for Task ID " + taskData.taskId + " at row " + correctRow);
-          rowIndex = correctRow;
-        } else {
-          throw new Error("Task ID mismatch for: " + taskData.taskId);
-        }
+      if (rowIndex === -1) {
+         for (var i = 1; i < sheetValues.length; i++) {
+            if (sheetValues[i][1].toString().trim() === taskData.taskId.toString().trim()) {
+               rowIndex = i;
+               break;
+            }
+         }
+      }
+      
+      if (rowIndex === -1) {
+         throw new Error("Task ID mismatch for: " + taskData.taskId);
       }
       
       if (taskData.doneStatus) {
-        console.log("Marking Task ID " + taskData.taskId + " as " + taskData.doneStatus + " at row " + rowIndex);
-        sheet.getRange(rowIndex, 13).setValue(taskData.doneStatus);
+        sheetValues[rowIndex][12] = taskData.doneStatus; // Col M
+        isModified = true;
       }
       
       updateResults.push({
-        rowIndex: rowIndex,
+        rowIndex: rowIndex + 1,
         taskId: taskData.taskId,
         status: taskData.doneStatus
       });
     });
+    
+    if (isModified) {
+      dataRange.setValues(sheetValues);
+    }
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -1957,11 +1987,11 @@ function setupAttendanceTriggers() {
     .nearMinute(10)
     .create();
     
-  // 2. Trigger for runDailyLoginCheck at 11:00 AM daily
+  // 2. Trigger for runDailyLoginCheck at 10:00 AM daily
   ScriptApp.newTrigger("runDailyLoginCheck")
     .timeBased()
     .everyDays(1)
-    .atHour(11)
+    .atHour(10)
     .nearMinute(0)
     .create();
 }
@@ -2184,4 +2214,54 @@ function cleanAllDuplicateTriggers() {
     }
   }
   Logger.log("Successfully deleted " + deletedCount + " active triggers for testChecklistProcessing.");
+}
+
+function autoFillPendingChecklists() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var checklistSheets = ["SALES", "E-COMMERCE", "WH", "PURCHASE", "FACTORY", "ACCOUNTS", "DESIGNING", "DISPATCH", "FABRICATION", "HR"];
+  
+  checklistSheets.forEach(function(sheetName) {
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      console.log("Sheet not found: " + sheetName);
+      return;
+    }
+    
+    var dataRange = sheet.getDataRange();
+    var values = dataRange.getValues();
+    var modified = false;
+    
+    // Ensure all rows have at least 21 columns to prevent setValues dimension error
+    var targetCols = Math.max(values[0].length, 21);
+    for (var j = 0; j < values.length; j++) {
+       while (values[j].length < targetCols) {
+         values[j].push("");
+       }
+    }
+    
+    var updatedCount = 0;
+    
+    for (var i = 1; i < values.length; i++) { // Skip header row
+      var taskId = values[i][1]; // Column B (Index 1)
+      var actualDate = values[i][10]; // Column K (Index 10)
+      
+      if (taskId && taskId.toString().trim() !== "") {
+        // If Actual Date is blank
+        if (!actualDate || actualDate.toString().trim() === "") {
+          values[i][10] = "28/07/2026"; // Col K
+          values[i][12] = "Done"; // Col M (Status)
+          values[i][20] = "Done"; // Col U (Admin Done - just in case)
+          updatedCount++;
+          modified = true;
+        }
+      }
+    }
+    
+    if (modified) {
+      sheet.getRange(1, 1, values.length, targetCols).setValues(values);
+      console.log("Filled " + updatedCount + " pending checklists in sheet: " + sheetName);
+    }
+  });
+  
+  console.log("Auto-fill complete!");
 }

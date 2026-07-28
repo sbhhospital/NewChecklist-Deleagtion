@@ -12,6 +12,7 @@ import {
   Filter,
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
+import EdpmsDashboardView from "./admin/EdpmsDashboardView";
 
 const CONFIG = {
   APPS_SCRIPT_URL:
@@ -120,6 +121,7 @@ function DelegationDataPage() {
   const location = useLocation();
   const [accountData, setAccountData] = useState([]);
   const [unfilteredDelegationData, setUnfilteredDelegationData] = useState([]);
+  const [allDelegationData, setAllDelegationDataState] = useState([]);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -419,95 +421,108 @@ function DelegationDataPage() {
     const actualStr = task["col11"] || "";
     const actualDate = parseDateFromDDMMYYYY(actualStr);
 
-    const cutoffDate = new Date(2026, 5, 24); // June 24, 2026
+    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
-    if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
-      // Forgive penalties for tasks completed before June 24, 2026
-      extensionCount = 0;
-      delayDays = 0;
-    } else {
-      if (deadlineDate) {
+    if (deadlineDate) {
+      let effectiveDeadline = new Date(deadlineDate);
+      if (effectiveDeadline < cutoffDate) {
+        effectiveDeadline = new Date(cutoffDate);
+        extensionCount = 0; // Do not count extensions for past checklists
+        delayDays = 0; // Past tasks have no delays
+      } else {
         if (isDone || isVerifyPending) {
-          if (actualDate && actualDate > deadlineDate) {
-            const diffTime = actualDate - deadlineDate;
+          if (actualDate && actualDate > effectiveDeadline) {
+            const diffTime = actualDate - effectiveDeadline;
             delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          } else if (actualDate && actualDate <= effectiveDeadline) {
+            delayDays = 0;
           } else {
             const col12Val = parseInt(task["col12"], 10);
             if (!isNaN(col12Val) && col12Val > 0) {
-              delayDays = col12Val;
+              // Only use sheet's delayDays if we don't have enough info, but clamp it if needed
+              // If it's before cutoff, just ignore it.
+              if (deadlineDate >= cutoffDate) {
+                delayDays = col12Val;
+              }
             }
           }
         } else {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          if (today > deadlineDate) {
-            const diffTime = today - deadlineDate;
+          if (today > effectiveDeadline) {
+            const diffTime = today - effectiveDeadline;
             delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           }
         }
       }
     }
 
-    // Aligned Extension Penalty: 1st = 10, 2nd = 20, 3rd+ = 50
+
+    // Use Task Value from column V (index 21) if available, fallback to 3 points
+    let taskWeight = parseInt(task["col21"], 10);
+    if (isNaN(taskWeight) || ![3, 5, 10].includes(taskWeight)) {
+      taskWeight = 3; // Default to 3 points if missing or invalid
+    }
+
+    // Calculate extension and delay penalties based on task value
     let extensionPenalty = 0;
-    if (extensionCount === 1) {
-      extensionPenalty = 10;
-    } else if (extensionCount === 2) {
-      extensionPenalty = 20;
-    } else if (extensionCount >= 3) {
-      extensionPenalty = 50;
+    let delayPenaltyOnTask = 0;
+    let mainScorePenalty = 0;
+
+    if (taskWeight === 3) {
+      if (extensionCount === 1) extensionPenalty = 1;
+      else if (extensionCount >= 2) extensionPenalty = 3;
+      if (extensionCount > 2) mainScorePenalty += (extensionCount - 2) * 3;
+
+      if (delayDays === 1) delayPenaltyOnTask = 1;
+      else if (delayDays === 2) delayPenaltyOnTask = 3;
+      else if (delayDays >= 3) delayPenaltyOnTask = 3;
+      if (delayDays > 2) mainScorePenalty += (delayDays - 2) * 3;
+    } else if (taskWeight === 5) {
+      if (extensionCount === 1) extensionPenalty = 2;
+      else if (extensionCount >= 2) extensionPenalty = 5;
+      if (extensionCount > 2) mainScorePenalty += (extensionCount - 2) * 5;
+
+      if (delayDays === 1) delayPenaltyOnTask = 1;
+      else if (delayDays === 2) delayPenaltyOnTask = 3;
+      else if (delayDays >= 3) delayPenaltyOnTask = 5;
+      if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 5;
+    } else if (taskWeight >= 10) {
+      if (extensionCount === 1) extensionPenalty = 2;
+      else if (extensionCount === 2) extensionPenalty = 5;
+      else if (extensionCount >= 3) extensionPenalty = 10;
+      if (extensionCount > 3) mainScorePenalty += (extensionCount - 3) * 10;
+
+      if (delayDays === 1) delayPenaltyOnTask = 2;
+      else if (delayDays === 2) delayPenaltyOnTask = 5;
+      if (delayDays >= 3) delayPenaltyOnTask = 10;
+      if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 10;
     }
 
-    // Aligned Delay Penalty: 10/day for week 1, then 20/day (completed tasks), or 3/day (pending tasks)
-    let delayPenalty = 0;
-    if (delayDays > 0) {
-      if (isDone || isVerifyPending) {
-        if (delayDays <= 7) {
-          delayPenalty = delayDays * 10;
-        } else {
-          delayPenalty = 70 + (delayDays - 7) * 20;
-        }
-      } else {
-        delayPenalty = delayDays * 3; // Mild penalty for pending delayed tasks
-      }
+    if (deadlineDate && deadlineDate < cutoffDate) {
+      extensionPenalty = 0;
+      if (taskWeight === 3 && extensionCount > 2) mainScorePenalty -= (extensionCount - 2) * 3;
+      else if (taskWeight === 5 && extensionCount > 2) mainScorePenalty -= (extensionCount - 2) * 5;
+      else if (taskWeight === 10 && extensionCount > 3) mainScorePenalty -= (extensionCount - 3) * 10;
     }
 
-    const penalty = extensionPenalty + delayPenalty;
-
-    let baseScore = 100;
-    const ratingVal = parseInt(task["col17"], 10);
-    if (!isNaN(ratingVal)) {
-      if (ratingVal === 5) baseScore = 100;
-      else if (ratingVal === 4) baseScore = 80;
-      else if (ratingVal === 3) baseScore = 60;
-      else if (ratingVal === 2) baseScore = 40;
-      else if (ratingVal === 1) baseScore = 20;
-    }
-
-    // Completion Reward: 25 for on-time no extension, 15 for on-time 1 extension
-    let completionReward = 0;
+    // Task Reward is added to score only if completed
+    let taskReward = 0;
     if (isDone || isVerifyPending) {
-      if (delayDays === 0) {
-        if (extensionCount === 0) {
-          completionReward = 25;
-        } else if (extensionCount === 1) {
-          completionReward = 15;
-        }
-      }
+      taskReward = Math.max(0, taskWeight - extensionPenalty - delayPenaltyOnTask);
     }
-    
-    const score = Math.max(0, baseScore + completionReward - penalty);
 
     return {
-      score,
-      baseScore,
-      completionReward,
-      penalty,
+      score: taskReward,
+      baseScore: taskWeight,
+      completionReward: taskReward,
+      penalty: extensionPenalty + delayPenaltyOnTask,
       extensionCount,
       delayDays,
       extensionPenalty,
-      delayPenalty
+      delayPenalty: delayPenaltyOnTask,
+      mainScorePenalty
     };
   }, [parseDateFromDDMMYYYY]);
 
@@ -535,8 +550,8 @@ function DelegationDataPage() {
       };
     }
 
-    let totalScoreSum = 0;
-    let totalPenaltySum = 0;
+    let totalTaskRewards = 0;
+    let totalMainScorePenalties = 0;
     let thisMonthPenaltySum = 0;
     let completedCount = 0;
     let extendedCount = 0;
@@ -548,20 +563,27 @@ function DelegationDataPage() {
 
     tasksToScore.forEach((task) => {
       const scoreDetails = calculateTaskScore(task, historyData);
-      totalScoreSum += scoreDetails.score;
-      totalPenaltySum += scoreDetails.penalty;
       
       const taskStartDate = task["col6"];
       if (taskStartDate) {
           const taskDateObj = parseDateFromDDMMYYYY(taskStartDate);
           if (taskDateObj && taskDateObj.getMonth() === currentMonth && taskDateObj.getFullYear() === currentYear) {
-              thisMonthPenaltySum += scoreDetails.penalty;
+              thisMonthPenaltySum += scoreDetails.mainScorePenalty || 0;
           }
       }
       
-      if (task["col20"] === "Done" || task["col20"] === "Verify Pending") {
+      const isCompleted = task["col20"] === "Done" || task["col20"] === "Verify Pending";
+      
+      if (isCompleted) {
         completedCount++;
       }
+
+      if (task["col20"] === "Done") {
+        totalTaskRewards += (scoreDetails.score || 0);
+      }
+      
+      totalMainScorePenalties += (scoreDetails.mainScorePenalty || 0);
+
       if (scoreDetails.extensionCount > 0) {
         extendedCount++;
       }
@@ -570,10 +592,13 @@ function DelegationDataPage() {
       }
     });
 
+    const netPenalty = Math.max(0, totalMainScorePenalties - totalTaskRewards);
+    const finalScore = Math.max(0, 100 - netPenalty);
+
     return {
-      avgScore: Math.min(100, Math.round(totalScoreSum / tasksToScore.length)),
-      avgPenalty: Math.round(totalPenaltySum / tasksToScore.length),
-      totalPenaltyPoints: totalPenaltySum,
+      avgScore: Math.round(finalScore),
+      avgPenalty: totalMainScorePenalties,
+      totalPenaltyPoints: totalMainScorePenalties,
       thisMonthPenaltyPoints: thisMonthPenaltySum,
       totalTasks: tasksToScore.length,
       completedTasks: completedCount,
@@ -891,12 +916,12 @@ function DelegationDataPage() {
     nameFilter,
   ]); // Added nameFilter dependency
   // Optimized data fetching with parallel requests
-  // Optimized data fetching with parallel requests
-  const processFetchedData = (data, processedHistoryData, rawDelegationList, allDelegationData) => {
-    setHistoryData(processedHistoryData);
-    setUnfilteredDelegationData(rawDelegationList);
-    setAccountData(allDelegationData);
-    setDelegationData(allDelegationData);
+  const processFetchedData = (data, processedHistoryData, rawDelegationList, fetchedAllDelegationData) => {
+    setHistoryData(processedHistoryData || []);
+    setUnfilteredDelegationData(rawDelegationList || []);
+    setAllDelegationDataState(fetchedAllDelegationData || []);
+    setAccountData(fetchedAllDelegationData || []);
+    setDelegationData(fetchedAllDelegationData || []);
   };
 
   const fetchSheetData = useCallback(async (signal) => {
@@ -1397,51 +1422,49 @@ function DelegationDataPage() {
 
   // NEW: Process Verify Pending tasks (update existing records)
   const processVerifyPendingTasks = async (tasks, statusData) => {
-    const batchSize = 5;
+    try {
+      // Gather all updates into a single array
+      const allUpdates = tasks.map(({ id, item }) => {
+        const existingHistoryItem = historyData.find(
+          history => history["col1"] === item["col1"] // Match by Task ID
+        );
 
-    for (let i = 0; i < tasks.length; i += batchSize) {
-      const batch = tasks.slice(i, i + batchSize);
+        if (!existingHistoryItem) {
+          throw new Error(`No existing record found for Verify Pending task: ${item["col1"]}`);
+        }
 
-      await Promise.all(
-        batch.map(async ({ id, item }) => {
-          // For Verify Pending tasks, we need to find the existing record in history
-          // and update its Admin Done column (Column P) to "Done"
-          const existingHistoryItem = historyData.find(
-            history => history["col1"] === item["col1"] // Match by Task ID
-          );
+        return {
+          taskId: item["col1"],
+          rowIndex: existingHistoryItem._rowIndex,
+          adminDoneStatus: "Admin Done"
+        };
+      });
 
-          if (!existingHistoryItem) {
-            throw new Error(`No existing record found for Verify Pending task: ${item["col1"]}`);
-          }
+      if (allUpdates.length === 0) return;
 
-          const updateData = {
-            taskId: item["col1"],
-            rowIndex: existingHistoryItem._rowIndex,
-            adminDoneStatus: "Done"
-          };
+      const formData = new FormData();
+      formData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
+      formData.append("action", "updateAdminDone");
+      formData.append("rowData", JSON.stringify(allUpdates)); // Send entire batch in one request
 
-          const formData = new FormData();
-          formData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
-          formData.append("action", "updateAdminDone");
-          formData.append("rowData", JSON.stringify([updateData]));
+      const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: "POST",
+        body: formData,
+      });
 
-          const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
-            method: "POST",
-            body: formData,
-          });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update Verify Pending tasks");
+      }
 
-          const result = await response.json();
-          if (!result.success) {
-            throw new Error(result.error || "Failed to update Verify Pending task");
-          }
-
-          return result;
-        })
-      );
+      return result;
+    } catch (error) {
+      console.error("Batch update error:", error);
+      throw error;
     }
   };
 
@@ -1475,13 +1498,21 @@ function DelegationDataPage() {
       return null;
     };
 
+    const cutoffDate = new Date(2026, 6, 29);
+    cutoffDate.setHours(0, 0, 0, 0);
+
     const deadlineDate = parseDDMMYYYY(dueDateStr || startDateStr);
     if (deadlineDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (today > deadlineDate) {
-        const diffTime = today - deadlineDate;
-        delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (deadlineDate < cutoffDate) {
+        extensionCount = 0;
+        delayDays = 0;
+      } else {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (today > deadlineDate) {
+          const diffTime = today - deadlineDate;
+          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
       }
     }
 
@@ -1754,7 +1785,7 @@ function DelegationDataPage() {
       const submissionData = selectedHistoryItems.map((historyItem) => ({
         taskId: historyItem["col1"],
         rowIndex: historyItem._rowIndex,
-        adminDoneStatus: "Done",
+        adminDoneStatus: "Admin Done",
       }));
 
       const formData = new FormData();
@@ -1778,7 +1809,7 @@ function DelegationDataPage() {
             if (
               selectedHistoryItems.some((selected) => selected._id === item._id)
             ) {
-              return { ...item, col15: "Done" };
+              return { ...item, col15: "Admin Done" };
             }
             return item;
           })
@@ -1825,6 +1856,57 @@ function DelegationDataPage() {
                   Optimizing SBH Dashboard Synergy
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scoring Summary Cards */}
+        {!loading && (
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-6 mt-4">
+            {userRole === "admin" && (
+              <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
+                <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Delegation Score</span>
+                <div className="flex flex-col mt-2">
+                  <span className={`text-3xl font-extrabold ${
+                    scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
+                  }`}>
+                    {scoringSummary.avgScore}
+                  </span>
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
+              </div>
+            )}
+
+            <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/20 to-white shadow-sm flex flex-col justify-between">
+              <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending Tasks</span>
+              <span className="text-3xl font-extrabold text-amber-600 mt-2">
+                {scoringSummary.totalTasks - scoringSummary.completedTasks}
+              </span>
+              <span className="text-[10px] text-gray-500 mt-1">Remaining to complete</span>
+            </div>
+
+            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Tasks</span>
+              <span className="text-3xl font-extrabold text-gray-800 mt-2">{scoringSummary.totalTasks}</span>
+              <span className="text-[10px] text-gray-500 mt-1">Assigned Tasks</span>
+            </div>
+
+            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+              <span className="text-xs font-semibold text-green-600 uppercase tracking-wider">Completed</span>
+              <span className="text-3xl font-extrabold text-green-600 mt-2">{scoringSummary.completedTasks}</span>
+              <span className="text-[10px] text-gray-500 mt-1">Tasks Completed</span>
+            </div>
+
+            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
+              <span className="text-xs font-semibold text-yellow-600 uppercase tracking-wider">Extended</span>
+              <span className="text-3xl font-extrabold text-yellow-600 mt-2">{scoringSummary.extendedTasks}</span>
+              <span className="text-[10px] text-gray-500 mt-1">Tasks Extended</span>
+            </div>
+
+            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between col-span-2 md:col-span-1">
+              <span className="text-xs font-semibold text-red-600 uppercase tracking-wider">Late / Overdue</span>
+              <span className="text-3xl font-extrabold text-red-600 mt-2">{scoringSummary.lateTasks}</span>
+              <span className="text-[10px] text-gray-500 mt-1">Submitted / Pending Late</span>
             </div>
           </div>
         )}
@@ -2172,54 +2254,7 @@ function DelegationDataPage() {
           </div>
         )}
 
-        {/* Scoring Summary Cards */}
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-6 mt-4">
-          {userRole === "admin" && (
-            <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
-              <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Avg Rating</span>
-              <div className="flex flex-col mt-2">
-                <span className={`text-3xl font-extrabold ${
-                  scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
-                }`}>
-                  {scoringSummary.avgScore}%
-                </span>
-              </div>
-              <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
-            </div>
-          )}
 
-          <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/20 to-white shadow-sm flex flex-col justify-between">
-            <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending Tasks</span>
-            <span className="text-3xl font-extrabold text-amber-600 mt-2">
-              {scoringSummary.totalTasks - scoringSummary.completedTasks}
-            </span>
-            <span className="text-[10px] text-gray-500 mt-1">Remaining to complete</span>
-          </div>
-
-          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Tasks</span>
-            <span className="text-3xl font-extrabold text-gray-800 mt-2">{scoringSummary.totalTasks}</span>
-            <span className="text-[10px] text-gray-500 mt-1">Assigned Tasks</span>
-          </div>
-
-          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-            <span className="text-xs font-semibold text-green-600 uppercase tracking-wider">Completed</span>
-            <span className="text-3xl font-extrabold text-green-600 mt-2">{scoringSummary.completedTasks}</span>
-            <span className="text-[10px] text-gray-500 mt-1">Tasks Completed</span>
-          </div>
-
-          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-            <span className="text-xs font-semibold text-yellow-600 uppercase tracking-wider">Extended</span>
-            <span className="text-3xl font-extrabold text-yellow-600 mt-2">{scoringSummary.extendedTasks}</span>
-            <span className="text-[10px] text-gray-500 mt-1">Tasks Extended</span>
-          </div>
-
-          <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between col-span-2 md:col-span-1">
-            <span className="text-xs font-semibold text-red-600 uppercase tracking-wider">Late / Overdue</span>
-            <span className="text-3xl font-extrabold text-red-600 mt-2">{scoringSummary.lateTasks}</span>
-            <span className="text-[10px] text-gray-500 mt-1">Submitted / Pending Late</span>
-          </div>
-        </div>
 
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative">
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4 flex justify-between items-center">
@@ -2496,7 +2531,7 @@ function DelegationDataPage() {
                                             </span>
                                             {scoreDetails.completionReward > 0 && (
                                               <span className="text-green-600 font-medium">
-                                                Reward: +{scoreDetails.completionReward} Pts
+                                                Task Value: +{scoreDetails.completionReward} Pts
                                               </span>
                                             )}
                                             {scoreDetails.penalty > 0 && (

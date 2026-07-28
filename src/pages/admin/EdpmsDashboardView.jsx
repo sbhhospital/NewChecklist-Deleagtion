@@ -191,7 +191,17 @@ const scoreChecklistGroup = (group, today) => {
   const msPerDay = 86400000;
   const allCompleted = group.tasks.every(t => t.status === "completed");
   const allOverdue   = group.tasks.every(t => t.status === "overdue");
-  const daysAfterDue = Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / msPerDay));
+
+  const effectiveDueDate = new Date(dueDate);
+  const cutoffDate = new Date(2026, 6, 29);
+  cutoffDate.setHours(0, 0, 0, 0);
+
+  // If the original due date is before the cutoff, completely excuse it (no penalties, no delays)
+  if (effectiveDueDate < cutoffDate) {
+    return { penalty: 0, status: "excused", delayDays: 0, config };
+  }
+
+  const daysAfterDue = Math.max(0, Math.floor((today.getTime() - effectiveDueDate.getTime()) / msPerDay));
 
   if (allCompleted) {
     // Use max delayDays recorded on the tasks at time of completion
@@ -475,15 +485,12 @@ export default function EdpmsDashboardView({
     if (activeSource === "checklist" && checklistFrequencyFilter && checklistFrequencyFilter !== "all") {
       tasks = tasks.filter(t => {
         const freq = String(t.frequency || "daily").toLowerCase().trim()
-        if (checklistFrequencyFilter === "daily") {
-          return freq === "daily"
-        } else if (checklistFrequencyFilter === "weekly") {
-          return freq === "weekly"
-        } else if (checklistFrequencyFilter === "monthly") {
-          return freq === "monthly"
-        } else if (checklistFrequencyFilter === "other") {
-          return freq !== "daily" && freq !== "weekly" && freq !== "monthly"
-        }
+        if (checklistFrequencyFilter === "daily") return freq === "daily"
+        if (checklistFrequencyFilter === "weekly") return freq === "weekly"
+        if (checklistFrequencyFilter === "fortnightly") return freq === "fortnightly"
+        if (checklistFrequencyFilter === "monthly") return freq === "monthly"
+        if (checklistFrequencyFilter === "quarterly") return freq === "quarterly"
+        if (checklistFrequencyFilter === "yearly") return freq === "yearly"
         return true
       })
     }
@@ -725,14 +732,14 @@ export default function EdpmsDashboardView({
       uniqueDates.sort((a, b) => b - a)
 
       // For checklist mode: no login bonus, only login penalty (-10/day)
-      // For delegation mode: login bonus is 20 pts per day
-      const loginBonus = activeSource === "checklist" ? 0 : [...new Set(userLogins.map(l => l.date))].length * 20
+      // For delegation mode: login bonus is 1 pt per day
+      const loginBonus = activeSource === "checklist" ? 0 : [...new Set(userLogins.map(l => l.date))].length * 1
       
       let delegationTotalTaskRewards = 0;
       let delegationTotalMainScorePenalties = 0;
       if (activeSource !== "checklist") {
         tasks.forEach(t => {
-          if (t.status === "completed" || t.status === "verify pending" || t.originalStatus === "Done") {
+          if (t.originalStatus === "Done") {
             delegationTotalTaskRewards += (t.score || 0);
           }
           delegationTotalMainScorePenalties += (t.mainScorePenalty || 0);
@@ -808,8 +815,8 @@ export default function EdpmsDashboardView({
         }
         if (isNaN(deductionDate.getTime())) return true; // keep if invalid
         
-        // Global Cutoff: July 27, 2026
-        const globalCutoff = new Date(2026, 6, 27);
+        // Global Cutoff: July 29, 2026
+        const globalCutoff = new Date(2026, 6, 29);
         globalCutoff.setHours(0, 0, 0, 0);
         if (deductionDate < globalCutoff) return false;
         
@@ -880,7 +887,7 @@ export default function EdpmsDashboardView({
         let totalMainScorePenalties = 0;
         
         tasks.forEach(t => {
-          if (t.status === "completed" || t.status === "verify pending" || t.originalStatus === "Done") {
+          if (t.originalStatus === "Done") {
             totalTaskRewards += (t.score || 0); // Task reward (remaining after task-level deductions)
           }
           totalMainScorePenalties += (t.mainScorePenalty || 0);
@@ -1547,8 +1554,10 @@ export default function EdpmsDashboardView({
             { id: "all", label: "📋 All Checklists" },
             { id: "daily", label: "☀️ Daily" },
             { id: "weekly", label: "📅 Weekly" },
+            { id: "fortnightly", label: "🌗 Fortnightly" },
             { id: "monthly", label: "🗓️ Monthly" },
-            { id: "other", label: "⚙️ Fortnightly/Quarterly/etc." }
+            { id: "quarterly", label: "📑 Quarterly" },
+            { id: "yearly", label: "📆 Yearly" }
           ].map(tab => (
             <button
               key={tab.id}

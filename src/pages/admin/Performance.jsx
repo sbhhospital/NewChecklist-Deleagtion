@@ -115,23 +115,7 @@ const getCellValue = (row, index) => {
 const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
   const taskId = taskObj.id;
 
-  const cutoffDateGlobal = new Date(2026, 6, 27); // July 27, 2026
-  cutoffDateGlobal.setHours(0, 0, 0, 0);
-  const taskRefDate = parseDateFromDDMMYYYY(taskObj.taskStartDate || taskObj.dueDate);
-  
-  if (taskRefDate && taskRefDate < cutoffDateGlobal) {
-    return {
-      score: 0,
-      baseScore: 100,
-      completionReward: 0,
-      penalty: 0,
-      extensionCount: 0,
-      delayDays: 0,
-      extensionPenalty: 0,
-      delayPenalty: 0,
-      mainScorePenalty: 0
-    };
-  }
+    // Global cutoff handled per module.
 
   if (isChecklist) {
     // Count extensions
@@ -152,24 +136,26 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
     const isVerifyPending = taskObj.originalStatus === "Verify Pending";
     const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
 
-    const cutoffDate = new Date(2026, 5, 24); // June 24, 2026
+    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
-    if ((isDone || isVerifyPending) && actualDate && actualDate < cutoffDate) {
-      extensionCount = 0;
-      delayDays = 0;
-    } else {
-      if (deadlineDate) {
+    if (deadlineDate) {
+      let effectiveDeadline = new Date(deadlineDate);
+      if (effectiveDeadline < cutoffDate) {
+        effectiveDeadline = new Date(cutoffDate);
+        extensionCount = 0; // Do not count extensions for past checklists
+        delayDays = 0; // Past tasks have no delays
+      } else {
         if (isDone || isVerifyPending) {
-          if (actualDate && actualDate > deadlineDate) {
-            const diffTime = actualDate - deadlineDate;
+          if (actualDate > effectiveDeadline) {
+            const diffTime = actualDate - effectiveDeadline;
             delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           }
         } else {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          if (today > deadlineDate) {
-            const diffTime = today - deadlineDate;
+          if (today > effectiveDeadline) {
+            const diffTime = today - effectiveDeadline;
             delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           }
         }
@@ -184,6 +170,10 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
       extensionPenalty = 20;
     } else if (extensionCount >= 3) {
       extensionPenalty = 50;
+    }
+
+    if (deadlineDate && deadlineDate < cutoffDate) {
+      extensionPenalty = 0;
     }
 
     // Calculate progressive delay penalty
@@ -260,17 +250,27 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
     const isVerifyPending = taskObj.originalStatus === "Verify Pending";
     const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
 
+    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
+    cutoffDate.setHours(0, 0, 0, 0);
+
     if (deadlineDate) {
+      let effectiveDeadline = new Date(deadlineDate);
+      if (effectiveDeadline < cutoffDate) {
+        effectiveDeadline = new Date(cutoffDate);
+      }
+
       if (isDone || isVerifyPending) {
-        if (actualDate && actualDate > deadlineDate) {
-          const diffTime = actualDate - deadlineDate;
+        if (actualDate && actualDate > effectiveDeadline) {
+          const diffTime = actualDate - effectiveDeadline;
           delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        } else if (actualDate && actualDate <= effectiveDeadline) {
+          delayDays = 0;
         }
       } else {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        if (today > deadlineDate) {
-          const diffTime = today - deadlineDate;
+        if (today > effectiveDeadline) {
+          const diffTime = today - effectiveDeadline;
           delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         }
       }
@@ -309,6 +309,14 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
       else if (delayDays === 2) delayPenaltyOnTask = 5;
       else if (delayDays >= 3) delayPenaltyOnTask = 10;
       if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 10;
+    }
+
+    if (deadlineDate && deadlineDate < cutoffDate) {
+      extensionPenalty = 0;
+      // Subtract any main score penalties that came from extensions
+      if (taskWeight === 3 && extensionCount > 2) mainScorePenalty -= (extensionCount - 2) * 3;
+      else if (taskWeight === 5 && extensionCount > 2) mainScorePenalty -= (extensionCount - 2) * 5;
+      else if (taskWeight >= 10 && extensionCount > 3) mainScorePenalty -= (extensionCount - 3) * 10;
     }
 
     // Task Reward is added to score only if completed
@@ -361,11 +369,16 @@ export default function PerformanceDashboard() {
   const handleTabChange = (source) => {
     setTabLoading(true)
     setTimeout(() => {
-      setActiveSource(source)
-      setTimeout(() => {
-        setTabLoading(false)
-      }, 100)
-    }, 50)
+      import("react").then(({ startTransition }) => {
+        startTransition(() => {
+          setActiveSource(source)
+          setTimeout(() => setTabLoading(false), 50)
+        })
+      }).catch(() => {
+        setActiveSource(source)
+        setTimeout(() => setTabLoading(false), 50)
+      })
+    }, 10)
   }
   
   const [data, setData] = useState({
@@ -681,7 +694,7 @@ export default function PerformanceDashboard() {
             title: getCellValue(row, 5) || "Untitled Checklist",
             assignedTo,
             taskStartDate,
-            dueDate: parseGoogleSheetsDate(getCellValue(row, 10)) || taskStartDate,
+            dueDate: taskStartDate,
             completionDate,
             status,
             frequency: getCellValue(row, 7) || "daily",
