@@ -235,8 +235,9 @@ function AccountDataPage() {
       setLoading(true)
       const pendingAccounts = []
       const historyRows = []
-
-      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`)
+      const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`
+      const response = await fetch(sheetUrl)
 
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.status}`)
@@ -631,22 +632,29 @@ function AccountDataPage() {
   const selectedItemsCount = selectedItems.size
 
   const DashboardLoadingEffect = () => (
-    <div className="absolute inset-0 bg-white z-[99999] rounded-lg">
-      <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
-          <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
-          <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
-            <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>⏳</span>
+    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
+      <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+          <div className="relative flex items-center justify-center">
+            <svg className="animate-spin h-12 w-12 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="spinner-grad-account" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#9333EA" />
+                  <stop offset="100%" stopColor="#DB2777" />
+                </linearGradient>
+              </defs>
+              <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-90" fill="url(#spinner-grad-account)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
           </div>
-        </div>
-        <div className="space-y-2 text-center max-w-sm px-6">
-          <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
-            {funnyMsg}
-          </p>
-          <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
-            Optimizing SBH Dashboard Synergy
-          </p>
+          <div className="text-center space-y-1">
+            <p className="text-slate-800 text-xs font-semibold tracking-wide animate-pulse">
+              {funnyMsg}
+            </p>
+            <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#9333EA] to-[#DB2777] bg-clip-text text-transparent">
+              Loading Checklist...
+            </p>
+          </div>
         </div>
       </div>
     </div>

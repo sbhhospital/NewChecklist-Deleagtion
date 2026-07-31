@@ -93,6 +93,28 @@ const UserTasks = () => {
     }
 
     return true
+  }).sort((a, b) => {
+    const dateA = new Date(a.dueDate);
+    const dateB = new Date(b.dueDate);
+    dateA.setHours(0, 0, 0, 0);
+    dateB.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const isTodayA = dateA.getTime() === today.getTime();
+    const isTodayB = dateB.getTime() === today.getTime();
+
+    if (isTodayA && !isTodayB) return -1;
+    if (!isTodayA && isTodayB) return 1;
+
+    const isPastA = dateA < today;
+    const isPastB = dateB < today;
+
+    if (isPastA && !isPastB) return -1;
+    if (!isPastA && isPastB) return 1;
+
+    return dateA.getTime() - dateB.getTime();
   })
 
   const handleTaskSelection = (taskId) => {

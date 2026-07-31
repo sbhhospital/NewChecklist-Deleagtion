@@ -401,7 +401,7 @@ export default function PerformanceDashboard() {
   }
 
   const fetchPerformanceData = async (signal, forceRefresh = false) => {
-    let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null;
+    let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null, whatsappJson = null;
 
     // Check if raw prefetch data exists and is fresh (less than 5 mins old)
     const cachedPrefetch = window.sbh_prefetch_performance_raw;
@@ -422,6 +422,7 @@ export default function PerformanceDashboard() {
         historyJson = parsedPayload.historyJson;
         loginJson = parsedPayload.loginJson;
         deductionsJson = parsedPayload.deductionsJson;
+        whatsappJson = parsedPayload.whatsappJson;
       } else {
         setLoading(true)
         setError(null)
@@ -434,17 +435,19 @@ export default function PerformanceDashboard() {
         const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE&t=${Date.now()}`
         const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History&t=${Date.now()}`
         const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
+        const whatsappUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`
 
-        const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes] = await Promise.all([
+        const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes] = await Promise.all([
           fetch(masterUrl, { signal }),
           fetch(delegationUrl, { signal }),
           fetch(checklistUrl, { signal }),
           fetch(historyUrl, { signal }).catch(() => null),
           fetch(loginUrl, { signal }).catch(() => null),
-          fetch(deductionsUrl, { signal }).catch(() => null)
+          fetch(deductionsUrl, { signal }).catch(() => null),
+          fetch(whatsappUrl, { signal }).catch(() => null)
         ])
 
-        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok) {
+        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok || !whatsappRes.ok) {
           throw new Error("Failed to retrieve Google Sheet performance datasets.")
         }
 
@@ -459,6 +462,7 @@ export default function PerformanceDashboard() {
         masterJson = await parseResponseJson(masterRes)
         delegationJson = await parseResponseJson(delegationRes)
         checklistJson = await parseResponseJson(checklistRes)
+        whatsappJson = await parseResponseJson(whatsappRes)
         
         if (historyRes && historyRes.ok) {
           historyJson = await parseResponseJson(historyRes)
@@ -479,7 +483,8 @@ export default function PerformanceDashboard() {
           checklistJson,
           historyJson,
           loginJson,
-          deductionsJson
+          deductionsJson,
+          whatsappJson
         }
         window.sbh_prefetch_performance_raw = payload
         window.sbh_prefetch_performance_raw_time = Date.now()
@@ -529,26 +534,35 @@ export default function PerformanceDashboard() {
         })
       }
 
-      // Process master sheet options
+      // Process master sheet options (for departments)
       const departments = []
-      const doers = []
-      const inactiveUsers = new Set()
       if (masterJson.table && masterJson.table.rows) {
         masterJson.table.rows.slice(1).forEach((row) => {
-          const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : ""
-          const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : ""
-          
-          if (username && (role === "inactive" || role === "in active")) {
-            inactiveUsers.add(username.toLowerCase())
-            return
-          }
-          
           if (row.c && row.c[0] && row.c[0].v) {
             const val = row.c[0].v.toString().trim()
             if (val !== "") departments.push(val)
           }
-          if (username !== "") {
-            doers.push(username)
+        })
+      }
+
+      // Process Whatsapp sheet for active/inactive users, roles, and doers
+      const doers = []
+      const inactiveUsers = new Set()
+      const activeUsers = new Set()
+      if (whatsappJson && whatsappJson.table && whatsappJson.table.rows) {
+        whatsappJson.table.rows.forEach((row, idx) => {
+          if (idx === 0) return // Skip header row
+          const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : ""
+          const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : ""
+          
+          if (username) {
+            const usernameLower = username.toLowerCase()
+            if (role === "inactive" || role === "in active") {
+              inactiveUsers.add(usernameLower)
+            } else {
+              activeUsers.add(usernameLower)
+              doers.push(username)
+            }
           }
         })
       }
@@ -568,7 +582,7 @@ export default function PerformanceDashboard() {
           const assignedTo = assignedToRaw ? String(assignedToRaw).trim() : ""
 
           if (!taskId || taskId === "" || !assignedTo || assignedTo === "") return
-          if (assignedTo && inactiveUsers.has(assignedTo.toLowerCase())) return
+          if (assignedTo && !activeUsers.has(assignedTo.toLowerCase())) return
 
           // Skip Leave
           const columnQValue = getCellValue(row, 16)
@@ -636,7 +650,9 @@ export default function PerformanceDashboard() {
         })
       }
 
-      const delegationStaff = Array.from(delegationStaffTracking.values()).map(staff => ({
+      const delegationStaff = Array.from(delegationStaffTracking.values())
+        .filter(staff => activeUsers.has(staff.name.toLowerCase()))
+        .map(staff => ({
         id: staff.name.replace(/\s+/g, "-").toLowerCase(),
         name: staff.name,
         email: `${staff.name.toLowerCase().replace(/\s+/g, ".")}@example.com`,
@@ -659,7 +675,7 @@ export default function PerformanceDashboard() {
           const assignedTo = assignedToRaw ? String(assignedToRaw).trim() : ""
 
           if (!assignedTo || assignedTo === "") return
-          if (assignedTo && inactiveUsers.has(assignedTo.toLowerCase())) return
+          if (assignedTo && !activeUsers.has(assignedTo.toLowerCase())) return
 
           if (!taskId || taskId === "" || String(taskId).trim().toLowerCase() === "null") {
             taskId = `row_${rowIndex}`
@@ -726,7 +742,7 @@ export default function PerformanceDashboard() {
       }
 
       const checklistStaff = Array.from(checklistStaffTracking.values())
-        .filter(staff => !inactiveUsers.has(staff.name.toLowerCase()))
+        .filter(staff => activeUsers.has(staff.name.toLowerCase()))
         .map(staff => ({
           id: staff.name.replace(/\s+/g, "-").toLowerCase(),
           name: staff.name,
@@ -769,22 +785,29 @@ export default function PerformanceDashboard() {
     <AdminLayout>
       <div className="relative min-h-[500px]">
         {loading ? (
-          <div className="absolute inset-0 bg-white z-[99999]">
-            <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
-              <div className="relative flex items-center justify-center mb-6">
-                <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
-                <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
-                <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
-                  <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
+            <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
+              <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+                <div className="relative flex items-center justify-center">
+                  <svg className="animate-spin h-12 w-12 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <linearGradient id="spinner-grad-perf" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#9333EA" />
+                        <stop offset="100%" stopColor="#DB2777" />
+                      </linearGradient>
+                    </defs>
+                    <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-90" fill="url(#spinner-grad-perf)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
                 </div>
-              </div>
-              <div className="space-y-2 text-center max-w-sm px-6">
-                <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
-                  {funnyMsg}
-                </p>
-                <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
-                  Optimizing SBH Dashboard Synergy
-                </p>
+                <div className="text-center space-y-1">
+                  <p className="text-slate-800 text-xs font-semibold tracking-wide animate-pulse">
+                    {funnyMsg}
+                  </p>
+                  <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#9333EA] to-[#DB2777] bg-clip-text text-transparent">
+                    Loading Performance...
+                  </p>
+                </div>
               </div>
             </div>
           </div>

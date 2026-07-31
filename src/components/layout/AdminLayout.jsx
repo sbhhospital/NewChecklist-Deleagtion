@@ -291,6 +291,9 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     <div
       className={`flex h-screen overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50`}
     >
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#9333EA] to-[#DB2777] animate-pulse z-[100000]" />
+      )}
       {/* Sidebar for desktop */}
       <aside className="hidden w-64 flex-shrink-0 border-r border-purple-200 menu-container-bg md:flex md:flex-col">
         <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">

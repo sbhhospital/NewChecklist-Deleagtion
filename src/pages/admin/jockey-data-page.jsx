@@ -116,19 +116,36 @@ function AccountDataPage() {
 
   // Custom date sorting function
   const sortDateWise = (a, b) => {
-    // Ensure we're looking at column H (index 7)
-    const dateStrA = a['col7'] || ''
-    const dateStrB = b['col7'] || ''
-
+    const dateStrA = a["col6"] || ""
+    const dateStrB = b["col6"] || ""
     const dateA = parseDateFromDDMMYYYY(dateStrA)
     const dateB = parseDateFromDDMMYYYY(dateStrB)
+    
+    if (!dateA && !dateB) return 0;
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const dateAObj = new Date(dateA);
+    dateAObj.setHours(0, 0, 0, 0);
+    const dateBObj = new Date(dateB);
+    dateBObj.setHours(0, 0, 0, 0);
 
-    // Handle cases where dates might be null or invalid
-    if (!dateA) return 1
-    if (!dateB) return -1
-
-    // Compare dates directly
-    return dateA.getTime() - dateB.getTime()
+    const isTodayA = dateAObj.getTime() === today.getTime();
+    const isTodayB = dateBObj.getTime() === today.getTime();
+    
+    if (isTodayA && !isTodayB) return -1;
+    if (!isTodayA && isTodayB) return 1;
+    
+    const isPastA = dateAObj.getTime() < today.getTime();
+    const isPastB = dateBObj.getTime() < today.getTime();
+    
+    if (isPastA && !isPastB) return -1;
+    if (!isPastA && isPastB) return 1;
+    
+    return dateAObj.getTime() - dateBObj.getTime();
   }
 
   // Reset all filters

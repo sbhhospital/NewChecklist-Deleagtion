@@ -400,17 +400,29 @@ const LoginPage = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4 relative" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #e6f9f0 100%)', backgroundColor: '#f1f5f9' }}>
       {isLoginLoading && (
-        <div className="absolute inset-0 bg-white z-[9999] flex flex-col items-center justify-center min-h-[300px] transition-all duration-300">
-          <div className="relative flex items-center justify-center mb-6">
-            <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
-            <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
-            <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
-              <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>🏥</span>
+        <div className="absolute inset-0 bg-white/85 backdrop-blur-md z-[9999] flex flex-col items-center justify-center min-h-[300px]">
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="relative flex items-center justify-center">
+              <svg className="animate-spin h-12 w-12 text-[#10B981]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="spinner-grad-login" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#10B981" />
+                    <stop offset="100%" stopColor="#4F46E5" />
+                  </linearGradient>
+                </defs>
+                <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-90" fill="url(#spinner-grad-login)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-slate-800 text-sm font-semibold tracking-wide animate-pulse">
+                {funnyMsg}
+              </p>
+              <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#10B981] to-[#4F46E5] bg-clip-text text-transparent">
+                Authenticating...
+              </p>
             </div>
           </div>
-          <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide text-center max-w-xs px-4">
-            {funnyMsg}
-          </p>
         </div>
       )}
       <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300" style={{ backgroundColor: '#ffffff' }}>

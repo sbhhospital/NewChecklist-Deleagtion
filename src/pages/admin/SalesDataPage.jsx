@@ -542,9 +542,32 @@ function AccountDataPage() {
     const dateStrB = b["col6"] || ""
     const dateA = parseDateFromDDMMYYYY(dateStrA)
     const dateB = parseDateFromDDMMYYYY(dateStrB)
-    if (!dateA) return 1
-    if (!dateB) return -1
-    return dateA.getTime() - dateB.getTime()
+    
+    if (!dateA && !dateB) return 0;
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const dateAObj = new Date(dateA);
+    dateAObj.setHours(0, 0, 0, 0);
+    const dateBObj = new Date(dateB);
+    dateBObj.setHours(0, 0, 0, 0);
+
+    const isTodayA = dateAObj.getTime() === today.getTime();
+    const isTodayB = dateBObj.getTime() === today.getTime();
+    
+    if (isTodayA && !isTodayB) return -1;
+    if (!isTodayA && isTodayB) return 1;
+    
+    const isPastA = dateAObj.getTime() < today.getTime();
+    const isPastB = dateBObj.getTime() < today.getTime();
+    
+    if (isPastA && !isPastB) return -1;
+    if (!isPastA && isPastB) return 1;
+    
+    return dateAObj.getTime() - dateBObj.getTime();
   }
 
   const resetFilters = useCallback(() => {
@@ -912,12 +935,14 @@ function AccountDataPage() {
     }
   }, [membersList, userRole, username])
 
-  const fetchSheetData = useCallback(async () => {
+  const fetchSheetData = useCallback(async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const pendingAccounts = []
       const historyRows = []
-      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`)
+      const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`
+      const response = await fetch(sheetUrl)
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.status}`)
       }
@@ -1119,11 +1144,11 @@ function AccountDataPage() {
       setMembersList(Array.from(membersSet).sort())
       setAccountData(pendingAccounts)
       setHistoryData(historyRows)
-      setLoading(false)
+      if (!silent) setLoading(false)
     } catch (error) {
       console.error("Error fetching sheet data:", error)
       setError("Failed to load account data: " + error.message)
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [])
 
@@ -1394,11 +1419,18 @@ function AccountDataPage() {
         body: formData,
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const result = await response.json();
       if (!result.success) {
-        console.error("Background submission failed:", result.error);
-        // Optionally show an error message
+        throw new Error(result.error || "Failed to update sheet");
       }
+
+      console.log("Submission succeeded, refreshing data:", result);
+      await fetchSheetData(true);
+
     } catch (error) {
       console.error("Submission error:", error);
       alert("Error occurred during submission. Please try again.");
@@ -1407,7 +1439,6 @@ function AccountDataPage() {
     }
   };
 
-  // New function to handle Leave submission
   const handleLeaveSubmit = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -1434,14 +1465,15 @@ function AccountDataPage() {
       alert("Start date cannot be after end date.");
       return;
     }
-
     setIsLeaveModalOpen(false);
     setIsSubmitting(true);
     try {
       const partsStart = leaveStartDate.split("-");
       const leaveFormatted = `${partsStart[2]}/${partsStart[1]}/${partsStart[0]}`;
 
-      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`);
+      const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`;
+      const response = await fetch(sheetUrl);
       if (!response.ok) throw new Error("Failed to fetch data to calculate leave");
       const text = await response.text();
       let data;
@@ -1721,22 +1753,29 @@ function AccountDataPage() {
   };
 
   const DashboardLoadingEffect = () => (
-    <div className="absolute inset-0 bg-white z-[99999] rounded-lg">
-      <div className="sticky top-0 h-[80vh] w-full flex flex-col items-center justify-center">
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="animate-ping absolute inline-flex h-20 w-20 rounded-full bg-emerald-400 opacity-40"></div>
-          <div className="animate-pulse absolute inline-flex h-16 w-16 rounded-full bg-amber-400 opacity-50"></div>
-          <div className="relative rounded-2xl h-14 w-14 bg-gradient-to-tr from-emerald-600 to-amber-500 flex items-center justify-center shadow-xl border border-emerald-500/20">
-            <span className="text-white text-2xl animate-spin" style={{ animationDuration: '3s' }}>⏳</span>
+    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
+      <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+          <div className="relative flex items-center justify-center">
+            <svg className="animate-spin h-12 w-12 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="spinner-grad-sales" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#9333EA" />
+                  <stop offset="100%" stopColor="#DB2777" />
+                </linearGradient>
+              </defs>
+              <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-90" fill="url(#spinner-grad-sales)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
           </div>
-        </div>
-        <div className="space-y-2 text-center max-w-sm px-6">
-          <p className="text-emerald-800 text-sm font-black animate-bounce tracking-wide">
-            {funnyMsg}
-          </p>
-          <p className="text-amber-600 text-[10px] uppercase font-bold tracking-widest animate-pulse">
-            Optimizing SBH Dashboard Synergy
-          </p>
+          <div className="text-center space-y-1">
+            <p className="text-slate-800 text-xs font-semibold tracking-wide animate-pulse">
+              {funnyMsg}
+            </p>
+            <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#9333EA] to-[#DB2777] bg-clip-text text-transparent">
+              Loading Checklist...
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -2481,7 +2520,9 @@ function AccountDataPage() {
                               const taskStatus = getTaskStatus(
                                 item["col10"],
                                 item["col15"],
-                                item["col6"]
+                                item["col6"],
+                                item["col4"],
+                                item["col7"]
                               );
                               return (
                                 taskStatus !== "Admin Done" &&
@@ -2494,7 +2535,9 @@ function AccountDataPage() {
                               const taskStatus = getTaskStatus(
                                 item["col10"],
                                 item["col15"],
-                                item["col6"]
+                                item["col6"],
+                                item["col4"],
+                                item["col7"]
                               );
                               return (
                                 taskStatus !== "Admin Done" &&
@@ -2623,7 +2666,9 @@ function AccountDataPage() {
                           const taskStatus = getTaskStatus(
                             item["col10"],
                             item["col15"],
-                            item["col6"]
+                            item["col6"],
+                            item["col4"],
+                            item["col7"]
                           );
                           return (
                             taskStatus !== "Admin Done" &&
@@ -2636,7 +2681,9 @@ function AccountDataPage() {
                           const taskStatus = getTaskStatus(
                             item["col10"],
                             item["col15"],
-                            item["col6"]
+                            item["col6"],
+                            item["col4"],
+                            item["col7"]
                           );
                           return (
                             taskStatus !== "Admin Done" &&
@@ -2655,7 +2702,9 @@ function AccountDataPage() {
                     const taskStatus = getTaskStatus(
                       account["col10"],
                       account["col15"],
-                      account["col6"]
+                      account["col6"],
+                      account["col4"],
+                      account["col7"]
                     );
                     const isDisabled =
                       taskStatus === "Admin Done" ||

@@ -281,8 +281,9 @@ function AccountDataPage() {
       setLoading(true)
       const pendingAccounts = []
       const historyRows = []
-
-      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=${CONFIG.SHEET_NAME}&action=fetch`)
+      const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`
+      const response = await fetch(sheetUrl)
 
       if (!response.ok) {
         throw new Error(`Failed to fetch data: ${response.status}`)
