@@ -274,7 +274,7 @@ function AccountDataPage() {
       // Fetch active users from master sheet
       let activeUsersSet = null;
       try {
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=master`;
+        const masterUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
         const masterRes = await fetch(masterUrl);
         if (masterRes.ok) {
           const mText = await masterRes.text();
@@ -721,7 +721,7 @@ function AccountDataPage() {
           </div>
         )}
 
-        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden">
+        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative">
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4">
             <h2 className="text-purple-700 font-medium">{showHistory ? `Completed ${CONFIG.SHEET_NAME} Tasks` : `Pending ${CONFIG.SHEET_NAME} Tasks`}</h2>
             <p className="text-purple-600 text-sm">

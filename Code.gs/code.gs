@@ -119,7 +119,7 @@ function fetchSheetData(sheetName, bypassCache) {
       }
     }
 
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
@@ -366,7 +366,7 @@ function doPost(e) {
     var action = params.action || 'insert';
     if (action === 'add') action = 'insert';
     
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
@@ -569,7 +569,75 @@ var convertedStartDate = task.startDate ? convertDDMMYYYYToDate(task.startDate) 
           }
         })).setMimeType(ContentService.MimeType.JSON);
       }
-    } 
+    }
+    else if (action === 'batchInsertRows') {
+      var rowsData;
+      try {
+        rowsData = JSON.parse(params.rowsData);
+      } catch (parseError) {
+        throw new Error("Invalid rowsData format: " + parseError.message);
+      }
+      
+      if (!Array.isArray(rowsData)) {
+        throw new Error("rowsData must be a 2D array");
+      }
+      
+      var dateMetadata = null;
+      var timestampColumn = null;
+      var nextTargetDateColumn = null;
+      try {
+        if (params.dateMetadata) dateMetadata = JSON.parse(params.dateMetadata);
+        if (params.timestampColumn) timestampColumn = parseInt(params.timestampColumn);
+        if (params.nextTargetDateColumn) nextTargetDateColumn = parseInt(params.nextTargetDateColumn);
+      } catch (metaError) {}
+
+      var convertedRows = rowsData.map(function(row) {
+        return row.map(function(value, index) {
+          if (index === 0 && timestampColumn === 0) {
+            return convertDateToGoogleSheets(value);
+          }
+          if (index === 3 && nextTargetDateColumn === 3) {
+            if (value && value.trim() !== '') {
+              return convertDateToGoogleSheets(value);
+            }
+            return value;
+          }
+          if (dateMetadata && dateMetadata.columns && dateMetadata.columns[index]) {
+            if (dateMetadata.columns[index].type === 'date') {
+              return convertDateToGoogleSheets(value);
+            }
+          }
+          return value;
+        });
+      });
+
+      var lastRow = sheet.getLastRow();
+      if (convertedRows.length > 0) {
+        sheet.getRange(lastRow + 1, 1, convertedRows.length, convertedRows[0].length).setValues(convertedRows);
+        
+        if (timestampColumn === 0) {
+          sheet.getRange(lastRow + 1, 1, convertedRows.length, 1).setNumberFormat('dd/mm/yyyy');
+        }
+        if (nextTargetDateColumn === 3) {
+          sheet.getRange(lastRow + 1, 4, convertedRows.length, 1).setNumberFormat('dd/mm/yyyy');
+        }
+        if (dateMetadata && dateMetadata.columns) {
+          Object.keys(dateMetadata.columns).forEach(function(colIndex) {
+            var colNum = parseInt(colIndex) + 1;
+            if (dateMetadata.columns[colIndex].type === 'date') {
+              sheet.getRange(lastRow + 1, colNum, convertedRows.length, 1).setNumberFormat('dd/mm/yyyy');
+            }
+          });
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: true,
+        message: "Batch rows added successfully",
+        rowCount: sheet.getLastRow(),
+        rowsInserted: convertedRows.length
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
     else if (action === 'update') {
       var rowIndex = parseInt(params.rowIndex);
       var rowData = JSON.parse(params.rowData);
@@ -630,13 +698,20 @@ function updateAdminDone(sheetName, rowDataString) {
     console.log("updateAdminDone called with sheetName:", sheetName, "rowData:", rowDataString);
     
     var rowData = JSON.parse(rowDataString);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
       throw new Error("Sheet '" + sheetName + "' not found");
     }
     
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return { success: true, message: "No rows to update", updatedCount: 0 };
+    }
+    var lastCol = sheet.getLastColumn();
+    var sheetData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+
     var updatedCount = 0;
     
     // Process each item in the rowData array
@@ -650,10 +725,16 @@ function updateAdminDone(sheetName, rowDataString) {
         continue;
       }
       
-      var currentTaskId = sheet.getRange(rowIndex, 2).getValue();
+      var currentTaskId = sheetData[rowIndex - 1] ? sheetData[rowIndex - 1][1] : "";
       if (currentTaskId.toString().trim() !== item.taskId.toString().trim()) {
-        console.log("Task ID mismatch in updateAdminDone for row " + rowIndex + " expected " + item.taskId + " but got " + currentTaskId);
-        var correctRow = findRowByTaskId(sheet, item.taskId);
+        console.log("Task ID mismatch in updateAdminDone for row " + rowIndex + " expected " + item.taskId + " but got " + currentTaskId + ". Performing in-memory search.");
+        var correctRow = -1;
+        for (var r = sheetData.length - 1; r >= 1; r--) {
+          if (sheetData[r][1] && sheetData[r][1].toString().trim() === item.taskId.toString().trim()) {
+            correctRow = r + 1;
+            break;
+          }
+        }
         if (correctRow > 0) {
           rowIndex = correctRow;
         } else {
@@ -691,7 +772,7 @@ function updateTaskData(params) {
     console.log("Processing task data update for sheet:", sheetName);
     console.log("Row data array:", JSON.stringify(rowDataArray));
     
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var sheet = ss.getSheetByName(sheetName);
     
     if (!sheet) {
@@ -702,7 +783,6 @@ function updateTaskData(params) {
     
     var dataRange = sheet.getDataRange();
     var sheetValues = dataRange.getValues();
-    var isModified = false;
     
     rowDataArray.forEach(function(taskData, index) {
       var rowIndex = parseInt(taskData.rowIndex) - 1; // 0-indexed for array
@@ -717,12 +797,27 @@ function updateTaskData(params) {
       }
       
       if (rowIndex === -1) {
-         // Fallback search
-         for (var i = 1; i < sheetValues.length; i++) {
-            if (sheetValues[i][1].toString().trim() === taskData.taskId.toString().trim()) {
+         // Fallback search: search from bottom to top to find the most recent matching PENDING task
+         for (var i = sheetValues.length - 1; i >= 1; i--) {
+            var rowTaskId = sheetValues[i][1] ? sheetValues[i][1].toString().trim() : "";
+            var rowActualDate = sheetValues[i][10] ? sheetValues[i][10].toString().trim() : "";
+            var rowStatus = sheetValues[i][12] ? sheetValues[i][12].toString().trim() : "";
+            
+            if (rowTaskId === taskData.taskId.toString().trim() && rowActualDate === "" && rowStatus !== "Done" && rowStatus !== "Admin Done") {
                rowIndex = i;
                break;
             }
+         }
+         
+         // If still not found, do a relaxed search from bottom to top (just matching taskId)
+         if (rowIndex === -1) {
+           for (var i = sheetValues.length - 1; i >= 1; i--) {
+              var rowTaskId = sheetValues[i][1] ? sheetValues[i][1].toString().trim() : "";
+              if (rowTaskId === taskData.taskId.toString().trim()) {
+                 rowIndex = i;
+                 break;
+              }
+           }
          }
       }
       
@@ -736,36 +831,22 @@ function updateTaskData(params) {
         updates: []
       };
       
+      // Target updates to specific cells/ranges rather than writing back the entire sheet
       if (taskData.actualDate) {
-        sheetValues[rowIndex][10] = taskData.actualDate;
+        sheet.getRange(rowIndex + 1, 11).setValue(taskData.actualDate); // Column K (index 10)
         rowUpdates.updates.push("Column K (Actual): " + taskData.actualDate);
-        isModified = true;
       }
       
-      if (taskData.status) {
-        sheetValues[rowIndex][12] = taskData.status;
-        rowUpdates.updates.push("Column M (Status): " + taskData.status);
-        isModified = true;
-      }
+      // Columns M, N, O (indexes 12, 13, 14) are contiguous. We can update them together.
+      var statusVal = (taskData.status !== undefined && taskData.status !== null) ? taskData.status : (sheetValues[rowIndex] && sheetValues[rowIndex][12] !== undefined ? sheetValues[rowIndex][12] : "");
+      var remarksVal = (taskData.remarks !== undefined && taskData.remarks !== null) ? taskData.remarks : (sheetValues[rowIndex] && sheetValues[rowIndex][13] !== undefined ? sheetValues[rowIndex][13] : "");
+      var imageUrlVal = (taskData.imageUrl !== undefined && taskData.imageUrl !== null) ? taskData.imageUrl : (sheetValues[rowIndex] && sheetValues[rowIndex][14] !== undefined ? sheetValues[rowIndex][14] : "");
       
-      if (taskData.remarks) {
-        sheetValues[rowIndex][13] = taskData.remarks;
-        rowUpdates.updates.push("Column N (Remarks): " + taskData.remarks);
-        isModified = true;
-      }
-      
-      if (taskData.imageUrl) {
-        sheetValues[rowIndex][14] = taskData.imageUrl;
-        rowUpdates.updates.push("Column O (Image): " + taskData.imageUrl);
-        isModified = true;
-      }
+      sheet.getRange(rowIndex + 1, 13, 1, 3).setValues([[statusVal, remarksVal, imageUrlVal]]);
+      rowUpdates.updates.push("Columns M-O updated (Status, Remarks, Image)");
       
       updateResults.push(rowUpdates);
     });
-    
-    if (isModified) {
-      dataRange.setValues(sheetValues);
-    }
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
@@ -865,13 +946,35 @@ function updateSalesData(params) {
 function findRowByTaskId(sheet, taskId) {
   try {
     var lastRow = sheet.getLastRow();
-    console.log("Searching for Task ID '" + taskId + "' in " + lastRow + " rows");
+    if (lastRow < 2) return -1;
     
-    for (var i = 2; i <= lastRow; i++) {
-      var cellValue = sheet.getRange(i, 2).getValue();
+    var lastCol = sheet.getLastColumn();
+    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    console.log("Searching in-memory for Task ID '" + taskId + "' in " + data.length + " rows");
+    
+    // Step 1: Search bottom-to-top for a pending task row
+    for (var i = data.length - 1; i >= 0; i--) {
+      var row = data[i];
+      var cellValue = row[1]; // Column B is index 1
       if (cellValue && cellValue.toString().trim() === taskId.toString().trim()) {
-        console.log("Found Task ID '" + taskId + "' at row " + i);
-        return i;
+        var actualDate = row[10]; // Column K is index 10
+        var status = row[12]; // Column M is index 12
+        if (!actualDate && status !== "Done" && status !== "Admin Done") {
+          var rowIndex = i + 2;
+          console.log("Found pending Task ID '" + taskId + "' at row " + rowIndex);
+          return rowIndex;
+        }
+      }
+    }
+    
+    // Step 2: Fallback search bottom-to-top for any matching task row
+    for (var i = data.length - 1; i >= 0; i--) {
+      var row = data[i];
+      var cellValue = row[1]; // Column B is index 1
+      if (cellValue && cellValue.toString().trim() === taskId.toString().trim()) {
+        var rowIndex = i + 2;
+        console.log("Found Task ID '" + taskId + "' at row " + rowIndex + " (fallback)");
+        return rowIndex;
       }
     }
     
@@ -1084,17 +1187,8 @@ function processChecklistAndGenerateTasks() {
       var existingTaskId = row[1] || (i + 1); // Column B or fallback to row number
       var lastGeneratedDate = row[16]; // Column S (index 18) - Last generated date
       
-      // Only process if department exists
+        // Only process if department exists
       if (department) {
-        // Get department sheet
-        var departmentSheetName = department.toUpperCase();
-        var departmentSheet = ss.getSheetByName("Checklist");
-        
-        if (!departmentSheet) {
-          Logger.log("Department sheet not found: " + departmentSheetName);
-          continue;
-        }
-        
         // Determine if we should generate task
         var shouldGenerateTask = false;
         var taskDueDate = "";
@@ -1668,7 +1762,7 @@ function recordLogout(username) {
 
 function runDailyLoginCheck() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var masterSheet = ss.getSheetByName("Whatsapp");
     if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
@@ -1828,7 +1922,7 @@ function runDailyLoginCheck() {
         summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
         summaryMsg += "The following staff members missed their check-in:\n";
         absentUsersSummary.forEach(function(item, idx) {
-          summaryMsg += (idx + 1) + ". *" + item.name + "*\n   ⏳ Days Missed: " + item.missed + "\n   ❌ Points Deducted: " + item.deducted + " Pts (5 Delegation + 5 Checklist)\n";
+          summaryMsg += (idx + 1) + ". *" + item.name + "*\n   ⏳ Days Missed: " + item.missed + "\n";
         });
         summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
       
@@ -1850,11 +1944,18 @@ function sendWhatsAppNotification(phoneNumber, message) {
       cleanPhone = "91" + cleanPhone;
     }
     
-    var encodedMessage = encodeURIComponent(message);
-    var url = "https://app.ceoitbox.com/message/new?username=SBH%20HOSPITAL&password=123456789&receiverMobileNo=" + cleanPhone + "&receiverName=User&message=" + encodedMessage;
+    var url = "https://app.ceoitbox.com/message/new";
+    var payload = {
+      username: "SBH HOSPITAL",
+      password: "123456789",
+      receiverMobileNo: cleanPhone,
+      receiverName: "User",
+      message: message
+    };
     
     var response = UrlFetchApp.fetch(url, {
-      method: "get",
+      method: "post",
+      payload: payload,
       muteHttpExceptions: true
     });
     Logger.log("WhatsApp Response status: " + response.getResponseCode() + ", Body: " + response.getContentText());
@@ -1865,7 +1966,7 @@ function sendWhatsAppNotification(phoneNumber, message) {
 
 function sendSameDayLoginReminder() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var masterSheet = ss.getSheetByName("Whatsapp");
     if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
@@ -1925,9 +2026,7 @@ function sendSameDayLoginReminder() {
           checkDate.setDate(checkDate.getDate() - 1);
           var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
           
-          var totalPointsDeducted = consecutiveMissed * 10;
-
-          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\n*Consecutive Absent Duration:* " + formatAbsentTime(consecutiveMissed) + "\n*Total Points Deducted:* -" + totalPointsDeducted + " Points (" + consecutiveMissed + " days x 10 pts)\n\nPlease log in immediately to complete your pending delegations and checklists to prevent further score deductions.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in before midnight to avoid automatic point deductions tomorrow.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
           count++;
         }
       }
@@ -1942,7 +2041,7 @@ function sendSameDayLoginReminder() {
 // Temporary function to reset consecutive missed days for all users
 function resetAttendanceCounters() {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
     var attendanceSheet = ss.getSheetByName("Attendance");
     if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
     
@@ -2217,7 +2316,7 @@ function cleanAllDuplicateTriggers() {
 }
 
 function autoFillPendingChecklists() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
   var checklistSheets = ["SALES", "E-COMMERCE", "WH", "PURCHASE", "FACTORY", "ACCOUNTS", "DESIGNING", "DISPATCH", "FABRICATION", "HR"];
   
   checklistSheets.forEach(function(sheetName) {

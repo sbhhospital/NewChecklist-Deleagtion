@@ -112,9 +112,8 @@ export default function AttendanceReport() {
         };
       })
 
-      // Fetch master list for active employees
       const masterRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master`
+        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`
       )
       if (!masterRes.ok) throw new Error("Failed to load master employees")
       const masterText = await masterRes.text()

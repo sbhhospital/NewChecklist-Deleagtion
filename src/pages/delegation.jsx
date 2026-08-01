@@ -130,6 +130,8 @@ function DelegationDataPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [remarksData, setRemarksData] = useState({});
+  const [inactiveUsers, setInactiveUsers] = useState(new Set());
+  const [activeUsers, setActiveUsers] = useState([]);
 
   const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
   useEffect(() => {
@@ -787,51 +789,11 @@ function DelegationDataPage() {
   ]);
 
   const uniqueNames = useMemo(() => {
-    const names = new Set();
-    const normalizedNames = new Map(); // To track normalized versions
-
-    // Helper function to normalize names
-    const normalizeName = (name) => {
-      if (!name) return '';
-      return name.toString().toLowerCase().trim();
-    };
-
-    // Add names from accountData (main table - col4)
-    accountData.forEach((item) => {
-      if (item["col4"]) {
-        const originalName = item["col4"];
-        const normalized = normalizeName(originalName);
-
-        // If user is not admin, only add their own name
-        if (userRole !== "admin" && originalName !== username) return;
-
-        // Only add if we haven't seen this normalized name before
-        if (!normalizedNames.has(normalized)) {
-          normalizedNames.set(normalized, originalName);
-          names.add(originalName); // Keep the original casing from first occurrence
-        }
-      }
-    });
-
-    // Add names from historyData (history table - col7)
-    historyData.forEach((item) => {
-      if (item["col7"]) {
-        const originalName = item["col7"];
-        const normalized = normalizeName(originalName);
-
-        // If user is not admin, only add their own name
-        if (userRole !== "admin" && originalName !== username) return;
-
-        // Only add if we haven't seen this normalized name before
-        if (!normalizedNames.has(normalized)) {
-          normalizedNames.set(normalized, originalName);
-          names.add(originalName); // Keep the original casing from first occurrence
-        }
-      }
-    });
-
-    return Array.from(names).sort();
-  }, [accountData, historyData, userRole, username]);
+    if (userRole !== "admin") {
+      return [username];
+    }
+    return [...new Set(activeUsers)].sort((a, b) => a.localeCompare(b));
+  }, [activeUsers, userRole, username]);
 
 
 
@@ -924,18 +886,18 @@ function DelegationDataPage() {
     setDelegationData(fetchedAllDelegationData || []);
   };
 
-  const fetchSheetData = useCallback(async (signal) => {
+  const fetchSheetData = useCallback(async (signal, silent = false) => {
     const cacheKey = `delegation_sheet_cache_${CONFIG.SOURCE_SHEET_NAME}`;
     const cached = getCachedData(cacheKey);
     let isCacheUsed = false;
-    if (cached && cached.allDelegationData && cached.processedHistoryData) {
+    if (cached && cached.allDelegationData && cached.processedHistoryData && !silent) {
       processFetchedData(null, cached.processedHistoryData, cached.rawDelegationList, cached.allDelegationData);
       setLoading(false);
       isCacheUsed = true;
     }
 
     try {
-      if (!isCacheUsed) {
+      if (!isCacheUsed && !silent) {
         setLoading(true);
       }
       setError(null);
@@ -951,7 +913,7 @@ function DelegationDataPage() {
           { signal }
         ).catch(() => null),
         fetch(
-          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`,
+          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`,
           { signal }
         ).catch(() => null),
       ]);
@@ -960,8 +922,10 @@ function DelegationDataPage() {
         throw new Error(`Failed to fetch data: ${mainResponse.status}`);
       }
 
-      // Process master sheet to get inactive users
+      // Process Whatsapp sheet to get active and inactive users
       const inactiveUsers = new Set();
+      const activeUsersList = [];
+      const activeUsersLowerSet = new Set();
       if (masterResponse && masterResponse.ok) {
         try {
           const masterText = await masterResponse.text();
@@ -973,15 +937,23 @@ function DelegationDataPage() {
             masterJson.table.rows.slice(1).forEach(row => {
               const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : "";
               const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
-              if (username && (role === "inactive" || role === "in active")) {
-                inactiveUsers.add(username.toLowerCase());
+              if (username) {
+                const usernameLower = username.toLowerCase();
+                if (role === "inactive" || role === "in active") {
+                  inactiveUsers.add(usernameLower);
+                } else {
+                  activeUsersList.push(username);
+                  activeUsersLowerSet.add(usernameLower);
+                }
               }
             });
           }
         } catch (e) {
-          console.error("Error parsing master sheet for inactive users:", e);
+          console.error("Error parsing Whatsapp sheet for inactive users:", e);
         }
       }
+      setInactiveUsers(inactiveUsers);
+      setActiveUsers(activeUsersList);
 
       // Process main data
       const mainText = await mainResponse.text();
@@ -1031,6 +1003,9 @@ function DelegationDataPage() {
                     cell && cell.v !== undefined ? cell.v : ""
                   )
                   : [];
+
+                const assignedTo = rowValues[7] ? String(rowValues[7]).trim().toLowerCase() : "";
+                if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return null;
 
                 // Map all columns — use module-level parser to avoid closure issues
                 for (let i = 0; i < 16; i++) {
@@ -1090,7 +1065,7 @@ function DelegationDataPage() {
         const googleSheetsRowIndex = rowIndex + 1;
         const taskId = rowValues[1] || "";
         const assignedTo = rowValues[4] ? String(rowValues[4]).trim().toLowerCase() : "";
-        if (assignedTo && inactiveUsers.has(assignedTo)) return;
+        if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return;
 
         const stableId = taskId
           ? `task_${taskId}_${googleSheetsRowIndex}`
@@ -1378,11 +1353,53 @@ function DelegationDataPage() {
       // Process Verify Pending tasks (update existing records in DELEGATION DONE)
       if (verifyPendingTasks.length > 0) {
         await processVerifyPendingTasks(verifyPendingTasks, statusData);
+        
+        // Update local historyData status to Admin Done
+        setHistoryData(prev =>
+          prev.map(historyItem => {
+            const match = verifyPendingTasks.find(t => String(t.item["col1"]).trim() === String(historyItem["col1"]).trim());
+            if (match) {
+              return { ...historyItem, col2: "Admin Done" };
+            }
+            return historyItem;
+          })
+        );
       }
 
       // Process Regular tasks (create new records in DELEGATION DONE)
       if (regularTasks.length > 0) {
         await processRegularTasks(regularTasks, dateForSubmission, remarksData, nextTargetDate, statusData);
+
+        // Prepend new history entries locally
+        const newHistoryEntries = regularTasks.map(({ id, item }) => {
+          const submittedStatus = statusData[id] || "";
+          const finalStatus = (userRole === "admin" && submittedStatus === "Done") ? "Admin Done" : submittedStatus;
+          const pointsEarned = calculateSingleTaskPoints(item, finalStatus, historyData);
+          
+          let formattedNextTargetDate = "";
+          if (nextTargetDate[id]) {
+            const convertedDate = convertToGoogleSheetsDate(nextTargetDate[id]);
+            formattedNextTargetDate = convertedDate.formatted;
+          }
+
+          return {
+            _id: `temp_hist_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            _rowIndex: 99999,
+            col0: dateForSubmission.formatted,
+            col1: item["col1"] || "",
+            col2: finalStatus,
+            col3: formattedNextTargetDate,
+            col4: remarksData[id] || "",
+            col5: item.image instanceof File ? URL.createObjectURL(item.image) : "",
+            col6: "",
+            col7: username,
+            col8: item["col5"] || "",
+            col9: item["col3"] || "",
+            col10: pointsEarned
+          };
+        });
+
+        setHistoryData(prev => [...newHistoryEntries, ...prev]);
       }
 
       // Update local state - remove submitted items
@@ -1410,8 +1427,8 @@ function DelegationDataPage() {
       // Silent background re-fetch after submit (no full page loading overlay)
       setTimeout(() => {
         clearDelegationCache(CONFIG.SOURCE_SHEET_NAME);
-        fetchSheetData();
-      }, 1500);
+        fetchSheetData(null, true);
+      }, 500);
     } catch (error) {
       console.error("Submission error:", error);
       alert("Failed to submit task records: " + error.message);
@@ -1450,6 +1467,7 @@ function DelegationDataPage() {
       const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
         body: formData,
+        redirect: "follow",
       });
 
       if (!response.ok) {
@@ -1554,106 +1572,107 @@ function DelegationDataPage() {
   };
 
   const processRegularTasks = async (tasks, dateForSubmission, remarksData, nextTargetDate, statusData) => {
-    const batchSize = 5;
+    const preparedRows = await Promise.all(
+      tasks.map(async ({ id, item }) => {
+        let imageUrl = "";
 
-    for (let i = 0; i < tasks.length; i += batchSize) {
-      const batch = tasks.slice(i, i + batchSize);
+        if (item.image instanceof File) {
+          try {
+            const base64Data = await fileToBase64(item.image);
 
-      await Promise.all(
-        batch.map(async ({ id, item }) => {
-          let imageUrl = "";
+            const uploadFormData = new FormData();
+            uploadFormData.append("action", "uploadFile");
+            uploadFormData.append("base64Data", base64Data);
+            uploadFormData.append(
+              "fileName",
+              `task_${item["col1"]}_${Date.now()}.${item.image.name
+                .split(".")
+                .pop()}`
+            );
+            uploadFormData.append("mimeType", item.image.type);
+            uploadFormData.append("folderId", CONFIG.DRIVE_FOLDER_ID);
 
-          if (item.image instanceof File) {
-            try {
-              const base64Data = await fileToBase64(item.image);
+            const uploadResponse = await fetch(CONFIG.APPS_SCRIPT_URL, {
+              method: "POST",
+              body: uploadFormData,
+              redirect: "follow",
+            });
 
-              const uploadFormData = new FormData();
-              uploadFormData.append("action", "uploadFile");
-              uploadFormData.append("base64Data", base64Data);
-              uploadFormData.append(
-                "fileName",
-                `task_${item["col1"]}_${Date.now()}.${item.image.name
-                  .split(".")
-                  .pop()}`
-              );
-              uploadFormData.append("mimeType", item.image.type);
-              uploadFormData.append("folderId", CONFIG.DRIVE_FOLDER_ID);
-
-              const uploadResponse = await fetch(CONFIG.APPS_SCRIPT_URL, {
-                method: "POST",
-                body: uploadFormData,
-              });
-
-              const uploadResult = await uploadResponse.json();
-              if (uploadResult.success) {
-                imageUrl = uploadResult.fileUrl;
-              }
-            } catch (uploadError) {
-              console.error("Error uploading image:", uploadError);
+            const uploadResult = await uploadResponse.json();
+            if (uploadResult.success) {
+              imageUrl = uploadResult.fileUrl;
             }
+          } catch (uploadError) {
+            console.error("Error uploading image:", uploadError);
           }
+        }
 
-          // Format the next target date properly if it exists
-          let formattedNextTargetDate = "";
-          let nextTargetDateForGoogleSheets = null;
+        // Format the next target date properly if it exists
+        let formattedNextTargetDate = "";
+        if (nextTargetDate[id]) {
+          const convertedDate = convertToGoogleSheetsDate(nextTargetDate[id]);
+          formattedNextTargetDate = convertedDate.formatted;
+        }
 
-          if (nextTargetDate[id]) {
-            const convertedDate = convertToGoogleSheetsDate(
-              nextTargetDate[id]
-            );
-            formattedNextTargetDate = convertedDate.formatted;
-            nextTargetDateForGoogleSheets = convertedDate.dateObject;
-          }
+        const submittedStatus = statusData[id] || "";
+        const finalStatus = (userRole === "admin" && submittedStatus === "Done") ? "Admin Done" : submittedStatus;
 
-          // Calculate point value for this specific submission
-          const pointsEarned = calculateSingleTaskPoints(item, statusData[id], historyData);
+        // Calculate point value for this specific submission
+        const pointsEarned = calculateSingleTaskPoints(item, finalStatus, historyData);
 
-          // Create new row for regular tasks
-          const newRowData = [
-            dateForSubmission.formatted,
-            item["col1"] || "",
-            statusData[id] || "",
-            formattedNextTargetDate,
-            remarksData[id] || "",
-            imageUrl,
-            "", // Column G
-            username, // Column H - Store the logged-in username
-            item["col5"] || "", // Column I - Task description from col5
-            item["col3"] || "", // Column J - Given By from original task
-            pointsEarned // Column K - Points earned
-          ];
+        // Return array representation of row data
+        return [
+          dateForSubmission.formatted,
+          item["col1"] || "",
+          finalStatus,
+          formattedNextTargetDate,
+          remarksData[id] || "",
+          imageUrl,
+          "", // Column G
+          username, // Column H - Store the logged-in username
+          item["col5"] || "", // Column I - Task description from col5
+          item["col3"] || "", // Column J - Given By from original task
+          pointsEarned // Column K - Points earned
+        ];
+      })
+    );
 
-          const insertFormData = new FormData();
-          insertFormData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
-          insertFormData.append("action", "insert");
-          insertFormData.append("rowData", JSON.stringify(newRowData));
+    // Submit all rows at once using batchInsertRows action
+    if (preparedRows.length > 0) {
+      const insertFormData = new FormData();
+      insertFormData.append("sheetName", CONFIG.TARGET_SHEET_NAME);
+      insertFormData.append("action", "batchInsertRows");
+      insertFormData.append("rowsData", JSON.stringify(preparedRows));
 
-          // Add date formatting hints
-          insertFormData.append("dateFormat", "DD/MM/YYYY");
-          insertFormData.append("timestampColumn", "0");
-          insertFormData.append("nextTargetDateColumn", "3");
+      // Add date formatting hints
+      insertFormData.append("dateFormat", "DD/MM/YYYY");
+      insertFormData.append("timestampColumn", "0");
+      insertFormData.append("nextTargetDateColumn", "3");
 
-          const dateMetadata = {
-            columns: {
-              0: { type: "date", format: "DD/MM/YYYY" },
-              3: { type: "date", format: "DD/MM/YYYY" },
-            },
-          };
-          insertFormData.append("dateMetadata", JSON.stringify(dateMetadata));
+      const dateMetadata = {
+        columns: {
+          0: { type: "date", format: "DD/MM/YYYY" },
+          3: { type: "date", format: "DD/MM/YYYY" },
+        },
+      };
+      insertFormData.append("dateMetadata", JSON.stringify(dateMetadata));
 
-          if (nextTargetDateForGoogleSheets) {
-            insertFormData.append(
-              "nextTargetDateObject",
-              nextTargetDateForGoogleSheets.toISOString()
-            );
-          }
+      const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: "POST",
+        body: insertFormData,
+        redirect: "follow",
+      });
 
-          return fetch(CONFIG.APPS_SCRIPT_URL, {
-            method: "POST",
-            body: insertFormData,
-          });
-        })
-      );
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Failed to batch insert regular tasks");
+      }
+
+      return result;
     }
   };
 
@@ -1673,6 +1692,7 @@ function DelegationDataPage() {
       const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
         body: formData,
+        redirect: "follow",
       });
 
       if (!response.ok) {
@@ -1796,6 +1816,7 @@ function DelegationDataPage() {
       const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
         body: formData,
+        redirect: "follow",
       });
 
       if (!response.ok)
@@ -1838,34 +1859,6 @@ function DelegationDataPage() {
   return (
     <AdminLayout>
       <div className="space-y-6 relative min-h-[500px]">
-        {loading && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
-            <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
-              <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
-                <div className="relative flex items-center justify-center">
-                  <svg className="animate-spin h-12 w-12 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                      <linearGradient id="spinner-grad-deleg" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#9333EA" />
-                        <stop offset="100%" stopColor="#DB2777" />
-                      </linearGradient>
-                    </defs>
-                    <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-90" fill="url(#spinner-grad-deleg)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </div>
-                <div className="text-center space-y-1">
-                  <p className="text-slate-800 text-sm font-semibold tracking-wide animate-pulse">
-                    {funnyMsg}
-                  </p>
-                  <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#9333EA] to-[#DB2777] bg-clip-text text-transparent">
-                    Loading Delegation...
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Scoring Summary Cards */}
         {!loading && (
@@ -2263,7 +2256,33 @@ function DelegationDataPage() {
 
 
 
-        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative">
+        <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative min-h-[300px]">
+          {loading && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4">
+              <div className="sticky top-[100px] flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+                <div className="relative flex items-center justify-center">
+                  <svg className="animate-spin h-10 w-10 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <linearGradient id="spinner-grad-deleg-inner" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#9333EA" />
+                        <stop offset="100%" stopColor="#DB2777" />
+                      </linearGradient>
+                    </defs>
+                    <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-90" fill="url(#spinner-grad-deleg-inner)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="text-slate-800 text-xs font-semibold tracking-wide animate-pulse">
+                    {funnyMsg}
+                  </p>
+                  <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#9333EA] to-[#DB2777] bg-clip-text text-transparent">
+                    Loading Tasks...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-100 p-4 flex justify-between items-center">
             <h2 className="text-purple-700 font-medium flex items-center gap-2">
               <span>
