@@ -31,10 +31,16 @@ function AccountDataPage() {
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([])
   const [markingAsDone, setMarkingAsDone] = useState(false)
   const [userRole, setUserRole] = useState("")
+  const [username, setUsername] = useState("")
   const [confirmationModal, setConfirmationModal] = useState({
     isOpen: false,
     itemCount: 0
   })
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
+  const [leaveStartDate, setLeaveStartDate] = useState("")
+  const [leaveEndDate, setLeaveEndDate] = useState("")
+  const [leaveEmployee, setLeaveEmployee] = useState("")
+  const [leaveTargetSheet, setLeaveTargetSheet] = useState("both")
 
   // Format date as DD/MM/YYYY
   const formatDateToDDMMYYYY = (date) => {
@@ -60,7 +66,9 @@ function AccountDataPage() {
 
   useEffect(() => {
     const role = sessionStorage.getItem('role')
+    const user = sessionStorage.getItem('username')
     setUserRole(role || '')
+    setUsername(user || '')
   }, [])
 
   // Parse Google Sheets Date format into a proper date string
@@ -539,6 +547,179 @@ function AccountDataPage() {
     fetchSheetData()
   }, [])
 
+  const handleLeaveSubmit = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    setLeaveStartDate(dateStr);
+    setLeaveEndDate(dateStr);
+    setLeaveEmployee(selectedMembers[0] || username || "");
+    setLeaveTargetSheet("both");
+    setIsLeaveModalOpen(true);
+  };
+
+  const confirmLeaveSubmit = async () => {
+    if (!leaveStartDate || !leaveEndDate) {
+      alert("Please select both start and end dates for the leave.");
+      return;
+    }
+
+    const startObj = new Date(leaveStartDate);
+    startObj.setHours(0, 0, 0, 0);
+    const endObj = new Date(leaveEndDate);
+    endObj.setHours(23, 59, 59, 999);
+
+    if (startObj > endObj) {
+      alert("Start date cannot be after end date.");
+      return;
+    }
+
+    const targetEmployee = leaveEmployee || username || "";
+    if (!targetEmployee) {
+      alert("Please select or specify an employee.");
+      return;
+    }
+
+    setIsLeaveModalOpen(false);
+    setIsSubmitting(true);
+    try {
+      const partsStart = leaveStartDate.split("-");
+      const leaveFormatted = `${partsStart[2]}/${partsStart[1]}/${partsStart[0]}`;
+      const todayObj = new Date();
+      const todayFormatted = `${String(todayObj.getDate()).padStart(2, '0')}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${todayObj.getFullYear()}`;
+
+      const sheetsToUpdate = [];
+      if (leaveTargetSheet === "both" || leaveTargetSheet === "Checklist") {
+        sheetsToUpdate.push("Checklist");
+      }
+      if (leaveTargetSheet === "both" || leaveTargetSheet === "DELEGATION") {
+        sheetsToUpdate.push("DELEGATION");
+      }
+
+      let totalTasksUpdatedCount = 0;
+
+      for (const currentSheetName of sheetsToUpdate) {
+        const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(currentSheetName)}&t=${Date.now()}`;
+        const response = await fetch(sheetUrl);
+        if (!response.ok) throw new Error(`Failed to fetch data for sheet ${currentSheetName}`);
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          const jsonStart = text.indexOf("{");
+          const jsonEnd = text.lastIndexOf("}");
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            data = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+          } else {
+            throw new Error(`Invalid format for sheet ${currentSheetName}`);
+          }
+        }
+
+        let rows = [];
+        if (data.table && data.table.rows) {
+          rows = data.table.rows;
+        } else if (Array.isArray(data)) {
+          rows = data;
+        } else if (data.values) {
+          rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }));
+        }
+
+        const tasksToUpdate = [];
+
+        rows.forEach((row, rowIndex) => {
+          if (rowIndex === 0) return;
+          let rowValues = [];
+          if (row.c) {
+            rowValues = row.c.map(cell => (cell && cell.v !== undefined ? cell.v : ""));
+          } else if (Array.isArray(row)) {
+            rowValues = row;
+          } else return;
+
+          const assignedTo = rowValues[4] || "Unassigned";
+
+          const isUserMatch = assignedTo.toLowerCase() === targetEmployee.toLowerCase();
+
+          if (isUserMatch) {
+            const colG = rowValues[6];
+            const dateValStr = colG ? String(colG).trim() : "";
+            let formattedDate = dateValStr;
+            if (dateValStr.match(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/)) {
+              formattedDate = dateValStr;
+            } else if (dateValStr.startsWith("Date(")) {
+              const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(dateValStr);
+              if (match) {
+                formattedDate = `${match[3].padStart(2, '0')}/${(parseInt(match[2], 10) + 1).toString().padStart(2, '0')}/${match[1]}`;
+              }
+            }
+            const parts = formattedDate.split('/');
+            const taskDate = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : null;
+
+            if (taskDate && taskDate >= startObj && taskDate <= endObj) {
+              const taskId = rowValues[1];
+              if (taskId) {
+                const rowDataPayload = Array(17).fill("");
+                rowDataPayload[10] = todayFormatted;
+                rowDataPayload[12] = "Leave";
+                rowDataPayload[16] = "Leave";
+
+                tasksToUpdate.push({
+                  rowIndex: rowIndex + 1,
+                  taskId: taskId,
+                  rowData: rowDataPayload
+                });
+              }
+            }
+          }
+        });
+
+        if (tasksToUpdate.length > 0) {
+          const updatePromises = tasksToUpdate.map(async (task) => {
+            const formData = new FormData();
+            formData.append("sheetName", currentSheetName);
+            formData.append("action", "update");
+            formData.append("rowIndex", task.rowIndex);
+            formData.append("rowData", JSON.stringify(task.rowData));
+
+            const res = await fetch("https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec", {
+              method: "POST",
+              body: formData,
+            });
+            return res.json();
+          });
+
+          const results = await Promise.all(updatePromises);
+          const failures = results.filter(r => !r.success);
+
+          if (failures.length > 0) {
+            console.error(`Some updates failed in ${currentSheetName}`, failures);
+          } else {
+            totalTasksUpdatedCount += tasksToUpdate.length;
+          }
+        }
+      }
+
+      if (totalTasksUpdatedCount === 0) {
+        alert("No tasks found for the selected date range and employee.");
+      } else {
+        setSuccessMessage(`Successfully marked ${totalTasksUpdatedCount} tasks as Leave!`);
+      }
+
+      setTimeout(() => {
+        fetchSheetData();
+      }, 2000);
+
+    } catch (error) {
+      console.error("Error submitting Leave:", error);
+      alert("Error occurred during Leave submission. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSelectItem = (id) => {
     setSelectedItems(prev => {
       const isSelected = prev.includes(id)
@@ -725,6 +906,13 @@ function AccountDataPage() {
                 )}
               </button>
             )}
+
+            <button
+              onClick={handleLeaveSubmit}
+              className="rounded-md border border-orange-200 text-orange-750 hover:bg-orange-50 bg-white py-2 px-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+            >
+              Apply Leave
+            </button>
 
             {/* Submit Button - Only show when not in history view */}
             {!showHistory && (
@@ -1158,6 +1346,75 @@ function AccountDataPage() {
           )}
         </div>
       </div>
+
+      {isLeaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave & Clear Penalty</h2>
+            {userRole === "admin" && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Employee</label>
+                <select
+                  value={leaveEmployee}
+                  onChange={(e) => setLeaveEmployee(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">-- Choose Employee --</option>
+                  {membersList.map((m, idx) => (
+                    <option key={idx} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Apply Leave To</label>
+              <select
+                value={leaveTargetSheet}
+                onChange={(e) => setLeaveTargetSheet(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-slate-800"
+              >
+                <option value="both">Both (Checklist & Delegation)</option>
+                <option value="Checklist">Checklist Only</option>
+                <option value="DELEGATION">Delegation Only</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={leaveStartDate}
+                onChange={(e) => setLeaveStartDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <input
+                type="date"
+                value={leaveEndDate}
+                onChange={(e) => setLeaveEndDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={() => setIsLeaveModalOpen(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors font-bold text-xs"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmLeaveSubmit}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors font-bold text-xs"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Submitting..." : "Confirm Leave"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   )
 }

@@ -31,6 +31,27 @@ const parseDateFromDDMMYYYY = (dateStr) => {
   return null
 }
 
+const parseDateValue = (cell) => {
+  if (!cell) return null;
+  const val = cell.v;
+  if (!val) return null;
+  
+  const valStr = String(val);
+  if (valStr.startsWith("Date(")) {
+    const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(valStr);
+    if (match) {
+      return new Date(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10));
+    }
+  }
+  
+  const fmt = cell.f || valStr;
+  const parts = fmt.split("/");
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+  }
+  return null;
+}
+
 const isDateInPast = (dateStr) => {
   const date = parseDateFromDDMMYYYY(dateStr)
   if (!date) return false
@@ -136,7 +157,7 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
     const isVerifyPending = taskObj.originalStatus === "Verify Pending";
     const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
 
-    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
+    const cutoffDate = new Date(2026, 7, 1); // August 1, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
     if (deadlineDate) {
@@ -250,7 +271,7 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
     const isVerifyPending = taskObj.originalStatus === "Verify Pending";
     const actualDate = parseDateFromDDMMYYYY(taskObj.completionDate);
 
-    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
+    const cutoffDate = new Date(2026, 7, 1); // August 1, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
     if (deadlineDate) {
@@ -390,7 +411,8 @@ export default function PerformanceDashboard() {
     doerOptions: [],
     historyData: [],
     loginHistory: [],
-    pointDeductions: []
+    pointDeductions: [],
+    leavesList: []
   })
 
   // Check if current user is admin
@@ -400,94 +422,67 @@ export default function PerformanceDashboard() {
     return role === "admin" || isAdminFlag === "true"
   }
 
-  const fetchPerformanceData = async (signal, forceRefresh = false) => {
+  const fetchPerformanceData = async (signal) => {
     let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null, whatsappJson = null;
 
-    // Check if raw prefetch data exists and is fresh (less than 5 mins old)
-    const cachedPrefetch = window.sbh_prefetch_performance_raw;
-    const cachedTime = window.sbh_prefetch_performance_raw_time;
-    let parsedPayload = null;
-
-    if (cachedPrefetch && cachedTime && !forceRefresh) {
-      if (Date.now() - Number(cachedTime) < 5 * 60 * 1000) {
-        parsedPayload = cachedPrefetch;
-      }
-    }
-
     try {
-      if (parsedPayload) {
-        masterJson = parsedPayload.masterJson;
-        delegationJson = parsedPayload.delegationJson;
-        checklistJson = parsedPayload.checklistJson;
-        historyJson = parsedPayload.historyJson;
-        loginJson = parsedPayload.loginJson;
-        deductionsJson = parsedPayload.deductionsJson;
-        whatsappJson = parsedPayload.whatsappJson;
-      } else {
-        setLoading(true)
-        setError(null)
-        
-        const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
-        
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`
-        const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION&t=${Date.now()}`
-        const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist&t=${Date.now()}`
-        const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE&t=${Date.now()}`
-        const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History&t=${Date.now()}`
-        const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
-        const whatsappUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`
+      setLoading(true)
+      setError(null)
+      
+      const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
+      
+      const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`
+      const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION&t=${Date.now()}`
+      const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist&t=${Date.now()}`
+      const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE&t=${Date.now()}`
+      const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History&t=${Date.now()}`
+      const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
+      const whatsappUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`
+      const leavesUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`
 
-        const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes] = await Promise.all([
-          fetch(masterUrl, { signal }),
-          fetch(delegationUrl, { signal }),
-          fetch(checklistUrl, { signal }),
-          fetch(historyUrl, { signal }).catch(() => null),
-          fetch(loginUrl, { signal }).catch(() => null),
-          fetch(deductionsUrl, { signal }).catch(() => null),
-          fetch(whatsappUrl, { signal }).catch(() => null)
-        ])
+      const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes, leavesRes] = await Promise.all([
+        fetch(masterUrl, { signal }),
+        fetch(delegationUrl, { signal }),
+        fetch(checklistUrl, { signal }),
+        fetch(historyUrl, { signal }).catch(() => null),
+        fetch(loginUrl, { signal }).catch(() => null),
+        fetch(deductionsUrl, { signal }).catch(() => null),
+        fetch(whatsappUrl, { signal }).catch(() => null),
+        fetch(leavesUrl, { signal }).catch(() => null)
+      ])
 
-        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok || !whatsappRes.ok) {
-          throw new Error("Failed to retrieve Google Sheet performance datasets.")
-        }
+      if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok || !whatsappRes.ok) {
+        throw new Error("Failed to retrieve Google Sheet performance datasets.")
+      }
 
-        const parseResponseJson = async (res) => {
-          const text = await res.text()
-          const start = text.indexOf("{")
-          const end = text.lastIndexOf("}")
-          const jsonStr = text.substring(start, end + 1)
-          return JSON.parse(jsonStr)
-        }
+      const parseResponseJson = async (res) => {
+        const text = await res.text()
+        const start = text.indexOf("{")
+        const end = text.lastIndexOf("}")
+        const jsonStr = text.substring(start, end + 1)
+        return JSON.parse(jsonStr)
+      }
 
-        masterJson = await parseResponseJson(masterRes)
-        delegationJson = await parseResponseJson(delegationRes)
-        checklistJson = await parseResponseJson(checklistRes)
-        whatsappJson = await parseResponseJson(whatsappRes)
-        
-        if (historyRes && historyRes.ok) {
-          historyJson = await parseResponseJson(historyRes)
-        }
+      masterJson = await parseResponseJson(masterRes)
+      delegationJson = await parseResponseJson(delegationRes)
+      checklistJson = await parseResponseJson(checklistRes)
+      whatsappJson = await parseResponseJson(whatsappRes)
+      let leavesJson = null
+      
+      if (leavesRes && leavesRes.ok) {
+        leavesJson = await parseResponseJson(leavesRes).catch(() => null)
+      }
+      
+      if (historyRes && historyRes.ok) {
+        historyJson = await parseResponseJson(historyRes)
+      }
 
-        if (loginRes && loginRes.ok) {
-          loginJson = await parseResponseJson(loginRes).catch(() => null)
-        }
+      if (loginRes && loginRes.ok) {
+        loginJson = await parseResponseJson(loginRes).catch(() => null)
+      }
 
-        if (deductionsRes && deductionsRes.ok) {
-          deductionsJson = await parseResponseJson(deductionsRes).catch(() => null)
-        }
-
-        // Cache the raw data
-        const payload = {
-          masterJson,
-          delegationJson,
-          checklistJson,
-          historyJson,
-          loginJson,
-          deductionsJson,
-          whatsappJson
-        }
-        window.sbh_prefetch_performance_raw = payload
-        window.sbh_prefetch_performance_raw_time = Date.now()
+      if (deductionsRes && deductionsRes.ok) {
+        deductionsJson = await parseResponseJson(deductionsRes).catch(() => null)
       }
 
       const loginList = []
@@ -515,6 +510,26 @@ export default function PerformanceDashboard() {
             deducted: parseFloat(getCellValue(row, 3)) || 0,
             balance: parseFloat(getCellValue(row, 4)) || 0
           })
+        })
+      }
+
+      const leavesList = []
+      if (leavesJson && leavesJson.table && leavesJson.table.rows) {
+        leavesJson.table.rows.forEach(row => {
+          if (row.c) {
+            const uName = row.c[1] && row.c[1].v ? String(row.c[1].v).trim().toLowerCase() : "";
+            const startDateObj = parseDateValue(row.c[2]);
+            const endDateObj = parseDateValue(row.c[3]);
+            const targetSheet = row.c[4] && row.c[4].v ? String(row.c[4].v).trim() : "both";
+            if (uName && startDateObj && endDateObj) {
+              leavesList.push({
+                username: uName,
+                startDateObj,
+                endDateObj,
+                targetSheet
+              });
+            }
+          }
         })
       }
 
@@ -586,10 +601,30 @@ export default function PerformanceDashboard() {
 
           // Skip Leave
           const columnQValue = getCellValue(row, 16)
-          if (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") return
+          const columnMValue = getCellValue(row, 12)
+          if (
+            (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") ||
+            (columnMValue && columnMValue.toString().trim().toLowerCase() === "leave")
+          ) return
 
           const taskStartDateVal = getCellValue(row, 6) // Column G
           const taskStartDate = taskStartDateVal ? parseGoogleSheetsDate(String(taskStartDateVal)) : ""
+
+          // Dynamic leave check
+          const taskDateObj = parseDateFromDDMMYYYY(taskStartDate)
+          if (taskDateObj && assignedTo) {
+            const isL = leavesList.some(l => {
+              if (l.username !== assignedTo.trim().toLowerCase()) return false;
+              if (l.targetSheet !== "both" && l.targetSheet !== "DELEGATION") return false;
+              
+              const startD = new Date(l.startDateObj);
+              const endD = new Date(l.endDateObj);
+              startD.setHours(0,0,0,0);
+              endD.setHours(23,59,59,999);
+              return taskDateObj >= startD && taskDateObj <= endD;
+            });
+            if (isL) return; // Skip
+          }
 
           const completionDateVal = getCellValue(row, 11) // Column L
           const completionDate = completionDateVal ? parseGoogleSheetsDate(String(completionDateVal)) : ""
@@ -683,10 +718,30 @@ export default function PerformanceDashboard() {
 
           // Skip Leave
           const columnQValue = getCellValue(row, 16)
-          if (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") return
+          const columnMValue = getCellValue(row, 12)
+          if (
+            (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") ||
+            (columnMValue && columnMValue.toString().trim().toLowerCase() === "leave")
+          ) return
 
           const taskStartDateVal = getCellValue(row, 6) // Column G
           const taskStartDate = taskStartDateVal ? parseGoogleSheetsDate(String(taskStartDateVal)) : ""
+
+          // Dynamic leave check
+          const taskDateObj = parseDateFromDDMMYYYY(taskStartDate)
+          if (taskDateObj && assignedTo) {
+            const isL = leavesList.some(l => {
+              if (l.username !== assignedTo.trim().toLowerCase()) return false;
+              if (l.targetSheet !== "both" && l.targetSheet !== "Checklist") return false;
+              
+              const startD = new Date(l.startDateObj);
+              const endD = new Date(l.endDateObj);
+              startD.setHours(0,0,0,0);
+              endD.setHours(23,59,59,999);
+              return taskDateObj >= startD && taskDateObj <= endD;
+            });
+            if (isL) return; // Skip
+          }
 
           const completionDateVal = getCellValue(row, 10) // Column K
           const completionDate = completionDateVal ? parseGoogleSheetsDate(String(completionDateVal)) : ""
@@ -763,7 +818,8 @@ export default function PerformanceDashboard() {
         historyData: historyList,
         loginHistory: loginList,
         pointDeductions: deductionsList,
-        inactiveUsers: Array.from(inactiveUsers)
+        inactiveUsers: Array.from(inactiveUsers),
+        leavesList
       })
 
     } catch (err) {
@@ -835,6 +891,7 @@ export default function PerformanceDashboard() {
             pointDeductions={data.pointDeductions}
             tabLoading={tabLoading}
             inactiveUsers={data.inactiveUsers || []}
+            leavesList={data.leavesList}
             onRefresh={() => fetchPerformanceData(null, true)}
           />
         )}

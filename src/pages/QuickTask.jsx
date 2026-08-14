@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, useCallback } from "react";
 import { format } from 'date-fns';
-import { Search, ChevronDown, Filter } from "lucide-react";
+import { Search, ChevronDown, Filter, Calendar } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import DelegationPage from "./delegation-data";
 
@@ -24,6 +24,12 @@ export default function QuickTask() {
         name: false,
         frequency: false
     });
+    const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
+    const [leaveStartDate, setLeaveStartDate] = useState("")
+    const [leaveEndDate, setLeaveEndDate] = useState("")
+    const [leaveEmployee, setLeaveEmployee] = useState("")
+    const [leaveTargetSheet, setLeaveTargetSheet] = useState("both")
+    const [isSubmittingLeave, setIsSubmittingLeave] = useState(false)
 
     const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
     useEffect(() => {
@@ -129,6 +135,176 @@ export default function QuickTask() {
             setUserLoading(false);
         }
     }, []);
+
+    const handleLeaveSubmit = () => {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+        setLeaveStartDate(dateStr);
+        setLeaveEndDate(dateStr);
+        setLeaveEmployee(currentUser || "");
+        setLeaveTargetSheet("both");
+        setIsLeaveModalOpen(true);
+    };
+
+    const confirmLeaveSubmit = async () => {
+        if (!leaveStartDate || !leaveEndDate) {
+            alert("Please select both start and end dates for the leave.");
+            return;
+        }
+
+        const startObj = new Date(leaveStartDate);
+        startObj.setHours(0, 0, 0, 0);
+        const endObj = new Date(leaveEndDate);
+        endObj.setHours(23, 59, 59, 999);
+
+        if (startObj > endObj) {
+            alert("Start date cannot be after end date.");
+            return;
+        }
+
+        const targetEmployee = leaveEmployee || currentUser || "";
+        if (!targetEmployee) {
+            alert("Please specify an employee.");
+            return;
+        }
+
+        setIsLeaveModalOpen(false);
+        setIsSubmittingLeave(true);
+        try {
+            // 1. Log the leave range to the centralized "Leaves" sheet for login compliance
+            const logParams = new URLSearchParams();
+            logParams.append("action", "applyLeave");
+            logParams.append("username", targetEmployee);
+            logParams.append("startDate", leaveStartDate);
+            logParams.append("endDate", leaveEndDate);
+            logParams.append("targetSheet", leaveTargetSheet);
+
+            await fetch("https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec", {
+                method: "POST",
+                body: logParams,
+            });
+
+            // 2. Update individual task rows in Checklist / DELEGATION sheets
+            const startObj = new Date(leaveStartDate);
+            startObj.setHours(0, 0, 0, 0);
+            const endObj = new Date(leaveEndDate);
+            endObj.setHours(23, 59, 59, 999);
+
+            const todayObj = new Date();
+            const todayFormatted = `${String(todayObj.getDate()).padStart(2, '0')}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${todayObj.getFullYear()}`;
+
+            const sheetsToUpdate = [];
+            if (leaveTargetSheet === "both" || leaveTargetSheet === "Checklist") {
+                sheetsToUpdate.push("Checklist");
+            }
+            if (leaveTargetSheet === "both" || leaveTargetSheet === "DELEGATION") {
+                sheetsToUpdate.push("DELEGATION");
+            }
+
+            let totalTasksUpdatedCount = 0;
+
+            for (const currentSheetName of sheetsToUpdate) {
+                const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+                const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(currentSheetName)}&t=${Date.now()}`;
+                const response = await fetch(sheetUrl);
+                if (!response.ok) continue;
+                const text = await response.text();
+                let data;
+                const jsonStart = text.indexOf("{");
+                const jsonEnd = text.lastIndexOf("}");
+                if (jsonStart !== -1 && jsonEnd !== -1) {
+                    data = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+                } else {
+                    continue;
+                }
+
+                let rows = [];
+                if (data.table && data.table.rows) {
+                    rows = data.table.rows;
+                }
+
+                const tasksToUpdate = [];
+
+                rows.forEach((row, rowIndex) => {
+                    if (rowIndex === 0) return;
+                    let rowValues = [];
+                    if (row.c) {
+                        rowValues = row.c.map(cell => (cell && cell.v !== undefined ? cell.v : ""));
+                    }
+
+                    const assignedTo = rowValues[4] || "Unassigned";
+                    const isUserMatch = assignedTo.toLowerCase() === targetEmployee.toLowerCase();
+
+                    if (isUserMatch) {
+                        const colG = rowValues[6];
+                        const dateValStr = colG ? String(colG).trim() : "";
+                        let formattedDate = dateValStr;
+                        if (dateValStr.startsWith("Date(")) {
+                            const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(dateValStr);
+                            if (match) {
+                                formattedDate = `${match[3].padStart(2, '0')}/${(parseInt(match[2], 10) + 1).toString().padStart(2, '0')}/${match[1]}`;
+                            }
+                        }
+                        const parts = formattedDate.split('/');
+                        const taskDate = parts.length === 3 ? new Date(parts[2], parts[1] - 1, parts[0]) : null;
+
+                        if (taskDate && taskDate >= startObj && taskDate <= endObj) {
+                            const taskId = rowValues[1];
+                            if (taskId) {
+                                const rowDataPayload = Array(17).fill("");
+                                rowDataPayload[10] = todayFormatted; // Column K (Actual Completion Date)
+                                rowDataPayload[12] = "Leave";          // Column M (Status / Delay)
+                                rowDataPayload[16] = "Leave";          // Column Q (Leave Status)
+
+                                tasksToUpdate.push({
+                                    rowIndex: rowIndex + 1,
+                                    taskId: taskId,
+                                    rowData: rowDataPayload
+                                });
+                            }
+                        }
+                    }
+                });
+
+                if (tasksToUpdate.length > 0) {
+                    const updatePromises = tasksToUpdate.map(async (task) => {
+                        const formData = new FormData();
+                        formData.append("sheetName", currentSheetName);
+                        formData.append("action", "update");
+                        formData.append("rowIndex", task.rowIndex);
+                        formData.append("rowData", JSON.stringify(task.rowData));
+
+                        const res = await fetch("https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec", {
+                            method: "POST",
+                            body: formData,
+                        });
+                        return res.json();
+                    });
+
+                    const results = await Promise.all(updatePromises);
+                    const failures = results.filter(r => !r.success);
+
+                    if (failures.length === 0) {
+                        totalTasksUpdatedCount += tasksToUpdate.length;
+                    }
+                }
+            }
+
+            alert(`Successfully marked leave and updated ${totalTasksUpdatedCount} tasks!`);
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+
+        } catch (error) {
+            console.error("Error submitting Leave:", error);
+            alert("Error occurred during Leave submission. Please try again.");
+        } finally {
+            setIsSubmittingLeave(false);
+        }
+    };
 
     const fetchChecklistData = useCallback(async () => {
         if (!currentUser || userLoading) return;
@@ -509,6 +685,14 @@ export default function QuickTask() {
                 </button>
               </div>
 
+              <button
+                onClick={handleLeaveSubmit}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-md transition-colors"
+              >
+                <Calendar className="h-4 w-4" />
+                Apply Leave
+              </button>
+
               <div className="relative flex-1 min-w-[200px]">
                 <Search
                   className="absolute left-3 top-7 transform -translate-y-1/2 text-gray-400"
@@ -765,6 +949,71 @@ export default function QuickTask() {
               />
             )}
           </>
+        )}
+
+        {isLeaveModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+              <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave & Clear Penalty</h2>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Applying Leave For</label>
+                <input
+                  type="text"
+                  value={currentUser ? currentUser : ''}
+                  disabled={true}
+                  className="w-full border border-gray-300 rounded-md p-2 bg-gray-100 text-gray-500 font-medium cursor-not-allowed"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Apply Leave To</label>
+                <select
+                  value={leaveTargetSheet}
+                  onChange={(e) => setLeaveTargetSheet(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-slate-800"
+                >
+                  <option value="both">Both (Checklist & Delegation)</option>
+                  <option value="Checklist">Checklist Only</option>
+                  <option value="DELEGATION">Delegation Only</option>
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={leaveStartDate}
+                  onChange={(e) => setLeaveStartDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={leaveEndDate}
+                  onChange={(e) => setLeaveEndDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => setIsLeaveModalOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors font-bold text-xs"
+                  disabled={isSubmittingLeave}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmLeaveSubmit}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors font-bold text-xs"
+                  disabled={isSubmittingLeave}
+                >
+                  {isSubmittingLeave ? "Submitting..." : "Confirm Leave"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         </div>
       </AdminLayout>

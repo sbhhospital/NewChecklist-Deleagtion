@@ -182,6 +182,29 @@ const isTaskInMarginPeriod = (task) => {
   return days >= 1 && days <= 3;
 };
 
+const getChecklistTaskStatus = (t) => {
+  if (!t) return "pending";
+  if (t.status === "completed") return "completed";
+  
+  if (!t.dueDate) return "pending";
+  const due = parseDateFromDDMMYYYY(t.dueDate);
+  if (!due) return "pending";
+  due.setHours(0,0,0,0);
+  const tod = new Date(); tod.setHours(0,0,0,0);
+  const daysAfterDue = Math.floor((tod.getTime() - due.getTime()) / 86400000);
+  
+  if (daysAfterDue <= 0) {
+    return "pending"; // still within period -> Pending (P)
+  }
+  
+  const config = getChecklistFrequencyConfig(t.frequency);
+  if (config.marginDays > 0 && daysAfterDue <= config.marginDays) {
+    return "pending"; // in grace period -> Pending (P)
+  }
+  
+  return "overdue"; // past grace period -> Overdue (O)
+};
+
 // Score a single period group — returns { penalty, status, delayDays }
 const scoreChecklistGroup = (group, today) => {
   const config = getChecklistFrequencyConfig(group.frequency);
@@ -193,7 +216,7 @@ const scoreChecklistGroup = (group, today) => {
   const allOverdue   = group.tasks.every(t => t.status === "overdue");
 
   const effectiveDueDate = new Date(dueDate);
-  const cutoffDate = new Date(2026, 6, 29);
+  const cutoffDate = new Date(2026, 7, 1); // August 1, 2026
   cutoffDate.setHours(0, 0, 0, 0);
 
   // If the original due date is before the cutoff, completely excuse it (no penalties, no delays)
@@ -363,7 +386,8 @@ export default function EdpmsDashboardView({
   loginHistory = [],
   pointDeductions = [],
   tabLoading = false,
-  inactiveUsers = []
+  inactiveUsers = [],
+  leavesList = []
 }) {
   const [selectedStaffName, setSelectedStaffName] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
@@ -637,10 +661,10 @@ export default function EdpmsDashboardView({
       const nameKey = name.toLowerCase().trim()
       const tasks = tasksByUser[nameKey] || []
       
-      const completed = tasks.filter(t => t.status === "completed")
-      const pending = tasks.filter(t => t.status === "pending")
-      const overdue = tasks.filter(t => t.status === "overdue")
-      const active = tasks.filter(t => t.status === "pending" || t.status === "overdue")
+      const completed = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "completed" : t.status === "completed")
+      const pending = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "pending" : t.status === "pending")
+      const overdue = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "overdue" : t.status === "overdue")
+      const active = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) !== "completed" : (t.status === "pending" || t.status === "overdue"))
 
       // Frequency breakdowns
       const freqBreakdown = {
@@ -660,18 +684,29 @@ export default function EdpmsDashboardView({
         else if (freq === "monthly") cat = "monthly"
 
         freqBreakdown[cat].total++
-        if (t.status === "completed") {
-          freqBreakdown[cat].completed++
-          if ((Number(t.delayDays) || 0) > 0) {
-            freqBreakdown[cat].delay++
+        if (activeSource === "checklist") {
+          const computedStatus = getChecklistTaskStatus(t);
+          if (computedStatus === "completed") {
+            freqBreakdown[cat].completed++
+          } else if (computedStatus === "pending") {
+            freqBreakdown[cat].pending++
+          } else if (computedStatus === "overdue") {
+            freqBreakdown[cat].overdue++
           }
-        } else if (t.status === "pending") {
-          freqBreakdown[cat].pending++
-          if (isTaskInMarginPeriod(t)) {
-            freqBreakdown[cat].delay++
+        } else {
+          if (t.status === "completed") {
+            freqBreakdown[cat].completed++
+            if ((Number(t.delayDays) || 0) > 0) {
+              freqBreakdown[cat].delay++
+            }
+          } else if (t.status === "pending") {
+            freqBreakdown[cat].pending++
+            if (isTaskInMarginPeriod(t)) {
+              freqBreakdown[cat].delay++
+            }
+          } else if (t.status === "overdue") {
+            freqBreakdown[cat].overdue++
           }
-        } else if (t.status === "overdue") {
-          freqBreakdown[cat].overdue++
         }
       })
 
@@ -815,8 +850,8 @@ export default function EdpmsDashboardView({
         }
         if (isNaN(deductionDate.getTime())) return true; // keep if invalid
         
-        // Global Cutoff: July 29, 2026
-        const globalCutoff = new Date(2026, 6, 29);
+        // Global Cutoff: August 1, 2026
+        const globalCutoff = new Date(2026, 7, 1);
         globalCutoff.setHours(0, 0, 0, 0);
         if (deductionDate < globalCutoff) return false;
         
@@ -855,17 +890,88 @@ export default function EdpmsDashboardView({
         }
         return true; // Overall
       })
+      // Collect leave dates for this specific user (Only if applied in advance or same day)
+      const userLeaveDates = new Set();
+      filteredTasks.forEach(t => {
+        const tUser = t.Name || t.assignedTo || t.name || "";
+        const colQVal = t.col16 || t.col15 || ""; // Column Q
+        const isLeaveTask = (colQVal && String(colQVal).trim().toLowerCase() === "leave") || 
+                            (t.remarks && String(t.remarks).toLowerCase().includes("leave")) ||
+                            (t.status && String(t.status).toLowerCase().includes("leave"));
+        
+        if (isLeaveTask && tUser.toLowerCase() === nameKey.toLowerCase()) {
+          const tDate = t.col6 || t.date || "";
+          const actualDateVal = t.col10 || "";
+          if (tDate) {
+            let formatted = tDate;
+            if (tDate instanceof Date) {
+              const dd = String(tDate.getDate()).padStart(2, '0');
+              const mm = String(tDate.getMonth() + 1).padStart(2, '0');
+              const yyyy = tDate.getFullYear();
+              formatted = `${dd}/${mm}/${yyyy}`;
+            } else if (typeof tDate === 'string' && tDate.includes('-')) {
+              const parts = tDate.split('-');
+              if (parts.length === 3) {
+                formatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
+              }
+            }
+
+            let inAdvance = true;
+            if (actualDateVal) {
+              let actParsed = null;
+              if (actualDateVal instanceof Date) {
+                actParsed = actualDateVal;
+              } else {
+                const partsAct = String(actualDateVal).split('/');
+                if (partsAct.length === 3) {
+                  actParsed = new Date(partsAct[2], partsAct[1] - 1, partsAct[0]);
+                }
+              }
+              
+              let taskParsed = null;
+              const partsTask = formatted.split('/');
+              if (partsTask.length === 3) {
+                taskParsed = new Date(partsTask[2], partsTask[1] - 1, partsTask[0]);
+              }
+              
+              if (actParsed && taskParsed) {
+                actParsed.setHours(0, 0, 0, 0);
+                taskParsed.setHours(0, 0, 0, 0);
+                if (actParsed > taskParsed) {
+                  inAdvance = false;
+                }
+              }
+            }
+
+            if (inAdvance) {
+              userLeaveDates.add(formatted);
+            }
+          }
+        }
+      });
+
       // Filter login missed deductions specific to the active source
       const loginMissedDeductions = userDeductions.filter(d => {
         if (!d.reason || !String(d.reason).includes("Login Missed")) return false;
+        
+        // Exclude deduction if the user was on leave for this date
+        const dDate = d.date ? String(d.date).trim() : "";
+        if (userLeaveDates.has(dDate)) {
+          return false;
+        }
+
         if (activeSource === "checklist") {
           return String(d.reason).includes("(Checklist)");
         } else {
           return String(d.reason).includes("(Delegation)");
         }
       });
-      const loginDisciplineDeduction = loginMissedDeductions.reduce((sum, d) => sum + (d.deducted || 0), 0);
-      const totalMissedLoginDays = loginMissedDeductions.length;
+       const loginDisciplineDeduction = loginMissedDeductions.reduce((sum, d) => sum + (d.deducted || 0), 0);
+      const uniqueLoginMissedDates = new Set();
+      loginMissedDeductions.forEach(d => {
+        if (d.date) uniqueLoginMissedDates.add(d.date.trim());
+      });
+      const totalMissedLoginDays = uniqueLoginMissedDates.size;
 
       // Score breakdown depending on source
       let finalScore = 0
@@ -999,18 +1105,29 @@ export default function EdpmsDashboardView({
       else if (freq === "monthly") cat = "monthly"
 
       totalFreqBreakdown[cat].total++
-      if (t.status === "completed") {
-        totalFreqBreakdown[cat].completed++
-        if ((Number(t.delayDays) || 0) > 0) {
-          totalFreqBreakdown[cat].delay++
+      if (activeSource === "checklist") {
+        const computedStatus = getChecklistTaskStatus(t);
+        if (computedStatus === "completed") {
+          totalFreqBreakdown[cat].completed++
+        } else if (computedStatus === "pending") {
+          totalFreqBreakdown[cat].pending++
+        } else if (computedStatus === "overdue") {
+          totalFreqBreakdown[cat].overdue++
         }
-      } else if (t.status === "pending") {
-        totalFreqBreakdown[cat].pending++
-        if (isTaskInMarginPeriod(t)) {
-          totalFreqBreakdown[cat].delay++
+      } else {
+        if (t.status === "completed") {
+          totalFreqBreakdown[cat].completed++
+          if ((Number(t.delayDays) || 0) > 0) {
+            totalFreqBreakdown[cat].delay++
+          }
+        } else if (t.status === "pending") {
+          totalFreqBreakdown[cat].pending++
+          if (isTaskInMarginPeriod(t)) {
+            totalFreqBreakdown[cat].delay++
+          }
+        } else if (t.status === "overdue") {
+          totalFreqBreakdown[cat].overdue++
         }
-      } else if (t.status === "overdue") {
-        totalFreqBreakdown[cat].overdue++
       }
     })
 
@@ -1081,6 +1198,79 @@ export default function EdpmsDashboardView({
     }
     return processedStats.missedChecklistDays
   }, [selectedEmployee, processedStats])
+
+  const displayLeaveDays = useMemo(() => {
+    let rangeStart = null;
+    let rangeEnd = null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (timeRange === "overall") {
+      rangeStart = new Date(2025, 0, 1);
+      rangeEnd = new Date(2027, 11, 31);
+    } else if (timeRange === "daily") {
+      rangeStart = today;
+      rangeEnd = today;
+    } else if (timeRange === "weekly") {
+      const { start, end } = getLastWeekMonToSatRange();
+      rangeStart = start;
+      rangeEnd = end;
+    } else if (timeRange === "monthly") {
+      rangeStart = new Date(Number(selectedYear), Number(selectedMonth), 1);
+      rangeEnd = new Date(Number(selectedYear), Number(selectedMonth) + 1, 0);
+    } else if (timeRange === "quarterly") {
+      const currentQuarter = Math.floor(today.getMonth() / 3);
+      rangeStart = new Date(today.getFullYear(), currentQuarter * 3, 1);
+      rangeEnd = new Date(today.getFullYear(), (currentQuarter + 1) * 3, 0);
+    } else if (timeRange === "yearly") {
+      rangeStart = new Date(Number(selectedYear), 0, 1);
+      rangeEnd = new Date(Number(selectedYear), 11, 31);
+    } else if (timeRange === "custom") {
+      if (customStartDate && customEndDate) {
+        const startParts = customStartDate.split("-");
+        const endParts = customEndDate.split("-");
+        if (startParts.length === 3 && endParts.length === 3) {
+          rangeStart = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]));
+          rangeEnd = new Date(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]));
+        }
+      }
+      if (!rangeStart) {
+        rangeStart = new Date(2025, 0, 1);
+        rangeEnd = new Date(2027, 11, 31);
+      }
+    }
+    if (rangeStart) rangeStart.setHours(0, 0, 0, 0);
+    if (rangeEnd) rangeEnd.setHours(23, 59, 59, 999);
+
+    if (!rangeStart || !rangeEnd) return 0;
+
+    const activeLeaves = leavesList.filter(l => {
+      if (selectedEmployee && selectedEmployee !== "all") {
+        return l.username.toLowerCase() === selectedEmployee.toLowerCase();
+      }
+      return true;
+    });
+
+    const uniqueLeaveDates = new Set();
+    activeLeaves.forEach(l => {
+      const leaveStart = new Date(l.startDateObj);
+      const leaveEnd = new Date(l.endDateObj);
+      leaveStart.setHours(0, 0, 0, 0);
+      leaveEnd.setHours(23, 59, 59, 999);
+
+      const overlapStart = new Date(Math.max(leaveStart, rangeStart));
+      const overlapEnd = new Date(Math.min(leaveEnd, rangeEnd));
+      if (overlapStart <= overlapEnd) {
+        const current = new Date(overlapStart);
+        while (current <= overlapEnd) {
+          uniqueLeaveDates.add(`${current.getFullYear()}-${current.getMonth()}-${current.getDate()}`);
+          current.setDate(current.getDate() + 1);
+        }
+      }
+    });
+
+    return uniqueLeaveDates.size;
+  }, [selectedEmployee, timeRange, selectedMonth, selectedYear, customStartDate, customEndDate, leavesList]);
 
   const displayTotalBonuses = useMemo(() => {
     if (selectedEmployee && selectedEmployee !== "all") {
@@ -1203,22 +1393,22 @@ export default function EdpmsDashboardView({
               if (checklistFrequencyFilter === "all") {
                 summaryRows.push([
                   "Employee Name", "Score (100)", 
-                  "Daily (Done/Active/Grace/Esc)", 
-                  "Weekly (Done/Active/Grace/Esc)", 
-                  "Fortnightly (Done/Active/Grace/Esc)", 
-                  "Monthly (Done/Active/Grace/Esc)", 
-                  "Others (Done/Active/Grace/Esc)", 
+                  "Daily (A/D/P/O)", 
+                  "Weekly (A/D/P/O)", 
+                  "Fortnightly (A/D/P/O)", 
+                  "Monthly (A/D/P/O)", 
+                  "Others (A/D/P/O)", 
                   "Missed Logins (Days)", "Missed Logins (Deduction)", "Missed Checklists (Deduction)"
                 ])
                 usersToExport.forEach(staff => {
                   summaryRows.push([
                     staff.name,
                     staff.aiScore,
-                    `${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
-                    `${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
-                    `${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
-                    `${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
-                    `${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
+                    `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
+                    `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
+                    `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
+                    `${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
+                    `${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
                     staff.missedLoginDays,
                     `-${staff.loginDeductions} Pts`,
                     `-${staff.totalPenalties} Pts`
@@ -1393,7 +1583,7 @@ export default function EdpmsDashboardView({
           doc.setFont("helvetica", "bold")
           doc.setFontSize(9)
           doc.setTextColor(100, 100, 100)
-          doc.text("Legend: D = Done | A = Assigned | G = Grace (Pending) | E = Escalated (Overdue)", 14, 44)
+          doc.text("Legend: A = Assigned | D = Done | P = Pending | O = Overdue", 14, 44)
           doc.setFont("helvetica", "normal")
           doc.setTextColor(0, 0, 0)
 
@@ -1403,17 +1593,17 @@ export default function EdpmsDashboardView({
             if (checklistFrequencyFilter === "all") {
               columns = [
                 "Employee Name", "Score (100)", 
-                "Daily (D/A/G/E)", "Weekly (D/A/G/E)", "Fortnightly (D/A/G/E)", "Monthly (D/A/G/E)", "Others (D/A/G/E)",
+                "Daily (A/D/P/O)", "Weekly (A/D/P/O)", "Fortnightly (A/D/P/O)", "Monthly (A/D/P/O)", "Others (A/D/P/O)",
                 "Missed Logins (Days)", "Login Penalty", "Checklist Penalty"
               ]
               rows = filteredStaff.map(staff => [
                 staff.name,
                 staff.aiScore,
-                `${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
-                `${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
-                `${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
-                `${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
-                `${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
+                `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
+                `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
+                `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
+                `${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
+                `${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
                 staff.missedLoginDays,
                 `-${staff.loginDeductions} Pts`,
                 `-${staff.totalPenalties} Pts`
@@ -1966,12 +2156,12 @@ export default function EdpmsDashboardView({
         {activeSource === "checklist" && (
           <div className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
             <div className="flex justify-between items-center text-slate-400">
-              <span className="text-[9px] font-bold uppercase tracking-wider">Missed Checklist Days</span>
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
+              <span className="text-[9px] font-bold uppercase tracking-wider">Leave Days</span>
+              <Calendar className="h-3.5 w-3.5 text-orange-500" />
             </div>
             <div className="mt-2">
-              <span className="text-lg font-extrabold text-rose-600">{displayMissedChecklistDays} Days</span>
-              <span className="text-[9px] text-rose-500 block font-medium mt-0.5">Total Missed Days</span>
+              <span className="text-lg font-extrabold text-orange-600">{displayLeaveDays} Days</span>
+              <span className="text-[9px] text-orange-500 block font-medium mt-0.5">Total Leave Days</span>
             </div>
           </div>
         )}
@@ -2000,11 +2190,11 @@ export default function EdpmsDashboardView({
                     <div className="text-xs font-black mt-0.5">{data.completed}</div>
                   </div>
                   <div className="text-amber-600 bg-amber-50/50 p-1.5 rounded-lg">
-                    <div>Grace</div>
+                    <div>Pending</div>
                     <div className="text-xs font-black mt-0.5">{data.pending}</div>
                   </div>
                   <div className="text-rose-600 bg-rose-50/50 p-1.5 rounded-lg">
-                    <div>Esc</div>
+                    <div>Overdue</div>
                     <div className="text-xs font-black mt-0.5">{data.overdue}</div>
                   </div>
                 </div>
@@ -2489,6 +2679,14 @@ export default function EdpmsDashboardView({
                           if (due) { due.setHours(0,0,0,0); const tod = new Date(); tod.setHours(0,0,0,0); marginDelay = Math.max(0, Math.floor((tod-due)/86400000)); }
                         }
                         const penaltyNow = inMargin ? freqCfg.delayPenalties[Math.min(marginDelay-1,2)] : 0;
+                        const computedStatus = activeSource === "checklist" ? getChecklistTaskStatus(t) : t.status;
+                        const displayStatus = activeSource === "checklist"
+                          ? (t.status === "completed" ? "completed" : inMargin ? `⚠️ Pending (${marginDelay}d)` : computedStatus)
+                          : (inMargin ? `⚠️ Grace (${marginDelay}d)` : t.status);
+                        const statusStyleClass = displayStatus.includes("completed")
+                          ? "bg-emerald-50 text-emerald-700"
+                          : (displayStatus.includes("overdue") ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700");
+                        
                         return (
                         <tr key={idx} className={`hover:bg-slate-50 ${inMargin ? "animate-pulse border-l-2 border-amber-400 bg-amber-50/40" : ""}`}>
                           <td className="px-4 py-2">
@@ -2496,7 +2694,7 @@ export default function EdpmsDashboardView({
                             <p className="text-[10px] text-slate-500 truncate max-w-[200px]">{t.title}</p>
                             {inMargin && (
                               <p className="text-[9px] font-bold text-amber-600 mt-0.5">
-                                ⚠️ Grace Day {marginDelay}/3 · -{penaltyNow} pts
+                                ⚠️ Pending Day {marginDelay}/3 · -{penaltyNow} pts
                               </p>
                             )}
                           </td>
@@ -2515,17 +2713,15 @@ export default function EdpmsDashboardView({
                             <p className="text-[9px] text-slate-400 mt-0.5">{t.frequency || "Daily"}</p>
                           </td>
                           <td className="px-4 py-2">
-                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${
-                              t.status === "completed" ? "bg-emerald-50 text-emerald-700" :
-                              t.status === "overdue" ? "bg-rose-50 text-rose-700" :
-                              inMargin ? "bg-amber-50 text-amber-700 animate-pulse" : "bg-amber-50 text-amber-700"
-                            }`}>{inMargin ? `⚠️ Grace (${marginDelay}d)` : t.status}</span>
+                            <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${statusStyleClass} ${inMargin ? "animate-pulse" : ""}`}>
+                              {displayStatus}
+                            </span>
                           </td>
                           <td className="px-4 py-2 text-center font-extrabold text-slate-800">
                             {activeSource === "checklist"
                               ? (t.status === "completed"
                                   ? `+${freqCfg.points - (Number(t.delayDays)||0 > 0 ? freqCfg.delayPenalties[Math.min(Number(t.delayDays)-1,2)] : 0)}`
-                                  : inMargin ? `-${penaltyNow}` : t.status === "overdue" ? `-${freqCfg.points}` : "—")
+                                  : inMargin ? `-${penaltyNow}` : computedStatus === "overdue" ? `-${freqCfg.points}` : "—")
                               : (t.score ?? 100)}
                           </td>
                         </tr>

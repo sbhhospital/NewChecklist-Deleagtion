@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo, memo } from "react"
-import { CheckCircle2, Upload, X, Search, History, ArrowLeft, Filter, Edit } from "lucide-react"
+import { CheckCircle2, Upload, X, Search, History, ArrowLeft, Filter, Edit, Calendar } from "lucide-react"
 import AdminLayout from "../../components/layout/AdminLayout"
 
 // Configuration object - Move all configurations here
@@ -28,6 +28,27 @@ const parseDateFromDDMMYYYY = (dateStr) => {
   const parts = datePart.split("/")
   if (parts.length !== 3) return null
   return new Date(parts[2], parts[1] - 1, parts[0])
+}
+
+const parseDateValue = (cell) => {
+  if (!cell) return null;
+  const val = cell.v;
+  if (!val) return null;
+  
+  const valStr = String(val);
+  if (valStr.startsWith("Date(")) {
+    const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(valStr);
+    if (match) {
+      return new Date(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10));
+    }
+  }
+  
+  const fmt = cell.f || valStr;
+  const parts = fmt.split("/");
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+  }
+  return null;
 }
 
 const isEmpty = (value) => {
@@ -59,8 +80,12 @@ const getTaskStatus = (
   adminDoneValue,
   taskStartDate,
   assignedTo,
-  frequency
+  frequency,
+  leaveValue
 ) => {
+  if (leaveValue && leaveValue.toString().trim() === "Leave") {
+    return "Leave";
+  }
   // Column K (col10) = Actual value
   if (
     !isEmpty(adminDoneValue) &&
@@ -126,6 +151,8 @@ const getStatusColor = (status) => {
       return "bg-blue-100 text-blue-800";
     case "Disabled":
       return "bg-red-600 text-white"; // Changed to blood red background with white text
+    case "Leave":
+      return "bg-orange-500 text-white font-bold";
     case "Pending":
       return "bg-orange-100 text-black";
     default:
@@ -139,7 +166,7 @@ const getSubmissionStatus = (actualDate, delayColumn, leaveStatus) => {
   const delayNotNull = !isEmpty(delayColumn)
 
   if (leaveStatus && leaveStatus.toString().trim() === 'Leave') {
-    return { status: 'Leave', color: 'red' }
+    return { status: 'Leave', color: 'orange' }
   } else if (actualNotNull && delayNotNull) {
     return { status: 'Late Submitted', color: 'red' }
   } else if (actualNotNull && !delayNotNull) {
@@ -159,8 +186,8 @@ const MemoizedTaskRow = memo(({
   onRemarksChange,
   onImageUpload
 }) => {
-  const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"], account["col7"]);
-  const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done" || taskStatus === "Disabled";
+  const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"], account["col7"], account["col16"]);
+  const isDisabled = taskStatus === "Admin Done" || taskStatus === "Done" || taskStatus === "Disabled" || taskStatus === "Leave";
   const isNotToday = taskStatus === "Disabled";
 
   return (
@@ -370,6 +397,8 @@ function AccountDataPage() {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
   const [leaveStartDate, setLeaveStartDate] = useState("")
   const [leaveEndDate, setLeaveEndDate] = useState("")
+  const [leaveEmployee, setLeaveEmployee] = useState("")
+  const [leaveTargetSheet, setLeaveTargetSheet] = useState("both")
 
   // Admin history selection states
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([])
@@ -711,7 +740,7 @@ function AccountDataPage() {
         if (selectedStatus === "Admin Done") {
           return !isEmpty(account["col15"]) && account["col15"].toString().trim() === "Admin Done";
         } else {
-          const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"], account["col7"]);
+          const taskStatus = getTaskStatus(account["col10"], account["col15"], account["col6"], account["col4"], account["col7"], account["col16"]);
           return taskStatus === selectedStatus;
         }
       });
@@ -776,8 +805,8 @@ function AccountDataPage() {
 
       // For today's/yesterday's tasks: Pending first, then sort by oldest
       if (isATodayOrYesterdayTask && isBTodayOrYesterdayTask) {
-        const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"]);
-        const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"]);
+        const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"], a["col7"], a["col16"]);
+        const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"], b["col7"], b["col16"]);
 
         if (statusA === "Pending" && statusB !== "Pending") return -1;
         if (statusA !== "Pending" && statusB === "Pending") return 1;
@@ -796,8 +825,8 @@ function AccountDataPage() {
       }
 
       // For non-today tasks: sort by status and date
-      const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"]);
-      const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"]);
+      const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"], a["col7"], a["col16"]);
+      const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"], b["col7"], b["col16"]);
 
       if (statusA === "Pending" && statusB !== "Pending") return -1;
       if (statusA !== "Pending" && statusB === "Pending") return 1;
@@ -843,7 +872,7 @@ function AccountDataPage() {
 
         let matchesStatus = true;
         if (selectedStatus) {
-          const submissionStatus = getSubmissionStatus(item["col10"], item["col11"]);
+          const submissionStatus = getSubmissionStatus(item["col10"], item["col11"], item["col16"]);
           if (selectedStatus === "Done") {
             matchesStatus = submissionStatus.status === "On time" || submissionStatus.status === "Late Submitted";
           } else if (selectedStatus === "Pending") {
@@ -1005,6 +1034,37 @@ function AccountDataPage() {
         console.error("Failed to fetch master data for active users", e);
       }
 
+      // Fetch Leaves list from Leaves sheet
+      const leavesList = [];
+      try {
+        const leavesUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
+        const leavesRes = await fetch(leavesUrl);
+        if (leavesRes.ok) {
+          const lText = await leavesRes.text();
+          const lJsonStart = lText.indexOf("{");
+          const lJsonEnd = lText.lastIndexOf("}");
+          if (lJsonStart !== -1 && lJsonEnd !== -1) {
+            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
+            if (lData.table && lData.table.rows) {
+              lData.table.rows.forEach((r) => {
+                if (r.c) {
+                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+                  const startDateObj = parseDateValue(r.c[2]);
+                  const endDateObj = parseDateValue(r.c[3]);
+                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+                  
+                  if (uName && startDateObj && endDateObj) {
+                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch leaves data", e);
+      }
+
       const membersSet = new Set()
       let rows = []
       if (data.table && data.table.rows) {
@@ -1101,8 +1161,25 @@ function AccountDataPage() {
         const hasColumnK = !isEmpty(columnKValue)
         const isAdminDone = !isEmpty(columnPValue) && columnPValue.toString().trim() === "Admin Done"
 
-        // Check for Leave Status
-        const isLeave = columnQValue && columnQValue.toString().trim() === 'Leave';
+        // Check for Leave Status dynamically from Leaves list
+        let isLeave = columnQValue && columnQValue.toString().trim() === 'Leave';
+        const taskDateObj = parseDateFromDDMMYYYY(rowData["col6"]);
+        if (taskDateObj) {
+          const isL = leavesList.some(l => {
+            if (l.username !== assignedTo.trim().toLowerCase()) return false;
+            if (l.targetSheet !== "both" && l.targetSheet !== "Checklist") return false;
+            
+            const startD = new Date(l.startDateObj);
+            const endD = new Date(l.endDateObj);
+            startD.setHours(0,0,0,0);
+            endD.setHours(23,59,59,999);
+            return taskDateObj >= startD && taskDateObj <= endD;
+          });
+          if (isL) {
+            isLeave = true;
+            rowData["col16"] = "Leave";
+          }
+        }
 
         // HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks) OR are marked as Leave using Column Q
         // Note: Leave tasks usually have Column K filled with the date they were marked as Leave, but checking Q is safer.
@@ -1121,8 +1198,8 @@ function AccountDataPage() {
           const isYesterday = formattedRowDate.startsWith(yesterdayStr)
           const isPastDate = rowDate && rowDate <= today
 
-          // Only add to tasks if it's NOT done and NOT admin done
-          const isNotDone = !hasColumnK && !isAdminDone
+          // Only add to tasks if it's NOT done, NOT admin done, and NOT leave
+          const isNotDone = !hasColumnK && !isAdminDone && !isLeave
 
           const assignedToUpper = assignedTo.trim().toUpperCase();
           const isUserWithGracePeriod = usersWithGracePeriod.includes(assignedToUpper);
@@ -1201,8 +1278,8 @@ function AccountDataPage() {
         // Only select items that are not disabled (today's tasks only)
         const enabledIds = filteredAccountData
           .filter((item) => {
-            const taskStatus = getTaskStatus(item["col10"], item["col15"], item["col6"], item["col4"], item["col7"]);
-            return taskStatus !== "Admin Done" && taskStatus !== "Done" && taskStatus !== "Disabled";
+            const taskStatus = getTaskStatus(item["col10"], item["col15"], item["col6"], item["col4"], item["col7"], item["col16"]);
+            return taskStatus !== "Admin Done" && taskStatus !== "Done" && taskStatus !== "Disabled" && taskStatus !== "Leave";
           })
           .map((item) => item._id);
 
@@ -1447,6 +1524,8 @@ function AccountDataPage() {
     const dateStr = `${yyyy}-${mm}-${dd}`;
     setLeaveStartDate(dateStr);
     setLeaveEndDate(dateStr);
+    setLeaveEmployee(selectedMembers[0] || username || "");
+    setLeaveTargetSheet("both");
     setIsLeaveModalOpen(true);
   };
 
@@ -1465,116 +1544,126 @@ function AccountDataPage() {
       alert("Start date cannot be after end date.");
       return;
     }
+
+    const targetEmployee = leaveEmployee || username || "";
+    if (!targetEmployee) {
+      alert("Please select or specify an employee.");
+      return;
+    }
+
     setIsLeaveModalOpen(false);
     setIsSubmitting(true);
     try {
-      const partsStart = leaveStartDate.split("-");
-      const leaveFormatted = `${partsStart[2]}/${partsStart[1]}/${partsStart[0]}`;
+      // 1. Log the leave range to the centralized "Leaves" sheet for login compliance
+      const logParams = new URLSearchParams();
+      logParams.append("action", "applyLeave");
+      logParams.append("username", targetEmployee);
+      logParams.append("startDate", leaveStartDate);
+      logParams.append("endDate", leaveEndDate);
+      logParams.append("targetSheet", leaveTargetSheet);
 
-      const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`;
-      const response = await fetch(sheetUrl);
-      if (!response.ok) throw new Error("Failed to fetch data to calculate leave");
-      const text = await response.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
+      await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: "POST",
+        body: logParams,
+      });
+
+      // 2. Update individual task rows in Checklist / DELEGATION sheets
+      const todayObj = new Date();
+      const todayFormatted = `${String(todayObj.getDate()).padStart(2, '0')}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${todayObj.getFullYear()}`;
+
+      const sheetsToUpdate = [];
+      if (leaveTargetSheet === "both" || leaveTargetSheet === "Checklist") {
+        sheetsToUpdate.push("Checklist");
+      }
+      if (leaveTargetSheet === "both" || leaveTargetSheet === "DELEGATION") {
+        sheetsToUpdate.push("DELEGATION");
+      }
+
+      let totalTasksUpdatedCount = 0;
+
+      for (const currentSheetName of sheetsToUpdate) {
+        const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(currentSheetName)}&t=${Date.now()}`;
+        const response = await fetch(sheetUrl);
+        if (!response.ok) continue;
+        const text = await response.text();
+        let data;
         const jsonStart = text.indexOf("{");
         const jsonEnd = text.lastIndexOf("}");
         if (jsonStart !== -1 && jsonEnd !== -1) {
           data = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
         } else {
-          throw new Error("Invalid format from server");
+          continue;
         }
-      }
 
-      let rows = [];
-      if (data.table && data.table.rows) {
-        rows = data.table.rows;
-      } else if (Array.isArray(data)) {
-        rows = data;
-      } else if (data.values) {
-        rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }));
-      }
+        let rows = [];
+        if (data.table && data.table.rows) {
+          rows = data.table.rows;
+        }
 
-      const tasksToUpdate = [];
+        const tasksToUpdate = [];
 
-      rows.forEach((row, rowIndex) => {
-        if (rowIndex === 0) return;
-        let rowValues = [];
-        if (row.c) {
-          rowValues = row.c.map(cell => (cell && cell.v !== undefined ? cell.v : ""));
-        } else if (Array.isArray(row)) {
-          rowValues = row;
-        } else return;
-
-        const assignedTo = rowValues[4] || "Unassigned";
-
-        let isUserMatch = false;
-        if (userRole === "admin") {
-          if (selectedMembers.length > 0) {
-            isUserMatch = selectedMembers.includes(assignedTo);
-          } else {
-            isUserMatch = assignedTo.toLowerCase() === username.toLowerCase();
+        rows.forEach((row, rowIndex) => {
+          if (rowIndex === 0) return;
+          let rowValues = [];
+          if (row.c) {
+            rowValues = row.c.map(cell => (cell && cell.v !== undefined ? cell.v : ""));
           }
-        } else {
-          isUserMatch = assignedTo.toLowerCase() === username.toLowerCase();
-        }
 
-        if (isUserMatch) {
-          const colG = rowValues[6];
-          const formattedDate = parseGoogleSheetsDateTime(colG ? String(colG).trim() : "");
-          const taskDate = parseDateFromDDMMYYYY(formattedDate);
+          const assignedTo = rowValues[4] || "Unassigned";
+          const isUserMatch = assignedTo.toLowerCase() === targetEmployee.toLowerCase();
 
-          if (taskDate && taskDate >= startObj && taskDate <= endObj) {
-            const taskId = rowValues[1];
-            if (taskId) {
-              const rowDataPayload = Array(17).fill("");
-              rowDataPayload[10] = leaveFormatted;
-              rowDataPayload[16] = "Leave";
+          if (isUserMatch) {
+            const colG = rowValues[6];
+            const formattedDate = parseGoogleSheetsDateTime(colG ? String(colG).trim() : "");
+            const taskDate = parseDateFromDDMMYYYY(formattedDate);
 
-              tasksToUpdate.push({
-                rowIndex: rowIndex + 1,
-                taskId: taskId,
-                rowData: rowDataPayload
-              });
+            if (taskDate && taskDate >= startObj && taskDate <= endObj) {
+              const taskId = rowValues[1];
+              if (taskId) {
+                const rowDataPayload = Array(17).fill("");
+                rowDataPayload[10] = todayFormatted; // Column K (Actual Completion Date)
+                rowDataPayload[12] = "Leave";          // Column M (Status / Delay)
+                rowDataPayload[16] = "Leave";          // Column Q (Leave Status)
+
+                tasksToUpdate.push({
+                  rowIndex: rowIndex + 1,
+                  taskId: taskId,
+                  rowData: rowDataPayload
+                });
+              }
             }
           }
-        }
-      });
-
-      if (tasksToUpdate.length === 0) {
-        alert("No tasks found for the selected date range and user.");
-        setIsSubmitting(false);
-        return;
-      }
-
-      const updatePromises = tasksToUpdate.map(async (task) => {
-        const formData = new FormData();
-        formData.append("sheetName", CONFIG.SHEET_NAME);
-        formData.append("action", "update");
-        formData.append("rowIndex", task.rowIndex);
-        formData.append("rowData", JSON.stringify(task.rowData));
-
-        const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
-          method: "POST",
-          body: formData,
         });
-        return res.json();
-      });
 
-      const results = await Promise.all(updatePromises);
-      const failures = results.filter(r => !r.success);
+        if (tasksToUpdate.length > 0) {
+          const updatePromises = tasksToUpdate.map(async (task) => {
+            const formData = new FormData();
+            formData.append("sheetName", currentSheetName);
+            formData.append("action", "update");
+            formData.append("rowIndex", task.rowIndex);
+            formData.append("rowData", JSON.stringify(task.rowData));
 
-      if (failures.length > 0) {
-        console.error("Some updates failed", failures);
-        alert(`Failed to update ${failures.length} tasks.`);
-      } else {
-        setSuccessMessage(`Successfully marked ${tasksToUpdate.length} tasks as Leave!`);
+            const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+              method: "POST",
+              body: formData,
+            });
+            return res.json();
+          });
+
+          const results = await Promise.all(updatePromises);
+          const failures = results.filter(r => !r.success);
+
+          if (failures.length === 0) {
+            totalTasksUpdatedCount += tasksToUpdate.length;
+          }
+        }
       }
 
-      fetchSheetData();
+      setSuccessMessage(`Successfully applied Leave and updated ${totalTasksUpdatedCount} tasks!`);
+      setTimeout(() => {
+        fetchSheetData();
+      }, 2000);
 
     } catch (error) {
       console.error("Error submitting Leave:", error);
@@ -1615,6 +1704,7 @@ function AccountDataPage() {
                   <option value="">All Status</option>
                   <option value="Pending">Pending (Today Only)</option>
                   <option value="Disabled">Overdue</option>
+                  <option value="Leave">Leave</option>
                 </>
               )}
             </select>
@@ -1838,6 +1928,17 @@ function AccountDataPage() {
               )}
             </button>
 
+            {/* Apply Leave Button Mobile */}
+            <button
+              onClick={handleLeaveSubmit}
+              className="w-full bg-orange-500 py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all duration-200"
+            >
+              <div className="flex items-center justify-center">
+                <Calendar className="h-4 w-4 mr-1" />
+                <span>Apply Leave</span>
+              </div>
+            </button>
+
             {/* Admin Mark Done Button for mobile (only in history view) */}
             {showHistory &&
               userRole === "admin" &&
@@ -1864,14 +1965,6 @@ function AccountDataPage() {
                   {isSubmitting
                     ? "Processing..."
                     : `Submit Selected (${selectedItemsCount})`}
-                </button>
-                {/* Leave Button Mobile */}
-                <button
-                  onClick={handleLeaveSubmit}
-                  disabled={isSubmitting}
-                  className="w-full bg-orange-500 hover:bg-orange-600 py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                >
-                  {isSubmitting ? "Processing..." : "Leave"}
                 </button>
               </>
             )}
@@ -1904,6 +1997,14 @@ function AccountDataPage() {
               )}
             </button>
 
+            <button
+              onClick={handleLeaveSubmit}
+              className="flex items-center gap-2 px-4 py-2 rounded-md border border-orange-200 text-orange-700 hover:bg-orange-50 transition-colors text-sm font-medium bg-white"
+            >
+              <Calendar className="h-4 w-4 text-orange-500" />
+              Apply Leave
+            </button>
+
             {/* Admin Mark Done Button */}
             {showHistory &&
               userRole === "admin" &&
@@ -1919,17 +2020,9 @@ function AccountDataPage() {
                 </button>
               )}
 
-            {/* Submit & Leave Buttons */}
+            {/* Submit Button */}
             {!showHistory && (
               <>
-                <button
-                  onClick={handleLeaveSubmit}
-                  disabled={isSubmitting}
-                  className="bg-red-100 hover:bg-red-200 text-red-600 px-6 py-2 rounded-md focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-                >
-                  {isSubmitting ? "..." : "Leave"}
-                </button>
-
                 <button
                   onClick={handleSubmit}
                   disabled={selectedItemsCount === 0 || isSubmitting}
@@ -1937,28 +2030,11 @@ function AccountDataPage() {
                 >
                   {isSubmitting
                     ? "Processing..."
-                    : `Submit (${selectedItemsCount})`}
+                    : `Submit Selected (${selectedItemsCount})`}
                 </button>
               </>
             )}
           </div>
-
-          {/* Admin Mark Done Button - Show in both mobile and desktop when conditions are met */}
-          {/* {showHistory &&
-            userRole === "admin" &&
-            selectedHistoryItems.length > 0 && (
-              <div className="sm:hidden w-full mt-2">
-                <button
-                  onClick={handleMarkMultipleDone}
-                  disabled={markingAsDone}
-                  className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                >
-                  {markingAsDone
-                    ? "Processing..."
-                    : `Mark ${selectedHistoryItems.length} Items as Admin Done`}
-                </button>
-              </div>
-            )} */}
         </div>
 
         {successMessage && (
@@ -2227,9 +2303,11 @@ function AccountDataPage() {
                                 <span
                                   className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${submissionStatus.color === "green"
                                     ? "bg-green-100 text-green-800"
-                                    : submissionStatus.color === "red"
-                                      ? "bg-red-100 text-red-800"
-                                      : "bg-gray-100 text-gray-800"
+                                    : submissionStatus.color === "orange"
+                                      ? "bg-orange-100 text-orange-800 font-bold"
+                                      : submissionStatus.color === "red"
+                                        ? "bg-red-100 text-red-800"
+                                        : "bg-gray-100 text-gray-800"
                                     }`}
                                 >
                                   {submissionStatus.status}
@@ -2990,7 +3068,34 @@ function AccountDataPage() {
       {isLeaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Select Leave Dates</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave & Clear Penalty</h2>
+            {userRole === "admin" && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Employee</label>
+                <select
+                  value={leaveEmployee}
+                  onChange={(e) => setLeaveEmployee(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">-- Choose Employee --</option>
+                  {membersList.map((m, idx) => (
+                    <option key={idx} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Apply Leave To</label>
+              <select
+                value={leaveTargetSheet}
+                onChange={(e) => setLeaveTargetSheet(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-slate-800"
+              >
+                <option value="both">Both (Checklist & Delegation)</option>
+                <option value="Checklist">Checklist Only</option>
+                <option value="DELEGATION">Delegation Only</option>
+              </select>
+            </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
               <input
@@ -3012,14 +3117,14 @@ function AccountDataPage() {
             <div className="flex justify-end space-x-4">
               <button
                 onClick={() => setIsLeaveModalOpen(false)}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors font-bold text-xs"
                 disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 onClick={confirmLeaveSubmit}
-                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors font-bold text-xs"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? "Submitting..." : "Confirm Leave"}

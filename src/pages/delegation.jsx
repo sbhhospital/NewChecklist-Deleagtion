@@ -96,6 +96,36 @@ const parseGoogleSheetsDateStr = (dateStr) => {
   return s;
 };
 
+const parseDateFromDDMMYYYY = (dateStr) => {
+  if (!dateStr) return null;
+  const parts = dateStr.split("/");
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+  }
+  return null;
+};
+
+const parseDateValue = (cell) => {
+  if (!cell) return null;
+  const val = cell.v;
+  if (!val) return null;
+  
+  const valStr = String(val);
+  if (valStr.startsWith("Date(")) {
+    const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(valStr);
+    if (match) {
+      return new Date(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10));
+    }
+  }
+  
+  const fmt = cell.f || valStr;
+  const parts = fmt.split("/");
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+  }
+  return null;
+};
+
 // Clears delegation cache for a given sheet name
 const clearDelegationCache = (sheetName) => {
   try { sessionStorage.removeItem(`delegation_sheet_cache_${sheetName}`); } catch(_) {}
@@ -423,7 +453,7 @@ function DelegationDataPage() {
     const actualStr = task["col11"] || "";
     const actualDate = parseDateFromDDMMYYYY(actualStr);
 
-    const cutoffDate = new Date(2026, 6, 29); // July 29, 2026
+    const cutoffDate = new Date(2026, 7, 1); // August 1, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
     if (deadlineDate) {
@@ -689,6 +719,15 @@ function DelegationDataPage() {
 
       const actualValue = delegationItem["col11"]; // Column L (Actual)
       const delayValue = delegationItem["col12"]; // Column M (Delay)
+      const leaveValue = delegationItem["col16"]; // Column Q (Leave Status)
+
+      if (leaveValue && leaveValue.toString().trim() === "Leave") {
+        return {
+          status: "Leave",
+          color: "bg-orange-100",
+          textColor: "text-orange-800 font-bold",
+        };
+      }
 
       const isActualNotNull = !isEmpty(actualValue);
       const isDelayNotNull = !isEmpty(delayValue);
@@ -1031,7 +1070,37 @@ function DelegationDataPage() {
 
       setHistoryData(processedHistoryData);
 
-      // Process main delegation data - ADD USER FILTERING LOGIC
+      // Fetch Leaves list from Leaves sheet
+      const leavesList = [];
+      try {
+        const leavesUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
+        const leavesRes = await fetch(leavesUrl);
+        if (leavesRes.ok) {
+          const lText = await leavesRes.text();
+          const lJsonStart = lText.indexOf("{");
+          const lJsonEnd = lText.lastIndexOf("}");
+          if (lJsonStart !== -1 && lJsonEnd !== -1) {
+            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
+            if (lData.table && lData.table.rows) {
+              lData.table.rows.forEach((r) => {
+                if (r.c) {
+                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+                  const startDateObj = parseDateValue(r.c[2]);
+                  const endDateObj = parseDateValue(r.c[3]);
+                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+                  
+                  if (uName && startDateObj && endDateObj) {
+                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch leaves data", e);
+      }
+
       // Process main delegation data - ADD USER FILTERING LOGIC
       const allDelegationData = [];
       const rawDelegationList = [];
@@ -1112,10 +1181,43 @@ function DelegationDataPage() {
           }
         }
 
-        // ✅ NEW: Filter out "Done" tasks from regular view
+        // ✅ NEW: Filter out "Done" and "Leave" tasks from regular view
         const taskStatus = rowData["col20"]; // Column U (Status)
+        const taskAssignedTo = rowData["col4"] || "";
+        const taskStartDateStr = rowData["col6"];
+        const taskDateObj = parseDateFromDDMMYYYY(taskStartDateStr);
+        let isLeave = (rowData["col16"] && rowData["col16"].toString().trim().toLowerCase() === "leave") ||
+                        (rowData["col12"] && rowData["col12"].toString().trim().toLowerCase() === "leave");
+        
+        if (taskDateObj && taskAssignedTo) {
+          const isL = leavesList.some(l => {
+            if (l.username !== taskAssignedTo.trim().toLowerCase()) return false;
+            if (l.targetSheet !== "both" && l.targetSheet !== "DELEGATION") return false;
+            
+            const startD = new Date(l.startDateObj);
+            const endD = new Date(l.endDateObj);
+            startD.setHours(0,0,0,0);
+            endD.setHours(23,59,59,999);
+            return taskDateObj >= startD && taskDateObj <= endD;
+          });
+          if (isL) {
+            isLeave = true;
+            rowData["col16"] = "Leave";
+            rowData["col12"] = "Leave";
+          }
+        }
+
         if (taskStatus && taskStatus.toString().trim().toLowerCase() === "done") {
           return; // Skip Done tasks from regular view
+        }
+
+        if (isLeave) {
+          const taskAssignedTo = rowData["col4"];
+          const isUserMatch = userRole === "admin" || (taskAssignedTo && taskAssignedTo.toLowerCase().trim() === username.toLowerCase().trim());
+          if (isUserMatch) {
+            processedHistoryData.push(rowData);
+          }
+          return; // Skip Leave tasks from regular view
         }
 
         allDelegationData.push(rowData);
@@ -1516,7 +1618,7 @@ function DelegationDataPage() {
       return null;
     };
 
-    const cutoffDate = new Date(2026, 6, 29);
+    const cutoffDate = new Date(2026, 7, 1); // August 1, 2026
     cutoffDate.setHours(0, 0, 0, 0);
 
     const deadlineDate = parseDDMMYYYY(dueDateStr || startDateStr);

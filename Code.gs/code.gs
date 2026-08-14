@@ -319,6 +319,19 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
     
+    // NEW: Add applyLeave action handling
+    if (params.action === 'applyLeave') {
+      var result = applyLeave(params.username, params.startDate, params.endDate, params.targetSheet);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    if (params.action === 'cleanLeaves') {
+      var result = cleanLeavesSheet();
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
     // NEW: Add updateAdminDone action handling
     if (params.action === 'updateAdminDone') {
       var result = updateAdminDone(params.sheetName, params.rowData);
@@ -359,6 +372,12 @@ function doPost(e) {
     // NEW: Action to reset consecutive missed days to 0
     if (params.action === 'resetAttendanceCounters') {
       var result = resetAttendanceCounters();
+      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // NEW: Action to recalculate deductions from August 1st, 2026
+    if (params.action === 'recalculateDeductions') {
+      var result = recalculateDeductionsFromAug1();
       return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
     }
     
@@ -1858,8 +1877,18 @@ function runDailyLoginCheck() {
         }
       }
 
+      var userOnLeave = isUserOnLeave(ss, user, dateStr);
+
       if (presentUsersToday[userKey] || existingStatus === "present") {
         results.push({ username: user, status: "present" });
+      } else if (userOnLeave) {
+        // Record as "Leave" in Attendance sheet instead of Absent
+        if (existingRowIndex === -1) {
+          attendanceSheet.appendRow([dateStr, user, "Leave", "—", "—", "—", "—", 0]);
+        } else {
+          attendanceSheet.getRange(existingRowIndex + 1, 3).setValue("Leave");
+        }
+        results.push({ username: user, status: "leave" });
       } else {
         // Calculate consecutive missed days prior to yesterday (excluding Sundays)
         var checkDate = new Date(targetDate);
@@ -2018,7 +2047,8 @@ function sendSameDayLoginReminder() {
     var count = 0;
     activeUsers.forEach(function(user) {
       var userKey = user.toLowerCase();
-      if (!presentUsersToday[userKey]) {
+      var userOnLeave = isUserOnLeave(ss, user, dateStr);
+      if (!presentUsersToday[userKey] && !userOnLeave) {
         var phone = userPhones[user];
         if (phone) {
           // Calculate consecutive missed days prior to today (excluding Sundays)
@@ -2363,4 +2393,261 @@ function autoFillPendingChecklists() {
   });
   
   console.log("Auto-fill complete!");
+}
+
+function isUserOnLeave(ss, username, dateStr) {
+  try {
+    var sheet = ss.getSheetByName("Leaves");
+    if (!sheet) return false;
+    
+    var data = sheet.getDataRange().getValues();
+    
+    // Parse target dateStr (DD/MM/YYYY)
+    var dateParts = dateStr.split("/");
+    if (dateParts.length !== 3) return false;
+    var targetDateObj = new Date(parseInt(dateParts[2], 10), parseInt(dateParts[1], 10) - 1, parseInt(dateParts[0], 10));
+    targetDateObj.setHours(0, 0, 0, 0);
+    
+    for (var r = 1; r < data.length; r++) {
+      var rowUser = String(data[r][1] || "").trim().toLowerCase();
+      if (rowUser === username.trim().toLowerCase()) {
+        var startStr = String(data[r][2] || "").trim();
+        var endStr = String(data[r][3] || "").trim();
+        
+        var startParts = startStr.split("/");
+        var endParts = endStr.split("/");
+        
+        if (startParts.length === 3 && endParts.length === 3) {
+          var startDateObj = new Date(parseInt(startParts[2], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[0], 10));
+          var endDateObj = new Date(parseInt(endParts[2], 10), parseInt(endParts[1], 10) - 1, parseInt(endParts[0], 10));
+          startDateObj.setHours(0, 0, 0, 0);
+          endDateObj.setHours(23, 59, 59, 999);
+          
+          if (targetDateObj >= startDateObj && targetDateObj <= endDateObj) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error checking isUserOnLeave:", err.message);
+  }
+  return false;
+}
+
+function applyLeave(username, startDate, endDate, targetSheet) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("Leaves");
+    if (!sheet) {
+      sheet = ss.insertSheet("Leaves");
+      sheet.appendRow(["Timestamp", "Username", "Start Date", "End Date", "Target Sheet"]);
+    }
+    
+    // Parse Dates (from YYYY-MM-DD to DD/MM/YYYY)
+    var startParts = startDate.split("-");
+    var endParts = endDate.split("-");
+    
+    var startFormatted = startParts[2] + "/" + startParts[1] + "/" + startParts[0];
+    var endFormatted = endParts[2] + "/" + endParts[1] + "/" + endParts[0];
+    
+    var timestamp = new Date();
+    sheet.appendRow([timestamp, username, startFormatted, endFormatted, targetSheet]);
+    
+    // Automatically recalculate deductions to adjust for this new leave immediately
+    recalculateDeductionsFromAug1();
+    
+    return { success: true, message: "Leave applied successfully logged and deductions updated." };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function cleanLeavesSheet() {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("Leaves");
+    if (!sheet) return { success: false, error: "Leaves sheet not found" };
+    
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: true, message: "No data to clean" };
+    
+    var headers = data[0];
+    var uniqueRows = [headers];
+    var seen = {};
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var username = String(row[1]).trim().toLowerCase();
+      var startDate = String(row[2]).trim();
+      var endDate = String(row[3]).trim();
+      var targetSheet = String(row[4]).trim().toLowerCase();
+      
+      // Filter out invalid dates like year 60810
+      if (startDate.indexOf("6081") !== -1 || endDate.indexOf("6081") !== -1) {
+        continue;
+      }
+      
+      var key = username + "|" + startDate + "|" + endDate + "|" + targetSheet;
+      if (!seen[key]) {
+        seen[key] = true;
+        uniqueRows.push(row);
+      }
+    }
+    
+    sheet.clear();
+    sheet.getRange(1, 1, uniqueRows.length, uniqueRows[0].length).setValues(uniqueRows);
+    
+    return { success: true, message: "Cleaned duplicate and invalid leave rows", count: data.length - uniqueRows.length };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function recalculateDeductionsFromAug1() {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var masterSheet = ss.getSheetByName("Whatsapp");
+    var attendanceSheet = ss.getSheetByName("Attendance");
+    var deductionsSheet = ss.getSheetByName("Point Deductions");
+    
+    if (!masterSheet || !attendanceSheet || !deductionsSheet) {
+      return { success: false, error: "One or more sheets not found" };
+    }
+    
+    // Clear all rows in Point Deductions except header
+    if (deductionsSheet.getLastRow() > 1) {
+      deductionsSheet.deleteRows(2, deductionsSheet.getLastRow() - 1);
+    }
+    
+    // Load active users
+    var masterData = masterSheet.getDataRange().getValues();
+    var masterHeaders = masterData[0];
+    var usernameColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
+    var roleColIndex = masterHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+    if (usernameColIndex === -1) usernameColIndex = 2;
+    if (roleColIndex === -1) roleColIndex = 4;
+    
+    var activeUsers = [];
+    for (var i = 1; i < masterData.length; i++) {
+      var username = String(masterData[i][usernameColIndex]).trim();
+      var role = String(masterData[i][roleColIndex]).trim().toLowerCase();
+      if (username && role !== "inactive" && role !== "in active") {
+        activeUsers.push(username);
+      }
+    }
+    
+    // Load attendance data
+    var attendanceData = attendanceSheet.getDataRange().getValues();
+    
+    // Find the earliest present date for each user to avoid retrospective penalties
+    var userFirstPresentDate = {};
+    for (var j = 1; j < attendanceData.length; j++) {
+      var status = String(attendanceData[j][2]).toLowerCase().trim();
+      if (status === "present") {
+        var uName = String(attendanceData[j][1]).trim().toLowerCase();
+        var rowDate = attendanceData[j][0];
+        var rowDateObj = (rowDate instanceof Date) ? rowDate : convertDDMMYYYYToDate(String(rowDate).trim());
+        if (rowDateObj instanceof Date && !isNaN(rowDateObj.getTime())) {
+          if (!userFirstPresentDate[uName] || rowDateObj < userFirstPresentDate[uName]) {
+            userFirstPresentDate[uName] = new Date(rowDateObj);
+          }
+        }
+      }
+    }
+    
+    // Determine start date: 01/08/2026
+    var startDate = new Date(2026, 7, 1); // Month is 0-indexed, so 7 is August
+    var endDate = new Date();
+    endDate.setDate(endDate.getDate() - 1); // Yesterday
+    endDate.setHours(23, 59, 59, 999);
+    
+    // Initialize user balances
+    var userBalances = {};
+    activeUsers.forEach(function(user) {
+      userBalances[user.toLowerCase()] = 100; // Start balance is 100
+    });
+    
+    var loopDate = new Date(startDate);
+    var addedCount = 0;
+    
+    while (loopDate <= endDate) {
+      // Skip Sundays
+      if (loopDate.getDay() === 0) {
+        loopDate.setDate(loopDate.getDate() + 1);
+        continue;
+      }
+      
+      var dateStr = getFormattedDate(loopDate);
+      
+      // Find who was present/absent on this day
+      var presentUsers = {};
+      var absentUsers = {};
+      var leaveUsers = {};
+      var consecutiveMissedMap = {};
+      
+      for (var j = 1; j < attendanceData.length; j++) {
+        var rowDate = attendanceData[j][0];
+        var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+        if (rowDateStr === dateStr) {
+          var uName = String(attendanceData[j][1]).trim().toLowerCase();
+          var status = String(attendanceData[j][2]).toLowerCase().trim();
+          var consecutive = parseInt(attendanceData[j][7]) || 0;
+          
+          if (status === "present") {
+            presentUsers[uName] = true;
+          } else if (status === "leave") {
+            leaveUsers[uName] = true;
+          } else if (status === "absent") {
+            absentUsers[uName] = true;
+            consecutiveMissedMap[uName] = consecutive;
+          }
+        }
+      }
+      
+      // For each active user, check if they missed login and are not on leave
+      activeUsers.forEach(function(user) {
+        var userKey = user.toLowerCase();
+        
+        // Skip dates before their first system login (earliest present date)
+        var firstPresent = userFirstPresentDate[userKey];
+        if (firstPresent) {
+          var checkDateOnly = new Date(loopDate);
+          checkDateOnly.setHours(0,0,0,0);
+          var firstPresentOnly = new Date(firstPresent);
+          firstPresentOnly.setHours(0,0,0,0);
+          if (checkDateOnly < firstPresentOnly) {
+            return; // Skip retrospective absent penalties before the user's first login
+          }
+        }
+        
+        // Check if user was absent and not present/leave
+        var isAbsent = absentUsers[userKey];
+        var isPresent = presentUsers[userKey];
+        var isOnLeave = leaveUsers[userKey] || isUserOnLeave(ss, user, dateStr);
+        
+        // If not present, not on leave, and either recorded as absent or not recorded at all (implicit absent)
+        if (!isPresent && !isOnLeave) {
+          var consecutive = consecutiveMissedMap[userKey] || 1;
+          
+          // Apply deductions
+          var currentBal = userBalances[userKey];
+          var balAfterChecklist = currentBal - 5;
+          var balAfterDelegation = balAfterChecklist - 5;
+          
+          deductionsSheet.appendRow([dateStr, user, "Login Missed (Checklist) - " + formatAbsentTime(consecutive), 5, balAfterChecklist]);
+          deductionsSheet.appendRow([dateStr, user, "Login Missed (Delegation) - " + formatAbsentTime(consecutive), 5, balAfterDelegation]);
+          
+          userBalances[userKey] = balAfterDelegation;
+          addedCount += 2;
+        }
+      });
+      
+      loopDate.setDate(loopDate.getDate() + 1);
+    }
+    
+    return { success: true, message: "Recalculated deductions starting from 01/08/2026", deductionsCount: addedCount };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
 }

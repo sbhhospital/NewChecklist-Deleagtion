@@ -464,6 +464,27 @@ export default function AdminDashboard() {
     return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
+  const parseDateValue = (cell) => {
+    if (!cell) return null;
+    const val = cell.v;
+    if (!val) return null;
+    
+    const valStr = String(val);
+    if (valStr.startsWith("Date(")) {
+      const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(valStr);
+      if (match) {
+        return new Date(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10));
+      }
+    }
+    
+    const fmt = cell.f || valStr;
+    const parts = fmt.split("/");
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+    }
+    return null;
+  }
+
   // Function to check if a date is in the past
   const isDateInPast = (dateStr) => {
     const date = parseDateFromDDMMYYYY(dateStr)
@@ -630,6 +651,37 @@ export default function AdminDashboard() {
       const jsonString = text.substring(jsonStart, jsonEnd + 1);
       const data = JSON.parse(jsonString);
 
+      // Fetch Leaves list from Leaves sheet
+      const leavesList = [];
+      try {
+        const leavesUrl = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
+        const leavesRes = await fetch(leavesUrl, { signal });
+        if (leavesRes.ok) {
+          const lText = await leavesRes.text();
+          const lJsonStart = lText.indexOf("{");
+          const lJsonEnd = lText.lastIndexOf("}");
+          if (lJsonStart !== -1 && lJsonEnd !== -1) {
+            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
+            if (lData.table && lData.table.rows) {
+              lData.table.rows.forEach((r) => {
+                if (r.c) {
+                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+                  const startDateObj = parseDateValue(r.c[2]);
+                  const endDateObj = parseDateValue(r.c[3]);
+                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+                  
+                  if (uName && startDateObj && endDateObj) {
+                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch leaves data", e);
+      }
+
       // Initialize counters
       let totalTasks = 0;
       let completedTasks = 0;
@@ -719,9 +771,13 @@ export default function AdminDashboard() {
               return null;
           }
 
-          // EXCLUDE "Leave" entries in Column Q (index 16)
+          // EXCLUDE "Leave" entries in Column Q (index 16) or Column M (index 12)
           const columnQValue = getCellValue(row, 16);
-          if (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") {
+          const columnMValue = getCellValue(row, 12);
+          if (
+            (columnQValue && columnQValue.toString().trim().toLowerCase() === "leave") ||
+            (columnMValue && columnMValue.toString().trim().toLowerCase() === "leave")
+          ) {
             return null; // Skip this task completely
           }
 
@@ -733,6 +789,25 @@ export default function AdminDashboard() {
           const taskStartDate = taskStartDateValue
             ? parseGoogleSheetsDate(String(taskStartDateValue))
             : "";
+
+          // EXCLUDE based on dynamic leavesList
+          const taskDateObj = parseDateFromDDMMYYYY(taskStartDate);
+          if (taskDateObj && assignedTo) {
+            const isL = leavesList.some(l => {
+              if (l.username !== assignedTo.trim().toLowerCase()) return false;
+              const targetSheetName = dashboardType === "delegation" ? "DELEGATION" : "Checklist";
+              if (l.targetSheet !== "both" && l.targetSheet !== targetSheetName) return false;
+              
+              const startD = new Date(l.startDateObj);
+              const endD = new Date(l.endDateObj);
+              startD.setHours(0,0,0,0);
+              endD.setHours(23,59,59,999);
+              return taskDateObj >= startD && taskDateObj <= endD;
+            });
+            if (isL) {
+              return null; // Skip leave tasks completely
+            }
+          }
 
           // Debug: Log task start date for first few rows
           if (rowIndex <= 5) {
