@@ -171,7 +171,6 @@ export default function QuickTask() {
             return;
         }
 
-        setIsLeaveModalOpen(false);
         setIsSubmittingLeave(true);
         try {
             // 1. Log the leave range to the centralized "Leaves" sheet for login compliance
@@ -294,9 +293,11 @@ export default function QuickTask() {
             }
 
             alert(`Successfully marked leave and updated ${totalTasksUpdatedCount} tasks!`);
-            setTimeout(() => {
-                window.location.reload();
-            }, 2000);
+            setIsLeaveModalOpen(false);
+            setLeaveStartDate("");
+            setLeaveEndDate("");
+            setLeaveTargetSheet("both");
+            window.location.reload();
 
         } catch (error) {
             console.error("Error submitting Leave:", error);

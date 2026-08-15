@@ -1551,7 +1551,6 @@ function AccountDataPage() {
       return;
     }
 
-    setIsLeaveModalOpen(false);
     setIsSubmitting(true);
     try {
       // 1. Log the leave range to the centralized "Leaves" sheet for login compliance
@@ -1660,10 +1659,12 @@ function AccountDataPage() {
         }
       }
 
-      setSuccessMessage(`Successfully applied Leave and updated ${totalTasksUpdatedCount} tasks!`);
-      setTimeout(() => {
-        fetchSheetData();
-      }, 2000);
+      alert(`Successfully applied Leave and updated ${totalTasksUpdatedCount} tasks!`);
+      setIsLeaveModalOpen(false);
+      setLeaveStartDate("");
+      setLeaveEndDate("");
+      setLeaveTargetSheet("both");
+      fetchSheetData();
 
     } catch (error) {
       console.error("Error submitting Leave:", error);
