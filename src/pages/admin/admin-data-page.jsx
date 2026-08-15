@@ -1350,7 +1350,7 @@ function AccountDataPage() {
       {isLeaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave & Clear Penalty</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave</h2>
             {userRole === "admin" && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Employee</label>

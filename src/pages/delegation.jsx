@@ -2360,8 +2360,8 @@ function DelegationDataPage() {
 
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative min-h-[300px]">
           {loading && (
-            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4">
-              <div className="sticky top-[100px] flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4 rounded-2xl">
+              <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center font-sans">
                 <div className="relative flex items-center justify-center">
                   <svg className="animate-spin h-10 w-10 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <defs>

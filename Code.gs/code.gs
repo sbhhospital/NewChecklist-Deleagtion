@@ -1857,6 +1857,8 @@ function runDailyLoginCheck() {
     }
     
     var deductionsData = deductionsSheet.getDataRange().getValues();
+    var leavesSheet = ss.getSheetByName("Leaves");
+    var leavesCached = leavesSheet ? leavesSheet.getDataRange().getValues() : [];
     var results = [];
     var absentUsersSummary = []; // Track non-compliance for consolidated admin reminder
     
@@ -1877,7 +1879,7 @@ function runDailyLoginCheck() {
         }
       }
 
-      var userOnLeave = isUserOnLeave(ss, user, dateStr);
+      var userOnLeave = isUserOnLeave(ss, user, dateStr, leavesCached);
 
       if (presentUsersToday[userKey] || existingStatus === "present") {
         results.push({ username: user, status: "present" });
@@ -2044,10 +2046,12 @@ function sendSameDayLoginReminder() {
       }
     }
     
+    var leavesSheet = ss.getSheetByName("Leaves");
+    var leavesCached = leavesSheet ? leavesSheet.getDataRange().getValues() : [];
     var count = 0;
     activeUsers.forEach(function(user) {
       var userKey = user.toLowerCase();
-      var userOnLeave = isUserOnLeave(ss, user, dateStr);
+      var userOnLeave = isUserOnLeave(ss, user, dateStr, leavesCached);
       if (!presentUsersToday[userKey] && !userOnLeave) {
         var phone = userPhones[user];
         if (phone) {
@@ -2395,12 +2399,14 @@ function autoFillPendingChecklists() {
   console.log("Auto-fill complete!");
 }
 
-function isUserOnLeave(ss, username, dateStr) {
+function isUserOnLeave(ss, username, dateStr, leavesCached) {
   try {
-    var sheet = ss.getSheetByName("Leaves");
-    if (!sheet) return false;
-    
-    var data = sheet.getDataRange().getValues();
+    var data = leavesCached;
+    if (!data) {
+      var sheet = ss.getSheetByName("Leaves");
+      if (!sheet) return false;
+      data = sheet.getDataRange().getValues();
+    }
     
     // Parse target dateStr (DD/MM/YYYY)
     var dateParts = dateStr.split("/");
@@ -2444,20 +2450,96 @@ function applyLeave(username, startDate, endDate, targetSheet) {
       sheet.appendRow(["Timestamp", "Username", "Start Date", "End Date", "Target Sheet"]);
     }
     
-    // Parse Dates (from YYYY-MM-DD to DD/MM/YYYY)
+    // Parse Dates (from YYYY-MM-DD to Date objects)
     var startParts = startDate.split("-");
     var endParts = endDate.split("-");
+    var newStart = new Date(parseInt(startParts[0]), parseInt(startParts[1]) - 1, parseInt(startParts[2]), 0, 0, 0, 0);
+    var newEnd = new Date(parseInt(endParts[0]), parseInt(endParts[1]) - 1, parseInt(endParts[2]), 23, 59, 59, 999);
+    
+    if (newStart > newEnd) {
+      return { success: false, error: "Start date cannot be after end date." };
+    }
+    
+    // 1. Check for overlapping leaves for this user
+    var leavesData = sheet.getDataRange().getValues();
+    for (var i = 1; i < leavesData.length; i++) {
+      var existingUser = String(leavesData[i][1]).trim().toLowerCase();
+      if (existingUser === username.trim().toLowerCase()) {
+        var existingStartStr = String(leavesData[i][2]).trim();
+        var existingEndStr = String(leavesData[i][3]).trim();
+        var existingTarget = String(leavesData[i][4]).trim().toLowerCase();
+        
+        var existingStart = convertDDMMYYYYToDate(existingStartStr);
+        var existingEnd = convertDDMMYYYYToDate(existingEndStr);
+        
+        if (existingStart instanceof Date && existingEnd instanceof Date) {
+          existingStart.setHours(0,0,0,0);
+          existingEnd.setHours(23,59,59,999);
+          
+          // Check target sheet overlap
+          var sheetOverlap = (targetSheet.toLowerCase() === "both" || existingTarget === "both" || targetSheet.toLowerCase() === existingTarget);
+          
+          if (sheetOverlap && newStart <= existingEnd && newEnd >= existingStart) {
+            return { success: false, error: "Leave already applied for " + username + " during " + existingStartStr + " to " + existingEndStr };
+          }
+        }
+      }
+    }
     
     var startFormatted = startParts[2] + "/" + startParts[1] + "/" + startParts[0];
     var endFormatted = endParts[2] + "/" + endParts[1] + "/" + endParts[0];
     
     var timestamp = new Date();
+    
+    // 2. Mark matching tasks in Checklist / DELEGATION sheets as "Leave" directly in the backend
+    var todayObj = new Date();
+    var todayFormatted = Utilities.formatDate(todayObj, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    
+    var sheetsToUpdate = [];
+    if (targetSheet === "both" || targetSheet === "Checklist") sheetsToUpdate.push("Checklist");
+    if (targetSheet === "both" || targetSheet === "DELEGATION") sheetsToUpdate.push("DELEGATION");
+    
+    var totalTasksUpdated = 0;
+    
+    sheetsToUpdate.forEach(function(sheetName) {
+      var tSheet = ss.getSheetByName(sheetName);
+      if (tSheet) {
+        var tData = tSheet.getDataRange().getValues();
+        for (var r = 1; r < tData.length; r++) {
+          var assignedTo = String(tData[r][4]).trim().toLowerCase();
+          if (assignedTo === username.trim().toLowerCase()) {
+            var taskDateVal = tData[r][6];
+            var taskDate = null;
+            if (taskDateVal instanceof Date) {
+              taskDate = taskDateVal;
+            } else {
+              taskDate = convertDDMMYYYYToDate(String(taskDateVal).trim());
+            }
+            
+            if (taskDate instanceof Date && !isNaN(taskDate.getTime())) {
+              taskDate.setHours(0,0,0,0);
+              if (taskDate >= newStart && taskDate <= newEnd) {
+                // Column K (index 10 is 11th column) - Actual Date
+                tSheet.getRange(r + 1, 11).setValue(todayFormatted);
+                // Column M (index 12 is 13th column) - Status / Delay
+                tSheet.getRange(r + 1, 13).setValue("Leave");
+                // Column Q (index 16 is 17th column) - Leave Status
+                tSheet.getRange(r + 1, 17).setValue("Leave");
+                totalTasksUpdated++;
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Append the leave log row after successfully updating matching tasks
     sheet.appendRow([timestamp, username, startFormatted, endFormatted, targetSheet]);
     
-    // Automatically recalculate deductions to adjust for this new leave immediately
+    // 3. Automatically recalculate deductions to adjust for this new leave immediately
     recalculateDeductionsFromAug1();
     
-    return { success: true, message: "Leave applied successfully logged and deductions updated." };
+    return { success: true, message: "Leave applied successfully logged and " + totalTasksUpdated + " tasks updated." };
   } catch (error) {
     return { success: false, error: error.toString() };
   }
@@ -2539,6 +2621,10 @@ function recalculateDeductionsFromAug1() {
     
     // Load attendance data
     var attendanceData = attendanceSheet.getDataRange().getValues();
+    
+    // Cache leaves data
+    var leavesSheet = ss.getSheetByName("Leaves");
+    var leavesCached = leavesSheet ? leavesSheet.getDataRange().getValues() : [];
     
     // Find the earliest present date for each user to avoid retrospective penalties
     var userFirstPresentDate = {};
@@ -2624,7 +2710,7 @@ function recalculateDeductionsFromAug1() {
         // Check if user was absent and not present/leave
         var isAbsent = absentUsers[userKey];
         var isPresent = presentUsers[userKey];
-        var isOnLeave = leaveUsers[userKey] || isUserOnLeave(ss, user, dateStr);
+        var isOnLeave = leaveUsers[userKey] || isUserOnLeave(ss, user, dateStr, leavesCached);
         
         // If not present, not on leave, and either recorded as absent or not recorded at all (implicit absent)
         if (!isPresent && !isOnLeave) {

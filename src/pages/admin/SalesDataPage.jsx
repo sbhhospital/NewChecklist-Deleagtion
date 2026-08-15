@@ -1553,7 +1553,6 @@ function AccountDataPage() {
 
     setIsSubmitting(true);
     try {
-      // 1. Log the leave range to the centralized "Leaves" sheet for login compliance
       const logParams = new URLSearchParams();
       logParams.append("action", "applyLeave");
       logParams.append("username", targetEmployee);
@@ -1561,105 +1560,18 @@ function AccountDataPage() {
       logParams.append("endDate", leaveEndDate);
       logParams.append("targetSheet", leaveTargetSheet);
 
-      await fetch(CONFIG.APPS_SCRIPT_URL, {
+      const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
         method: "POST",
         body: logParams,
       });
-
-      // 2. Update individual task rows in Checklist / DELEGATION sheets
-      const todayObj = new Date();
-      const todayFormatted = `${String(todayObj.getDate()).padStart(2, '0')}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${todayObj.getFullYear()}`;
-
-      const sheetsToUpdate = [];
-      if (leaveTargetSheet === "both" || leaveTargetSheet === "Checklist") {
-        sheetsToUpdate.push("Checklist");
-      }
-      if (leaveTargetSheet === "both" || leaveTargetSheet === "DELEGATION") {
-        sheetsToUpdate.push("DELEGATION");
+      const result = await res.json();
+      
+      if (!result.success) {
+        alert(result.error || "Failed to apply leave.");
+        return;
       }
 
-      let totalTasksUpdatedCount = 0;
-
-      for (const currentSheetName of sheetsToUpdate) {
-        const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-        const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(currentSheetName)}&t=${Date.now()}`;
-        const response = await fetch(sheetUrl);
-        if (!response.ok) continue;
-        const text = await response.text();
-        let data;
-        const jsonStart = text.indexOf("{");
-        const jsonEnd = text.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          data = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
-        } else {
-          continue;
-        }
-
-        let rows = [];
-        if (data.table && data.table.rows) {
-          rows = data.table.rows;
-        }
-
-        const tasksToUpdate = [];
-
-        rows.forEach((row, rowIndex) => {
-          if (rowIndex === 0) return;
-          let rowValues = [];
-          if (row.c) {
-            rowValues = row.c.map(cell => (cell && cell.v !== undefined ? cell.v : ""));
-          }
-
-          const assignedTo = rowValues[4] || "Unassigned";
-          const isUserMatch = assignedTo.toLowerCase() === targetEmployee.toLowerCase();
-
-          if (isUserMatch) {
-            const colG = rowValues[6];
-            const formattedDate = parseGoogleSheetsDateTime(colG ? String(colG).trim() : "");
-            const taskDate = parseDateFromDDMMYYYY(formattedDate);
-
-            if (taskDate && taskDate >= startObj && taskDate <= endObj) {
-              const taskId = rowValues[1];
-              if (taskId) {
-                const rowDataPayload = Array(17).fill("");
-                rowDataPayload[10] = todayFormatted; // Column K (Actual Completion Date)
-                rowDataPayload[12] = "Leave";          // Column M (Status / Delay)
-                rowDataPayload[16] = "Leave";          // Column Q (Leave Status)
-
-                tasksToUpdate.push({
-                  rowIndex: rowIndex + 1,
-                  taskId: taskId,
-                  rowData: rowDataPayload
-                });
-              }
-            }
-          }
-        });
-
-        if (tasksToUpdate.length > 0) {
-          const updatePromises = tasksToUpdate.map(async (task) => {
-            const formData = new FormData();
-            formData.append("sheetName", currentSheetName);
-            formData.append("action", "update");
-            formData.append("rowIndex", task.rowIndex);
-            formData.append("rowData", JSON.stringify(task.rowData));
-
-            const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
-              method: "POST",
-              body: formData,
-            });
-            return res.json();
-          });
-
-          const results = await Promise.all(updatePromises);
-          const failures = results.filter(r => !r.success);
-
-          if (failures.length === 0) {
-            totalTasksUpdatedCount += tasksToUpdate.length;
-          }
-        }
-      }
-
-      alert(`Successfully applied Leave and updated ${totalTasksUpdatedCount} tasks!`);
+      alert(result.message || "Leave applied successfully!");
       setIsLeaveModalOpen(false);
       setLeaveStartDate("");
       setLeaveEndDate("");
@@ -1844,9 +1756,8 @@ function AccountDataPage() {
   };
 
   const DashboardLoadingEffect = () => (
-    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
-      <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
-        <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4 rounded-2xl">
+      <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
           <div className="relative flex items-center justify-center">
             <svg className="animate-spin h-12 w-12 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
@@ -1869,7 +1780,6 @@ function AccountDataPage() {
           </div>
         </div>
       </div>
-    </div>
   );
 
   return (
@@ -3069,7 +2979,7 @@ function AccountDataPage() {
       {isLeaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave & Clear Penalty</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4 font-sans">Apply Leave</h2>
             {userRole === "admin" && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Employee</label>

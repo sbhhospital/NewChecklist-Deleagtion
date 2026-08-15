@@ -659,9 +659,8 @@ export default function UserManagement() {
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden relative min-h-[300px]">
           {loading ? (
-            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 rounded-2xl">
-              <div className="sticky top-[150px] h-[60vh] w-full flex flex-col items-center justify-center p-4">
-                <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-4 rounded-2xl">
+              <div className="flex flex-col items-center justify-center space-y-4 max-w-xs w-full text-center">
                   <div className="relative flex items-center justify-center">
                     <svg className="animate-spin h-10 w-10 text-[#9333EA]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <defs>
@@ -684,7 +683,6 @@ export default function UserManagement() {
                   </div>
                 </div>
               </div>
-            </div>
           ) : (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse min-w-max">
