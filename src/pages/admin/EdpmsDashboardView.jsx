@@ -783,7 +783,7 @@ export default function EdpmsDashboardView({
 
       totalBonuses = checklistStaffRes
         ? 0  // checklist: penalty-only, no bonus
-        : delegationTotalTaskRewards + loginBonus;
+        : Math.min(20, delegationTotalTaskRewards + loginBonus);
       
       // Update totalPenalties for delegation mode to only show the main score penalties + login deduction in the UI overview
       if (activeSource !== "checklist") {
@@ -1005,7 +1005,8 @@ export default function EdpmsDashboardView({
 
         const baseScore = 100;
         const totalPenaltiesDelegation = totalMainScorePenalties + loginDisciplineDeduction;
-        const netPenalty = Math.max(0, totalPenaltiesDelegation - totalTaskRewards);
+        const cappedBonusBuffer = Math.min(20, totalTaskRewards + loginBonus);
+        const netPenalty = Math.max(0, totalPenaltiesDelegation - cappedBonusBuffer);
         finalScore = Math.max(0, baseScore - netPenalty);
         performancePercent = Math.round(finalScore);
       }
