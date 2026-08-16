@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar, TrendingUp, Users } from 'lucide-react'
+import { CheckSquare, ClipboardList, Home, LogOut, Menu, Database, ChevronDown, ChevronRight, Zap, FileText, X, Play, Pause, KeyRound, Video, Calendar, TrendingUp, Users, ShieldCheck, Linkedin, Activity } from 'lucide-react'
 import sbhLogo from '../../assets/logo.png'
 
 export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
@@ -193,6 +193,18 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     )
   }
 
+  const getRouteActiveColor = (href) => {
+    const orangeRoutes = [
+      "/dashboard/quick-task",
+      "/dashboard/assign-task",
+      "/dashboard/delegation",
+      "/dashboard/data/sales",
+      "/dashboard/calendar",
+      "/dashboard/traning-video"
+    ];
+    return orangeRoutes.includes(href) ? "menu-active-orange font-bold text-white" : "menu-active-gradient font-bold text-white";
+  }
+
   // Check if the current path is a data category page
   const isDataPage = location.pathname.includes("/dashboard/data/")
 
@@ -295,14 +307,14 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         <div className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#9333EA] to-[#DB2777] animate-pulse z-[100000]" />
       )}
       {/* Sidebar for desktop */}
-      <aside className="hidden w-64 flex-shrink-0 border-r border-purple-200 menu-container-bg md:flex md:flex-col">
-        <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
+      <aside className="hidden w-64 flex-shrink-0 border-r border-slate-200 menu-container-bg md:flex md:flex-col">
+        <div className="flex h-14 items-center border-b border-slate-200 px-4 menu-header-gradient">
           <Link
             to="/dashboard/admin"
             onClick={(e) => handleNavClick(e, "/dashboard/admin")}
-            className="flex items-center gap-2 font-semibold text-purple-700"
+            className="flex items-center gap-2 font-semibold text-[#387f39]"
           >
-            <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8" />
+            <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8 animate-pulse" />
           </Link>
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
@@ -314,13 +326,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                     <button
                       onClick={() => setIsDataSubmenuOpen(!isDataSubmenuOpen)}
                       className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                        ? "menu-active-gradient font-bold"
-                        : "text-gray-700 hover:bg-purple-50/50"
+                        ? getRouteActiveColor(route.href)
+                        : "text-slate-700 hover:bg-slate-100/70"
                         }`}
                     >
                       <div className="flex items-center gap-3">
                         <route.icon
-                          className={`h-4 w-4 ${route.active ? "text-white" : ""
+                          className={`h-4 w-4 ${route.active ? "text-white" : "text-slate-500"
                             }`}
                         />
                         {route.label}
@@ -332,7 +344,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                       )}
                     </button>
                     {isDataSubmenuOpen && (
-                      <ul className="mt-1 ml-6 space-y-1 border-l border-purple-100 pl-2">
+                      <ul className="mt-1 ml-6 space-y-1 border-l border-slate-200 pl-2">
                         {accessibleDepartments.map((category) => (
                           <li key={category.id}>
                             <Link
@@ -344,8 +356,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
                                 (category.link ||
                                   `/dashboard/data/${category.id}`)
-                                ? "bg-purple-50 text-purple-700 font-bold"
-                                : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
+                                ? "menu-active-orange font-bold text-white"
+                                : "text-slate-600 hover:bg-slate-100/50 hover:text-slate-900"
                                 }`}
                             >
                               {category.name}
@@ -360,12 +372,12 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                     to={route.href}
                     onClick={(e) => handleNavClick(e, route.href)}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                      ? "menu-active-gradient font-bold"
-                      : "text-gray-700 hover:bg-purple-50/50"
+                      ? getRouteActiveColor(route.href)
+                      : "text-slate-700 hover:bg-slate-100/70"
                       }`}
                   >
                     <route.icon
-                      className={`h-4 w-4 ${route.active ? "text-white" : ""
+                      className={`h-4 w-4 ${route.active ? "text-white" : "text-slate-500"
                         }`}
                     />
                     {route.label}
@@ -375,7 +387,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             ))}
           </ul>
         </nav>
-        <div className="border-t border-blue-200 p-4 bg-gradient-to-r from-blue-50 to-purple-50 ">
+        <div className="border-t border-slate-200 p-4 bg-slate-50">
           {/* Session Timer */}
           <div className="mb-3 px-2 py-1.5 bg-blue-100/50 rounded-md border border-blue-200 flex justify-between items-center">
             <span className="text-xs font-medium text-blue-600">Session expires:</span>
@@ -387,17 +399,17 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div
-                className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center border border-black"
+                className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center border border-slate-300"
               >
-                <span className="text-xl font-medium text-black">
+                <span className="text-sm font-bold text-white">
                   {username ? username.charAt(0).toUpperCase() : "U"}
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-blue-700">
+                <p className="text-sm font-bold text-slate-800">
                   {username || "User"} {userRole === "admin" ? "(Admin)" : ""}
                 </p>
-                <p className="text-xs text-blue-600">
+                <p className="text-xs text-slate-500">
                   {userEmail ||
                     (username
                       ? `${username.toLowerCase()}@example.com`
@@ -417,7 +429,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
               {toggleDarkMode && (
                 <button
                   onClick={toggleDarkMode}
-                  className="text-blue-700 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100"
+                  className="text-slate-500 hover:text-slate-800 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
                 >
                   {darkMode ? (
                     <svg
@@ -457,10 +469,11 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
               )}
               <button
                 onClick={handleLogout}
-                className="text-blue-700 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100"
+                className="w-9 h-9 hover:scale-105 transition-all transform flex items-center justify-center rounded-xl cursor-pointer shadow-md shadow-red-500/10 hover:shadow-lg border border-red-200"
+                style={{ background: 'linear-gradient(135deg, #f97316 0%, #e11d48 100%)', color: '#ffffff' }}
+                title="Sign Out"
               >
-                <LogOut className="h-4 w-4" />
-                <span className="sr-only">Log out</span>
+                <LogOut className="h-4.5 w-4.5 text-white" style={{ stroke: '#ffffff' }} />
               </button>
             </div>
           </div>
@@ -483,91 +496,93 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             className="fixed inset-0 bg-black/20"
             onClick={() => setIsMobileMenuOpen(false)}
           ></div>
-          <div className="fixed inset-y-0 left-0 w-64 menu-container-bg shadow-lg">
-            <div className="flex h-14 items-center border-b border-purple-200 px-4 menu-header-gradient">
-              <Link
-                to="/dashboard/admin"
-                onClick={(e) => handleNavClick(e, "/dashboard/admin")}
-                className="flex items-center gap-2 font-semibold text-purple-700"
-              >
-                <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
-              </Link>
-            </div>
-            <nav className="flex-1 overflow-y-auto p-2 menu-container-bg">
-              <ul className="space-y-1">
-                {accessibleRoutes.map((route) => (
-                  <li key={route.label}>
-                    {route.submenu ? (
-                      <div>
-                        <button
-                          onClick={() =>
-                            setIsDataSubmenuOpen(!isDataSubmenuOpen)
-                          }
-                          className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                            ? "menu-active-gradient font-bold"
-                            : "text-gray-700 hover:bg-purple-50/50"
+          <div className="fixed inset-y-0 left-0 w-64 menu-container-bg shadow-lg flex flex-col justify-between">
+            <div>
+              <div className="flex h-14 items-center border-b border-slate-200 px-4 menu-header-gradient">
+                <Link
+                  to="/dashboard/admin"
+                  onClick={(e) => handleNavClick(e, "/dashboard/admin")}
+                  className="flex items-center gap-2 font-semibold text-[#387f39]"
+                >
+                  <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
+                </Link>
+              </div>
+              <nav className="flex-1 overflow-y-auto p-2 menu-container-bg">
+                <ul className="space-y-1">
+                  {accessibleRoutes.map((route) => (
+                    <li key={route.label}>
+                      {route.submenu ? (
+                        <div>
+                          <button
+                            onClick={() =>
+                              setIsDataSubmenuOpen(!isDataSubmenuOpen)
+                            }
+                            className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                              ? getRouteActiveColor(route.href)
+                              : "text-slate-700 hover:bg-slate-100/70"
+                              }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <route.icon
+                                className={`h-4 w-4 ${route.active ? "text-white" : "text-slate-500"
+                                  }`}
+                              />
+                              {route.label}
+                            </div>
+                            {isDataSubmenuOpen ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                          {isDataSubmenuOpen && (
+                            <ul className="mt-1 ml-6 space-y-1 border-l border-slate-200 pl-2">
+                              {accessibleDepartments.map((category) => (
+                                <li key={category.id}>
+                                  <Link
+                                    to={
+                                      category.link ||
+                                      `/dashboard/data/${category.id}`
+                                    }
+                                    onClick={(e) => handleNavClick(e, category.link || `/dashboard/data/${category.id}`)}
+                                    className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
+                                      (category.link ||
+                                        `/dashboard/data/${category.id}`)
+                                      ? "menu-active-orange font-bold text-white"
+                                      : "text-slate-600 hover:bg-slate-100/50 hover:text-slate-900"
+                                      }`}
+                                  >
+                                    {category.name}
+                                  </Link>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ) : (
+                        <Link
+                          to={route.href}
+                          onClick={(e) => handleNavClick(e, route.href)}
+                          className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
+                            ? getRouteActiveColor(route.href)
+                            : "text-slate-700 hover:bg-slate-100/70"
                             }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <route.icon
-                              className={`h-4 w-4 ${route.active ? "text-white" : ""
-                                }`}
-                            />
-                            {route.label}
-                          </div>
-                          {isDataSubmenuOpen ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
-                        {isDataSubmenuOpen && (
-                          <ul className="mt-1 ml-6 space-y-1 border-l border-purple-100 pl-2">
-                            {accessibleDepartments.map((category) => (
-                              <li key={category.id}>
-                                <Link
-                                  to={
-                                    category.link ||
-                                    `/dashboard/data/${category.id}`
-                                  }
-                                  onClick={(e) => handleNavClick(e, category.link || `/dashboard/data/${category.id}`)}
-                                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${location.pathname ===
-                                    (category.link ||
-                                      `/dashboard/data/${category.id}`)
-                                    ? "bg-purple-50 text-purple-700 font-bold"
-                                    : "text-gray-600 hover:bg-purple-50/30 hover:text-purple-700"
-                                    }`}
-                                >
-                                  {category.name}
-                                </Link>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ) : (
-                      <Link
-                        to={route.href}
-                        onClick={(e) => handleNavClick(e, route.href)}
-                        className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${route.active
-                          ? "menu-active-gradient font-bold"
-                          : "text-gray-700 hover:bg-purple-50/50"
-                          }`}
-                      >
-                        <route.icon
-                          className={`h-4 w-4 ${route.active ? "text-white" : ""
-                            }`}
-                        />
-                        {route.label}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <div className="border-t border-blue-200 p-4 bg-gradient-to-r from-blue-50 to-purple-50">
+                          <route.icon
+                            className={`h-4 w-4 ${route.active ? "text-white" : "text-slate-500"
+                              }`}
+                          />
+                          {route.label}
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </div>
+            <div className="border-t border-slate-200 p-4 bg-slate-50">
               {/* Session Timer */}
-              <div className="mb-3 px-2 py-1.5 bg-blue-100/50 rounded-md border border-blue-200 flex justify-between items-center">
+              <div className="mb-3 px-2 py-1.5 bg-slate-100 rounded-md border border-slate-200 flex justify-between items-center">
                 <span className="text-xs font-medium text-blue-600">Session expires:</span>
                 <span className={`text-xs font-mono font-bold ${timeLeft < "05:00" ? "text-red-500" : "text-blue-700"}`}>
                   {timeLeft}
@@ -649,10 +664,11 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                   )}
                   <button
                     onClick={handleLogout}
-                    className="text-blue-700 hover:text-blue-900 p-1 rounded-full hover:bg-blue-100 "
+                    className="w-9 h-9 hover:scale-105 transition-all transform flex items-center justify-center rounded-xl cursor-pointer shadow-md shadow-red-500/10 hover:shadow-lg border border-red-200"
+                    style={{ background: 'linear-gradient(135deg, #f97316 0%, #e11d48 100%)', color: '#ffffff' }}
+                    title="Sign Out"
                   >
-                    <LogOut className="h-4 w-4" />
-                    <span className="sr-only">Log out</span>
+                    <LogOut className="h-4.5 w-4.5 text-white" style={{ stroke: '#ffffff' }} />
                   </button>
                 </div>
               </div>
@@ -699,9 +715,58 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         </header>
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50 relative">
           {children}
-          <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999999] font-bold tracking-wider">
-            Architecture by <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-emerald-100 transition-colors">Naman Mishra</a>
-          </div>
+          <footer 
+            className="fixed md:left-64 left-0 right-0 bottom-0 py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10 text-white"
+            style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
+          >
+            <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
+            <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
+
+              {/* 📱 MOBILE VIEW */}
+              <div className="flex flex-col items-center justify-center md:hidden py-0.5">
+                <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
+                  <ShieldCheck size={10} className="text-white" />
+                  <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
+                    SBH Group Of Hospitals
+                  </span>
+                </a>
+                <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
+                  <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
+                    Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
+                  </span>
+                  <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
+                </a>
+              </div>
+
+              {/* 💻 DESKTOP VIEW */}
+              <div className="hidden md:flex items-center justify-between gap-6 h-6">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
+                    <Activity size={11} className="text-white" />
+                  </div>
+                  <div className="flex flex-col text-left">
+                    <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
+                    <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
+                  </div>
+                </div>
+
+                <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
+                  <ShieldCheck size={10} className="text-white" />
+                  <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
+                    SBH Group Of Hospitals
+                  </span>
+                </a>
+
+                <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
+                  <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
+                  <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none">
+                    Naman Mishra
+                    <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
+                  </span>
+                </a>
+              </div>
+            </div>
+          </footer>
         </main>
       </div>
 

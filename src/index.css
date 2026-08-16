@@ -9,19 +9,25 @@
 }
 
 .menu-header-gradient {
-    background-color: #f3e8ff !important;
-    background: linear-gradient(to right, #f3e8ff, #fce7f3) !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
 }
 
 .menu-active-gradient {
-    background-color: #9333ea !important;
-    background: linear-gradient(to right, #9333EA, #DB2777) !important;
+    background-color: #387f39 !important;
+    background: #387f39 !important;
+    color: #ffffff !important;
+}
+
+.menu-active-orange {
+    background-color: #f0a04b !important;
+    background: #f0a04b !important;
     color: #ffffff !important;
 }
 
 .menu-container-bg {
-    background-color: #faf5ff !important;
-    background: linear-gradient(135deg, #faf5ff 0%, #fdf2f8 100%) !important;
+    background-color: #f8fafc !important;
+    background: #f8fafc !important;
 }
 
 .login-header-gradient {

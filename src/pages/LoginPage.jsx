@@ -2,18 +2,19 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ShieldAlert, RefreshCw, Lock, User, Key, Frown, ClipboardList, CheckCircle2, Users, ArrowRight, Award, ShieldCheck, Linkedin, Activity } from "lucide-react";
 import sbhLogo from "../assets/logo.png";
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isLoginLoading, setIsLoginLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Controls button-level loading spinner
   const [visible, setVisible] = useState(false);
   const [masterData, setMasterData] = useState({
-    userCredentials: {}, // Object where keys are usernames and values are passwords
+    userCredentials: {},
     userRoles: {},
-    userEmails: {}, // Object where keys are usernames and values are roles
+    userEmails: {},
   });
   const [formData, setFormData] = useState({
     username: "",
@@ -22,10 +23,18 @@ const LoginPage = () => {
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [loggedInUsername, setLoggedInUsername] = useState("");
+  const [showSadEmoji, setShowSadEmoji] = useState(false);
 
-  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
+  // Captcha and Lockout States
+  const [captcha, setCaptcha] = useState({ num1: 0, num2: 0, answer: 0 });
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [lockedUsers, setLockedUsers] = useState([]);
+  const [failedAttempts, setFailedAttempts] = useState({});
+
+  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...");
+  
   useEffect(() => {
-    if (!isLoginLoading && !isDataLoading) return
+    if (!isLoginLoading && !isDataLoading) return;
     const messages = [
       "🏥 Updating SBH Group of Hospitals analytics...",
       "💼 Assembling the management team for synergy...",
@@ -35,23 +44,26 @@ const LoginPage = () => {
       "📧 Drafting emails that could have been quick meetings...",
       "✨ Boosting team performance metrics by 200%...",
       "🍪 Stealing biscuits from the office breakroom..."
-    ]
-    let idx = 0
+    ];
+    let idx = 0;
     const timer = setInterval(() => {
-      idx = (idx + 1) % messages.length
-      setFunnyMsg(messages[idx])
-    }, 2500)
-    return () => clearInterval(timer)
-  }, [isLoginLoading, isDataLoading])
+      idx = (idx + 1) % messages.length;
+      setFunnyMsg(messages[idx]);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [isLoginLoading, isDataLoading]);
 
-  // Function to check if a role is any variation of "inactive"
+  // Generate a random mathematical captcha
+  const generateCaptcha = () => {
+    const num1 = Math.floor(Math.random() * 9) + 1;
+    const num2 = Math.floor(Math.random() * 9) + 1;
+    setCaptcha({ num1, num2, answer: num1 + num2 });
+    setCaptchaInput("");
+  };
+
   const isInactiveRole = (role) => {
     if (!role) return false;
-
-    // Convert to lowercase
     const normalizedRole = String(role).toLowerCase().trim();
-
-    // Check for different variations of "inactive" status
     return (
       normalizedRole === "inactive" ||
       normalizedRole === "in active" ||
@@ -60,107 +72,68 @@ const LoginPage = () => {
     );
   };
 
-  // Fetch master data on component mount
-  useEffect(() => {
-    const fetchMasterData = async () => {
-      const SCRIPT_URL =
-        "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
+  const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
 
+  // Fetch master data and locked users on mount
+  useEffect(() => {
+    generateCaptcha();
+    const fetchMasterData = async () => {
       try {
         setIsDataLoading(true);
 
-        // Get the spreadsheet ID from your Apps Script
-        const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
+        // Fetch locked users list with robust fallback handling
+        try {
+          const lockedRes = await fetch(`${SCRIPT_URL}?action=getLockedUsers`);
+          if (lockedRes.ok) {
+            const resText = await lockedRes.text();
+            // Verify if it is valid JSON before parsing
+            if (resText && (resText.startsWith("{") || resText.startsWith("["))) {
+              const lockedData = JSON.parse(resText);
+              if (lockedData && lockedData.success) {
+                setLockedUsers(lockedData.lockedUsers || []);
+              }
+            } else {
+              console.warn("Apps Script returned text/html response instead of JSON. Will load once script is re-deployed.");
+            }
+          }
+        } catch (lockErr) {
+          console.warn("Failed to fetch locked users from DB:", lockErr);
+        }
 
-        // Construct the URL to read the sheet data directly
+        // Fetch user list
         const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
-
         const response = await fetch(sheetUrl);
         const text = await response.text();
-
-        // Parse the Google Sheets JSON response
-        const jsonString = text.substring(47).slice(0, -2); // Remove Google's wrapper
+        const jsonString = text.substring(47).slice(0, -2);
         const data = JSON.parse(jsonString);
 
-        // Create userCredentials and userRoles objects from the sheet data
         const userCredentials = {};
         const userRoles = {};
         const userEmails = {};
 
-        // Process the data rows (skip header row if it exists)
         if (data.table && data.table.rows) {
-          //console.log("Raw sheet data:", data.table.rows);
-
-          // Start from index 1 to skip header row (adjust if needed)
           for (let i = 1; i < data.table.rows.length; i++) {
             const row = data.table.rows[i];
-
-            // Extract data from columns C, D, E (indices 2, 3, 4)
-            const username = row.c[2]
-              ? String(row.c[2].v || "").trim()
-              : "";
+            const username = row.c[2] ? String(row.c[2].v || "").trim() : "";
             const password = row.c[3] ? String(row.c[3].v || "").trim() : "";
             const role = row.c[4] ? String(row.c[4].v || "").trim() : "user";
             const email = row.c[5] ? String(row.c[5].v || "").trim() : "";
 
-            //console.log(`Processing row ${i}: username=${username}, password=${password}, role=${role}`);
-
-            // Only process if we have both username and password
             if (username && password && password.trim() !== "") {
-              // Check if the role is any kind of inactive status
-              if (isInactiveRole(role)) {
-                //console.log(`Skipping inactive user: ${username} with role: ${role}`);
-                continue; // Skip this user
-              }
-
-              // Store normalized role for comparison
-              const normalizedRole = role.toLowerCase();
-
-              // Store in our maps
+              if (isInactiveRole(role)) continue;
+              
               userCredentials[username] = password;
-              userRoles[username] = normalizedRole;
+              userRoles[username] = role.toLowerCase();
               userEmails[username] = email;
-
-              //console.log(`Added credential for: ${username}, Role: ${normalizedRole}`);
             }
           }
         }
 
         setMasterData({ userCredentials, userRoles, userEmails });
-        //console.log("Loaded credentials from master sheet:", Object.keys(userCredentials).length)
-        //console.log("Credentials map:", userCredentials)
-        //console.log("Roles map:", userRoles)
-
-        // Debug - check admin roles specifically
-        const adminUsers = Object.entries(userRoles)
-          .filter(([, role]) => role === "admin")
-          .map(([username]) => username);
-        //console.log("Admin users found:", adminUsers);
       } catch (error) {
         console.error("Error Fetching Master Data:", error);
-
-        // Fallback: Try the alternative method using your Apps Script
-        try {
-          //console.log("Trying alternative method...");
-          const fallbackResponse = await fetch(SCRIPT_URL, {
-            method: "GET",
-          });
-
-          if (fallbackResponse.ok) {
-            //console.log("Apps Script is accessible, but getMasterData action needs to be implemented");
-            showToast(
-              "Unable to load user data. Please contact administrator.",
-              "error"
-            );
-          }
-        } catch (fallbackError) {
-          console.error("Fallback also failed:", fallbackError);
-        }
-
-        showToast(
-          `Network error: ${error.message}. Please try again later.`,
-          "error"
-        );
+        showToast(`Network error: ${error.message}. Please try again later.`, "error");
       } finally {
         setIsDataLoading(false);
       }
@@ -175,12 +148,7 @@ const LoginPage = () => {
   };
 
   const logAttendance = async (username, role) => {
-    const SCRIPT_URL =
-      "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
-    const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-
     try {
-      // Fetch IP
       let clientIp = "—";
       try {
         const ipRes = await fetch("https://api.ipify.org?format=json");
@@ -192,7 +160,6 @@ const LoginPage = () => {
         console.warn("Could not fetch client IP:", ipErr);
       }
 
-      // Detect Browser
       const userAgent = navigator.userAgent;
       let browserName = "Unknown";
       if (userAgent.indexOf("Firefox") > -1) browserName = "Firefox";
@@ -200,10 +167,8 @@ const LoginPage = () => {
       else if (userAgent.indexOf("Safari") > -1) browserName = "Safari";
       else if (userAgent.indexOf("MSIE") > -1 || !!document.documentMode === true) browserName = "IE";
 
-      // Detect Device/OS
       let devicePlatform = navigator.platform || "Unknown";
 
-      // Call recordLogin action
       const recordPayload = new FormData();
       recordPayload.append("action", "recordLogin");
       recordPayload.append("username", username);
@@ -217,7 +182,6 @@ const LoginPage = () => {
         body: recordPayload,
       }).catch((err) => console.error("Login History logging failed", err));
 
-      // Step 1: Fetch sheet data using GVIZ to find the user's row
       const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance%20Login`;
       const response = await fetch(sheetUrl);
       const text = await response.text();
@@ -225,35 +189,19 @@ const LoginPage = () => {
       const data = JSON.parse(jsonString);
 
       let rowIndex = -1;
-      // Search for the username in Column B (index 1)
       if (data.table && data.table.rows) {
         for (let i = 0; i < data.table.rows.length; i++) {
           const row = data.table.rows[i];
-          const cellValue =
-            row.c && row.c[1]
-              ? String(row.c[1].v || "")
-                .trim()
-                .toLowerCase()
-              : "";
-
+          const cellValue = row.c && row.c[1] ? String(row.c[1].v || "").trim().toLowerCase() : "";
           if (cellValue === username.trim().toLowerCase()) {
-            // i is 0-based index from the rows array
-            // User reported it was writing 1 row too high, so we increment by 2
-            // i=0 (likely first data row after header) -> should be Row 2 in sheet
             rowIndex = i + 2;
             break;
           }
         }
       }
 
-      if (rowIndex === -1) {
-        console.warn(
-          "User not found in Attendance Login sheet for attendance logging"
-        );
-        return;
-      }
+      if (rowIndex === -1) return;
 
-      // Step 2: Update the specific row
       const now = new Date();
       const day = now.getDate().toString().padStart(2, "0");
       const month = (now.getMonth() + 1).toString().padStart(2, "0");
@@ -261,7 +209,6 @@ const LoginPage = () => {
       const hours = now.getHours().toString().padStart(2, "0");
       const minutes = now.getMinutes().toString().padStart(2, "0");
       const seconds = now.getSeconds().toString().padStart(2, "0");
-
       const formattedTimestamp = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 
       const payload = new FormData();
@@ -269,15 +216,9 @@ const LoginPage = () => {
       payload.append("action", "update");
       payload.append("rowIndex", rowIndex.toString());
 
-      // We send a flat array to update specific columns
-      // Index 0 -> Column A: "" (No change)
-      // Index 1 -> Column B: "" (No change)
-      // Index 2 -> Column C: Timestamp
       const rowData = ["", "", formattedTimestamp];
-
       payload.append("rowData", JSON.stringify(rowData));
 
-      // Fire and forget - don't await to avoid blocking UI
       fetch(SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
@@ -290,99 +231,110 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoginLoading(true);
+    setIsSubmitting(true);
+    setShowSadEmoji(false);
+
+    const trimmedUsername = formData.username.trim();
+    const trimmedPassword = formData.password.trim();
 
     try {
-      const trimmedUsername = formData.username.trim();
-      const trimmedPassword = formData.password.trim();
+      // 1. Check if user is locked
+      const isUserLocked = lockedUsers.some(
+        (u) => String(u).toLowerCase().trim() === trimmedUsername.toLowerCase().trim()
+      );
+      if (isUserLocked) {
+        showToast("😞 Account is locked! Please contact AM Sir (Dr. A.M.) to unlock it.", "error");
+        setIsSubmitting(false);
+        return;
+      }
 
-      //console.log("Login Attempt Details:")
-      //console.log("Entered Username:", trimmedUsername)
-      //console.log("Entered Password:", trimmedPassword) // For debugging (remove in production)
-      //console.log("Available Credentials Count:", Object.keys(masterData.userCredentials).length)
-      //console.log("Current userCredentials:", masterData.userCredentials)
-      //console.log("Current userRoles:", masterData.userRoles)
+      // 2. Validate Captcha
+      if (parseInt(captchaInput) !== captcha.answer) {
+        showToast("🤖 Incorrect Captcha calculation. Please try again.", "error");
+        generateCaptcha();
+        setIsSubmitting(false);
+        return;
+      }
 
-      // Check if the username exists in our credentials map
+      // 3. Authenticate
       if (trimmedUsername in masterData.userCredentials) {
         const correctPassword = masterData.userCredentials[trimmedUsername];
         const userRole = masterData.userRoles[trimmedUsername];
         const userEmail = masterData.userEmails[trimmedUsername] || "";
 
-        //console.log("Found user in credentials map")
-        //console.log("Expected Password:", correctPassword)
-        //console.log("Password Match:", correctPassword === trimmedPassword)
-        //console.log("User Role:", userRole)
-        //console.log("User Email:", userEmail)
-
-        // Check if password matches
         if (correctPassword === trimmedPassword) {
-          // Store user info in sessionStorage
-          sessionStorage.setItem("username", trimmedUsername);
-          sessionStorage.setItem("email", userEmail);
-          setLoggedInUsername(trimmedUsername); // Set the username for the popup
+          // Success Path - Clear attempts
+          setFailedAttempts((prev) => {
+            const updated = { ...prev };
+            delete updated[trimmedUsername];
+            return updated;
+          });
 
-          // Check if user is admin - explicitly compare with the string "admin"
-          const isAdmin = userRole === "admin";
-          //console.log(`User ${trimmedUsername} is admin: ${isAdmin}`);
+          // Correct password -> NOW trigger full-screen rotating loading screen overlay
+          setIsLoginLoading(true);
 
-          // Set role based on the fetched role
-          sessionStorage.setItem("role", isAdmin ? "admin" : "user");
-
-          // For admin users, we don't want to restrict by department
-          if (isAdmin) {
-            sessionStorage.setItem("department", "all"); // Admin sees all departments
-            sessionStorage.setItem("isAdmin", "true"); // Additional flag to ensure admin permissions
-            //console.log("ADMIN LOGIN - Setting full access permissions");
-          } else {
-            sessionStorage.setItem("department", trimmedUsername);
-            sessionStorage.setItem("isAdmin", "false");
-            //console.log("USER LOGIN - Setting restricted access");
-          }
-
-          // Log attendance to Google Sheet
-          logAttendance(trimmedUsername, userRole);
-
-          // Show success popup
-          setShowSuccessPopup(true);
-
-          // After 2 seconds, navigate to dashboard
           setTimeout(() => {
-            navigate("/dashboard/admin");
-          }, 2000);
+            sessionStorage.setItem("username", trimmedUsername);
+            sessionStorage.setItem("email", userEmail);
+            setLoggedInUsername(trimmedUsername);
 
-          showToast(
-            `Login successful. Welcome, ${trimmedUsername}!`,
-            "success"
-          );
+            const isAdmin = userRole === "admin";
+            sessionStorage.setItem("role", isAdmin ? "admin" : "user");
+
+            if (isAdmin) {
+              sessionStorage.setItem("department", "all");
+              sessionStorage.setItem("isAdmin", "true");
+            } else {
+              sessionStorage.setItem("department", trimmedUsername);
+              sessionStorage.setItem("isAdmin", "false");
+            }
+
+            logAttendance(trimmedUsername, userRole);
+            
+            // Turn off loaders and show success overlay modal
+            setIsLoginLoading(false);
+            setIsSubmitting(false);
+            setShowSuccessPopup(true);
+
+            setTimeout(() => {
+              navigate("/dashboard/admin");
+            }, 2000);
+
+            showToast(`Login successful. Welcome back, ${trimmedUsername}!`, "success");
+          }, 1200); // 1.2s delay for professional rotating messages
+          
           return;
-        } else {
-          showToast(
-            "Username or password is incorrect. Please try again.",
-            "error"
-          );
+        }
+      }
+
+      // 4. Failed Login Path (Local check, no page loading)
+      const currentAttempts = (failedAttempts[trimmedUsername] || 0) + 1;
+      setFailedAttempts((prev) => ({ ...prev, [trimmedUsername]: currentAttempts }));
+      setShowSadEmoji(true);
+
+      if (currentAttempts >= 5) {
+        // Exceeded 5 attempts -> Lock user in Google Sheets LockedAccounts sheet
+        try {
+          await fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(trimmedUsername)}`);
+          setLockedUsers((prev) => [...prev, trimmedUsername]);
+          showToast("🔴 5 failed attempts! This account has been LOCKED. Please contact AM Sir.", "error");
+        } catch (err) {
+          console.error("Failed to lock user in database:", err);
+          showToast("🔴 5 failed attempts! Account is locked locally.", "error");
         }
       } else {
         showToast(
-          "Username or password is incorrect. Please try again.",
+          `😢 Wrong password. Attempt ${currentAttempts}/5. ${5 - currentAttempts} attempts remaining before lockout!`,
           "error"
         );
       }
+      generateCaptcha();
+      setIsSubmitting(false);
 
-      // If we got here, login failed
-      console.error("Login Failed", {
-        usernameExists: trimmedUsername in masterData.userCredentials,
-        passwordMatch:
-          trimmedUsername in masterData.userCredentials
-            ? "Password did not match"
-            : "Username not found",
-        userRole: masterData.userRoles[trimmedUsername] || "No role",
-      });
     } catch (error) {
       console.error("Login Error:", error);
       showToast(`Login failed: ${error.message}. Please try again.`, "error");
-    } finally {
-      setIsLoginLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -390,7 +342,7 @@ const LoginPage = () => {
     setToast({ show: true, message, type });
     setTimeout(() => {
       setToast({ show: false, message: "", type: "" });
-    }, 5000); // Toast duration
+    }, 4500);
   };
 
   const togglePasswordVisibility = () => {
@@ -398,173 +350,325 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-50/50 via-white to-emerald-50/50 p-4 relative" style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #e6f9f0 100%)', backgroundColor: '#f1f5f9' }}>
+    <div className="min-h-screen flex items-center justify-center p-3 md:p-6 pb-16 md:pb-20" style={{ background: 'linear-gradient(135deg, #eef7f2 0%, #ffffff 50%, #fef6f0 100%)', backgroundColor: '#eef7f2' }}>
+      
       {isLoginLoading && (
-        <div className="absolute inset-0 bg-white/85 backdrop-blur-md z-[9999] flex flex-col items-center justify-center min-h-[300px]">
+        <div className="absolute inset-0 bg-white/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center min-h-[300px]">
           <div className="flex flex-col items-center justify-center space-y-4">
-            <div className="relative flex items-center justify-center">
-              <svg className="animate-spin h-12 w-12 text-[#10B981]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="spinner-grad-login" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#10B981" />
-                    <stop offset="100%" stopColor="#4F46E5" />
-                  </linearGradient>
-                </defs>
+            <div className="relative flex items-center justify-center animate-bounce">
+              <svg className="animate-spin h-14 w-14 text-[#387f39]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-90" fill="url(#spinner-grad-login)" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-            <div className="text-center space-y-1">
+            <div className="text-center space-y-1 px-4">
               <p className="text-slate-800 text-sm font-semibold tracking-wide animate-pulse">
                 {funnyMsg}
               </p>
-              <p className="text-[10px] uppercase font-black tracking-widest bg-gradient-to-r from-[#10B981] to-[#4F46E5] bg-clip-text text-transparent">
-                Authenticating...
+              <p className="text-[10px] uppercase font-black tracking-widest text-[#f59e0b]">
+                Securing Access Portal...
               </p>
             </div>
           </div>
         </div>
       )}
-      <div className="w-full max-w-md shadow-2xl border border-slate-100 rounded-3xl bg-white overflow-hidden transition-all duration-300" style={{ backgroundColor: '#ffffff' }}>
-        <div className="space-y-2 p-6 login-header-gradient rounded-t-3xl border-b-4 border-emerald-500 text-center" style={{ borderBottomColor: '#10b981' }}>
-          <div className="flex flex-col items-center justify-center mb-1 gap-2">
-            <img src={sbhLogo} alt="SBH Group of Hospitals" className="w-56 h-auto object-contain drop-shadow-md mb-1" />
-            <h2 className="text-2xl font-black text-indigo-900 tracking-tight" style={{ color: '#312e81' }}>
-              Checklist & Delegation
+
+      {/* Main Container: Split screen on md+ */}
+      <div className="w-full max-w-5xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col md:flex-row min-h-[580px]">
+        
+        {/* Left Side: Creative Office/Management Board with exact Fluid Gradient matching Footer code: Orange to Green */}
+        <div 
+          className="hidden md:flex md:w-1/2 p-8 flex-col justify-between text-white relative overflow-hidden"
+          style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
+        >
+          
+          {/* Subtle patterns for visual richness (No white overlays) */}
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
+          
+          {/* Header block of Illustration side */}
+          <div className="flex items-center gap-2 z-10">
+            <div className="bg-black/10 p-2 rounded-xl backdrop-blur-md">
+              <ShieldCheck className="h-5 w-5 text-yellow-100" />
+            </div>
+            <span className="text-[10px] uppercase tracking-widest font-black text-white/90">
+              Official Secure Node
+            </span>
+          </div>
+
+          {/* Center Illustration: Styled Cartoon Dashboard / System Interface Mockup */}
+          <div className="my-8 space-y-6 z-10">
+            <h2 className="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-sm">
+              SBH Operations & <br />
+              <span className="text-[#ffd54f]">Compliance Hub</span>
             </h2>
-          </div>
-          <p className="text-indigo-600 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#4f46e5' }}>
-            Login to access your tasks and delegations
-          </p>
-        </div>
+            <p className="text-white/90 text-xs font-medium leading-relaxed max-w-sm drop-shadow-xs">
+              Real-time daily logins, streak monitoring, leaves logs, and task delegations managed inside one centralized administration shield.
+            </p>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="space-y-2">
-            <label
-              htmlFor="username"
-              className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
-              style={{ color: '#334155' }}
-            >
-              <i className="fas fa-user h-3.5 w-3.5 mr-2 text-indigo-600" style={{ color: '#4f46e5' }}></i>
-              Username
-            </label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              placeholder="Enter your username"
-              required
-              value={formData.username}
-              onChange={handleChange}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm text-slate-800 font-medium"
-            />
-          </div>
+            {/* Creative System mockup cards representing office tasks */}
+            <div className="space-y-3 pt-2">
+              
+              {/* Checklist template indicator card */}
+              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
+                <div className="bg-[#f59e0b] p-2.5 rounded-xl shadow-md shrink-0">
+                  <ClipboardList className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Checklist Verification</h4>
+                  <p className="text-[10px] text-white/85 mt-0.5">Automated morning logs generation at 12:00 PM</p>
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <label
-              htmlFor="password"
-              className="flex items-center text-slate-700 text-xs font-bold uppercase tracking-wider"
-              style={{ color: '#334155' }}
-            >
-              <i className="fas fa-key h-3.5 w-3.5 mr-2 text-indigo-600" style={{ color: '#4f46e5' }}></i>
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                name="password"
-                type={visible ? "text" : "password"}
-                placeholder="Enter your password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-sm text-slate-800 font-medium pr-10"
-              />
-              <button
-                type="button"
-                onClick={togglePasswordVisibility}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-indigo-600"
-              >
-                {visible ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+              {/* Active employee statistics indicator card */}
+              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
+                <div className="bg-[#10b981] p-2.5 rounded-xl shadow-md shrink-0">
+                  <Users className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Active Staff Directory</h4>
+                  <p className="text-[10px] text-white/85 mt-0.5">Synced dynamically with WhatsApp master sheets</p>
+                </div>
+              </div>
+
+              {/* Scorecard compliance indicator card */}
+              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
+                <div className="bg-[#2e7d32] p-2.5 rounded-xl shadow-md shrink-0">
+                  <Award className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Auto Performance Penalties</h4>
+                  <p className="text-[10px] text-white/85 mt-0.5">Automatic point deductions on pending logins</p>
+                </div>
+              </div>
+
             </div>
           </div>
 
-          <div className="pt-2">
-            <button
-              type="submit"
-              className="w-full login-btn-gradient py-3.5 px-4 text-white font-extrabold rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg text-sm tracking-wide"
-              disabled={isLoginLoading || isDataLoading}
-            >
-              {isLoginLoading
-                ? "Logging in..."
-                : isDataLoading
-                  ? "Loading..."
-                  : "Login"}
-            </button>
+          {/* Footer block of Illustration side */}
+          <div className="text-[10px] text-white/85 font-black z-10 drop-shadow-xs">
+            &copy; {new Date().getFullYear()} SBH Group of Hospitals. Administrative Portal.
           </div>
-        </form>
+
+        </div>
+
+        {/* Right Side: Clean Login Form */}
+        <div className="w-full md:w-1/2 p-6 md:p-12 flex flex-col justify-center space-y-6">
+          
+          {/* Header containing SBH Logo */}
+          <div className="text-center md:text-left space-y-3">
+            <div className="flex justify-center md:justify-start">
+              <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl inline-block shadow-sm">
+                <img src={sbhLogo} alt="SBH Logo" className="h-14 w-auto object-contain" />
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="text-2xl font-black text-slate-800 tracking-tight">Portal Authentication</h3>
+              <p className="text-xs text-slate-400 font-semibold mt-1">
+                Enter your credentials below to log in to the CDMSBH dashboard
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            
+            {/* User locked alert notification */}
+            {lockedUsers.length > 0 && formData.username && lockedUsers.some(u => String(u).toLowerCase().trim() === formData.username.toLowerCase().trim()) && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-start gap-2.5 animate-bounce">
+                <ShieldAlert className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <span className="font-bold block">Account Blocked!</span>
+                  This user has been locked due to 5 consecutive wrong attempts. Contact AM Sir to unblock.
+                </div>
+              </div>
+            )}
+
+            {/* Sad face wrong password prompt */}
+            {showSadEmoji && (
+              <div className="bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-xl flex items-center gap-3 animate-pulse">
+                <Frown className="h-7 w-7 text-orange-500 shrink-0" />
+                <div className="text-xs font-bold text-orange-900">
+                  Wrong username or password attempt 😞. Lockout attempts are monitored.
+                </div>
+              </div>
+            )}
+
+            {/* Username Input */}
+            <div className="space-y-1">
+              <label htmlFor="username" className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
+                Username / Identifier
+              </label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  placeholder="Enter your username"
+                  required
+                  value={formData.username}
+                  onChange={handleChange}
+                  className="w-full pl-10 pr-4 py-3.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent transition-all text-xs font-semibold text-slate-800 bg-[#f4f6f9]"
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div className="space-y-1">
+              <label htmlFor="password" className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
+                Access Password
+              </label>
+              <div className="relative">
+                <Key className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                <input
+                  id="password"
+                  name="password"
+                  type={visible ? "text" : "password"}
+                  placeholder="••••••••"
+                  required
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="w-full pl-10 pr-10 py-3.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent transition-all text-xs font-semibold text-slate-800 bg-[#f4f6f9]"
+                />
+                <button
+                  type="button"
+                  onClick={togglePasswordVisibility}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-[#387f39]"
+                >
+                  {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Mathematical Captcha - Dark background for maximum contrast */}
+            <div className="bg-[#f8fafc] border border-slate-200 rounded-2xl p-4 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
+                  Security Captcha Verification
+                </span>
+                <button
+                  type="button"
+                  onClick={generateCaptcha}
+                  className="text-[#387f39] hover:text-emerald-700 p-0.5 rounded transition-colors"
+                  title="Reload Captcha"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="bg-slate-800 text-white font-black text-xs px-3.5 py-2.5 rounded-xl select-none tracking-wider shadow-sm min-w-[85px] text-center">
+                  {captcha.num1} + {captcha.num2} =
+                </div>
+                <input
+                  type="number"
+                  placeholder="Solve sum..."
+                  required
+                  value={captchaInput}
+                  onChange={(e) => setCaptchaInput(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] text-xs font-black text-slate-800 text-center bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Submit Button - Solid Hospital Green */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                className="w-full bg-[#387f39] hover:bg-[#2d662e] py-3.5 px-4 text-white font-extrabold rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg text-xs tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isSubmitting || isDataLoading}
+              >
+                {isSubmitting ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                    <span>Verifying...</span>
+                  </div>
+                ) : isDataLoading ? (
+                  <span>Loading Database...</span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <span>Secure Login</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
+                )}
+              </button>
+            </div>
+
+          </form>
+
+        </div>
+
       </div>
 
-      {/* Toast Notification */}
-      {toast.show && (
-        <div
-          className={`fixed bottom-12 right-4 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 z-[9999] ${toast.type === "success"
-            ? "bg-green-100 text-green-800 border-l-4 border-green-500"
-            : "bg-red-100 text-red-800 border-l-4 border-red-500"
-            }`}
-        >
-          {toast.message}
+      {/* Official Footer Component Layout - Sleeker & Thinner Padding */}
+      <footer 
+        className="fixed bottom-0 left-0 w-full py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
+        style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
+      >
+        <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
+        <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
+
+          {/* 📱 MOBILE VIEW */}
+          <div className="flex flex-col items-center justify-center md:hidden py-0.5">
+            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
+              <ShieldCheck size={10} className="text-white" />
+              <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
+                SBH Group Of Hospitals
+              </span>
+            </a>
+            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
+              <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
+                Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
+              </span>
+              <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
+            </a>
+          </div>
+
+          {/* 💻 DESKTOP VIEW */}
+          <div className="hidden md:flex items-center justify-between gap-6 h-6 text-white">
+            <div className="flex items-center gap-2.5">
+              <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
+                <Activity size={11} className="text-white" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
+                <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
+              </div>
+            </div>
+
+            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
+              <ShieldCheck size={10} className="text-white" />
+              <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
+                SBH Group Of Hospitals
+              </span>
+            </a>
+
+            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
+              <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
+              <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none text-white">
+                Naman Mishra
+                <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
+              </span>
+            </a>
+          </div>
         </div>
-      )}
+      </footer>
 
       {/* Success Popup Modal */}
       {showSuccessPopup && (
-        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(4px)' }}>
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl transform transition-all duration-300 scale-100 opacity-100">
-            <div className="text-center">
-              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
-                <svg
-                  className="h-6 w-6 text-green-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </div>
-              <h3 className="mt-3 text-lg font-medium text-gray-900">
-                Login Successful!
-              </h3>
-              <div className="mt-2 px-4 py-3">
-                <p className="text-xl text-gray-600">
-                  Welcome{" "}
-                  <span className="font-semibold text-blue-600">
-                    {loggedInUsername}
-                  </span>
-                  , you have successfully logged in.
-                </p>
-              </div>
-              <div className="mt-4">
-                <div className="flex justify-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Redirecting to dashboard...
-                </p>
-              </div>
+        <div className="fixed inset-0 flex items-center justify-center z-[10000]" style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(3px)' }}>
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center border border-emerald-100 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto mb-4 animate-bounce">
+              <CheckCircle2 size={36} className="text-[#387f39]" />
             </div>
+            <h3 className="text-lg font-black text-slate-800 tracking-tight uppercase">Access Granted</h3>
+            <p className="text-xs text-slate-500 font-bold mt-2">
+              Welcome back, <span className="text-[#387f39] font-extrabold">{loggedInUsername}</span>! Redirecting to secure node...
+            </p>
           </div>
         </div>
       )}
-      <div className="fixed left-0 right-0 bottom-0 py-1.5 px-4 login-footer-gradient text-white text-center text-xs shadow-md z-[999999] font-bold tracking-wider">
-        Architecture by <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-emerald-100 transition-colors">Naman Mishra</a>
-      </div>
+      
     </div>
   );
 };

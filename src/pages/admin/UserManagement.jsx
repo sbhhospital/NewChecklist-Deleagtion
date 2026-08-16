@@ -18,6 +18,42 @@ export default function UserManagement() {
   const [error, setError] = useState(null)
   const [successMessage, setSuccessMessage] = useState("")
 
+  // Locked Accounts States & Handlers
+  const [lockedUsers, setLockedUsers] = useState([])
+  const [unlockLoading, setUnlockLoading] = useState(false)
+
+  const fetchLockedUsers = async () => {
+    try {
+      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?action=getLockedUsers`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.success) {
+          setLockedUsers(data.lockedUsers || [])
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching locked users:", err)
+    }
+  }
+
+  const handleUnlockUser = async (username) => {
+    setUnlockLoading(true)
+    try {
+      const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?action=unlockUser&username=${encodeURIComponent(username)}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.success) {
+          showToast(`Successfully unlocked account: ${username}`, "success")
+          fetchLockedUsers()
+        }
+      }
+    } catch (err) {
+      console.error("Failed to unlock user:", err)
+    } finally {
+      setUnlockLoading(false)
+    }
+  }
+
   const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
   useEffect(() => {
     if (!loading) return
@@ -258,6 +294,7 @@ export default function UserManagement() {
   useEffect(() => {
     fetchUsers()
     fetchDropdownOptions()
+    fetchLockedUsers()
   }, [])
 
   // Filtered users list (excluding department match checks in main search queries if not needed)
@@ -627,6 +664,39 @@ export default function UserManagement() {
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
               <span className="font-semibold text-sm">{successMessage}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Locked Accounts Administration Panel (AM Sir Only) */}
+        {sessionStorage.getItem("username") && sessionStorage.getItem("username").toLowerCase().trim() === "dram" && lockedUsers.length > 0 && (
+          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 text-rose-800">
+              <AlertCircle className="h-6 w-6 text-rose-600 shrink-0" />
+              <div>
+                <h3 className="font-extrabold text-base">🔒 Locked Accounts Administration (AM Sir Only)</h3>
+                <p className="text-xs font-semibold text-rose-700/90">
+                  The following accounts have been locked due to 5 consecutive failed login attempts. You can unlock them to restore access.
+                </p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
+              {lockedUsers.map((username) => (
+                <div key={username} className="bg-white border border-rose-100 rounded-xl p-4 flex items-center justify-between shadow-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">Blocked Account</span>
+                    <span className="text-sm font-black text-slate-800">{username}</span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlockUser(username)}
+                    disabled={unlockLoading}
+                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {unlockLoading ? "Unlocking..." : "Unlock"}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}

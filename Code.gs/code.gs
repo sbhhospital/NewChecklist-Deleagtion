@@ -10,6 +10,16 @@ function doGet(e) {
       return fetchUserEmail(params.username);
     }
     
+    if (params.action === 'getLockedUsers') {
+      return getLockedUsers();
+    }
+    if (params.action === 'lockUser') {
+      return lockUser(params.username);
+    }
+    if (params.action === 'unlockUser') {
+      return unlockUser(params.username);
+    }
+
     // Existing functionality
     if (params.sheet && params.action === 'fetch') {
       var bypass = params.bypassCache === 'true' || params.sheet === 'Unique' || params.sheet === 'master';
@@ -27,6 +37,77 @@ function doGet(e) {
       success: false,
       error: error.toString()
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getLockedUsers() {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("LockedAccounts");
+    if (!sheet) {
+      sheet = ss.insertSheet("LockedAccounts");
+      sheet.appendRow(["Username", "FailedAttempts", "Timestamp"]);
+    }
+    var data = sheet.getDataRange().getValues();
+    var lockedList = [];
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0]) {
+        lockedList.push(String(data[i][0]).trim());
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true, lockedUsers: lockedList }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function lockUser(username) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("LockedAccounts");
+    if (!sheet) {
+      sheet = ss.insertSheet("LockedAccounts");
+      sheet.appendRow(["Username", "FailedAttempts", "Timestamp"]);
+    }
+    var data = sheet.getDataRange().getValues();
+    var found = false;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).toLowerCase().trim() === String(username).toLowerCase().trim()) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sheet.appendRow([username, 5, new Date()]);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function unlockUser(username) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("LockedAccounts");
+    if (!sheet) {
+      return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var data = sheet.getDataRange().getValues();
+    for (var i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][0]).toLowerCase().trim() === String(username).toLowerCase().trim()) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
