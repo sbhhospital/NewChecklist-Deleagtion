@@ -170,10 +170,7 @@ function AccountDataPage() {
       deadline.setHours(23, 59, 59, 999);
     }
     
-    // 3 days margin/grace period
-    const marginDate = new Date(deadline);
-    marginDate.setDate(deadline.getDate() + 3);
-    return today > marginDate;
+    return today > deadline;
   };
 
   // Format date from yyyy-mm-dd to DD/MM/YYYY
