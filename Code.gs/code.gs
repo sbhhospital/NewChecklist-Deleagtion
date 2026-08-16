@@ -2898,6 +2898,8 @@ function onOpen() {
     .addItem("Send Test WhatsApp Reminder to 9425616267", "triggerTestReminder")
     .addItem("Send Test WhatsApp Escalation to 9425616267", "triggerTestEscalation")
     .addItem("Send Test Compliance Email", "triggerTestEmail")
+    .addSeparator()
+    .addItem("Setup Spreadsheet Security Alerts (Manual Edits)", "setupChangeLogTrigger")
     .addToUi();
 }
 
@@ -2960,4 +2962,172 @@ function triggerTestEmail() {
   ];
   sendComplianceEmail(dateStr, testSummary, true);
   SpreadsheetApp.getUi().alert("Test compliance email sent to: dme@sbhhospital.com");
+}
+
+// ----------------------------------------------------
+// NEW: Spreadsheet Security Alerts for Manual Edits
+// ----------------------------------------------------
+function setupChangeLogTrigger() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName("ChangeLogs");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("ChangeLogs");
+      logSheet.appendRow(["Timestamp", "User Email", "Sheet Name", "Cell", "Old Value", "New Value"]);
+      logSheet.hideSheet();
+    }
+    
+    // Clear and create installable edit triggers
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      var fnName = triggers[i].getHandlerFunction();
+      if (fnName === "handleSpreadsheetEdit" || fnName === "sendChangeLogEmail") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+    
+    ScriptApp.newTrigger("handleSpreadsheetEdit")
+      .forSpreadsheet(ss)
+      .onEdit()
+      .create();
+      
+    SpreadsheetApp.getUi().alert(
+      "Spreadsheet Security Alerts Enabled!\n\n" +
+      "Result: An installable edit trigger has been created. Any direct manual cell edits in the sheet will be logged and emailed to dme@sbhhospital.com every 10 minutes."
+    );
+  } catch (err) {
+    SpreadsheetApp.getUi().alert("Failed to setup security trigger: " + err.toString());
+  }
+}
+
+function handleSpreadsheetEdit(e) {
+  try {
+    var sheet = e.range.getSheet();
+    var sheetName = sheet.getName();
+    if (sheetName === "ChangeLogs") return;
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName("ChangeLogs");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("ChangeLogs");
+      logSheet.appendRow(["Timestamp", "User Email", "Sheet Name", "Cell", "Old Value", "New Value"]);
+      logSheet.hideSheet();
+    }
+    
+    // Simple verification to get editor email
+    var user = e.user ? e.user.getEmail() : Session.getActiveUser().getEmail();
+    if (!user) user = "Editor (Direct Access)";
+    
+    var oldValue = e.oldValue !== undefined ? String(e.oldValue) : "";
+    var newValue = e.value !== undefined ? String(e.value) : "";
+    var rangeNotation = e.range.getA1Notation();
+    var timestamp = new Date();
+    
+    logSheet.appendRow([timestamp, user, sheetName, rangeNotation, oldValue, newValue]);
+    
+    // Ensure we only have one time-driven trigger for sendChangeLogEmail to avoid spam
+    var triggers = ScriptApp.getProjectTriggers();
+    var triggerExists = false;
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "sendChangeLogEmail") {
+        triggerExists = true;
+        break;
+      }
+    }
+    
+    if (!triggerExists) {
+      ScriptApp.newTrigger("sendChangeLogEmail")
+        .timeBased()
+        .after(10 * 60 * 1000) // Fire after 10 minutes
+        .create();
+    }
+  } catch (err) {
+    Logger.log("Error logging spreadsheet edit: " + err.toString());
+  }
+}
+
+function sendChangeLogEmail() {
+  try {
+    // Delete this temporary trigger
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === "sendChangeLogEmail") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName("ChangeLogs");
+    if (!logSheet) return;
+    
+    var data = logSheet.getDataRange().getValues();
+    if (data.length <= 1) return; // No entries to report
+    
+    var tableRowsHtml = "";
+    for (var i = 1; i < data.length; i++) {
+      var time = Utilities.formatDate(new Date(data[i][0]), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+      var user = data[i][1];
+      var sheet = data[i][2];
+      var cell = data[i][3];
+      var oldVal = data[i][4];
+      var newVal = data[i][5];
+      
+      tableRowsHtml += "<tr style='border-bottom: 1px solid #e2e8f0;'>" +
+                       "<td style='padding: 10px 12px; font-size: 12px; color: #475569;'>" + time + "</td>" +
+                       "<td style='padding: 10px 12px; font-size: 12px; color: #1e293b; font-weight: 600;'>" + user + "</td>" +
+                       "<td style='padding: 10px 12px; font-size: 12px; color: #475569;'>" + sheet + " (" + cell + ")</td>" +
+                       "<td style='padding: 10px 12px; font-size: 12px; color: #ef4444; font-weight: 500; text-decoration: line-through;'>" + (oldVal ? oldVal : "[Empty]") + "</td>" +
+                       "<td style='padding: 10px 12px; font-size: 12px; color: #22c55e; font-weight: 600;'>" + (newVal ? newVal : "[Cleared]") + "</td>" +
+                       "</tr>";
+    }
+    
+    var htmlBody = 
+      '<div style="font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 30px 15px; margin: 0;">' +
+      '  <div style="max-width: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #e2e8f0;">' +
+      '    <div style="background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%); padding: 25px 20px; text-align: center; color: #ffffff;">' +
+      '      <h2 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">Spreadsheet Security Alert</h2>' +
+      '      <p style="margin: 4px 0 0 0; font-size: 11px; opacity: 0.95; font-weight: 600; letter-spacing: 1px;">Direct Manual Edit Activity Detected</p>' +
+      '    </div>' +
+      '    <div style="padding: 30px 20px;">' +
+      '      <p style="color: #334155; font-size: 13px; line-height: 1.5; margin-bottom: 20px;">' +
+      '        Respected Sir,<br/><br/>' +
+      '        This is an automated security notification. The following manual changes were made directly in the Google Sheets database over the last 10 minutes:' +
+      '      </p>' +
+      '      <table style="width: 100%; border-collapse: collapse; margin: 15px 0; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">' +
+      '        <thead>' +
+      '          <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">Time</th>' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">User</th>' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">Sheet (Cell)</th>' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">Old Value</th>' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">New Value</th>' +
+      '          </tr>' +
+      '        </thead>' +
+      '        <tbody>' +
+      tableRowsHtml +
+      '        </tbody>' +
+      '      </table>' +
+      '      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; border-radius: 6px; margin: 20px 0;">' +
+      '        <p style="margin: 0; font-size: 11px; color: #991b1b; line-height: 1.5;">' +
+      '          <strong>Security Notice:</strong> Manual changes directly in the database sheet bypass system validation logs. It is recommended to perform updates via the CDMSBH Portal.' +
+      '        </p>' +
+      '      </div>' +
+      '    </div>' +
+      '    <div style="background-color: #f8fafc; padding: 15px 25px; border-top: 1px solid #e2e8f0; text-align: center; color: #64748b; font-size: 10px;">' +
+      '      <p style="margin: 0;">Checklist & Delegation Management System (CDMSBH) Security Monitor</p>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>';
+    
+    GmailApp.sendEmail("dme@sbhhospital.com", "Security Alert: Manual Sheet Changes Logged", "", {
+      htmlBody: htmlBody,
+      name: "SBH Security Monitor"
+    });
+    
+    // Reset ChangeLogs sheet
+    logSheet.clear();
+    logSheet.appendRow(["Timestamp", "User Email", "Sheet Name", "Cell", "Old Value", "New Value"]);
+  } catch (err) {
+    Logger.log("Error sending change log email: " + err.toString());
+  }
 }
