@@ -116,16 +116,6 @@ function AccountDataPage() {
     let deadline = new Date(dateObj);
     
     if (freq === "daily") {
-      const usersWithGracePeriod = [
-        "ARCHANA DAY",
-        "AMITA, POONIYA",
-        "INDRAJEET",
-      ].map((name) => name.toUpperCase());
-
-      const assignedToUpper = assignedTo ? assignedTo.trim().toUpperCase() : "";
-      if (usersWithGracePeriod.includes(assignedToUpper)) {
-        deadline.setDate(dateObj.getDate() + 1);
-      }
       deadline.setHours(23, 59, 59, 999);
     } else if (freq === "weekly" || (freq.includes("week") && !freq.includes("end-of"))) {
       const day = dateObj.getDay();

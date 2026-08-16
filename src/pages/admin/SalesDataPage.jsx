@@ -110,32 +110,8 @@ const getTaskStatus = (
     // Only "daily" tasks should be marked overdue based on strictly being yesterday or earlier.
     // Weekly, Monthly, Fortnightly, etc. remain pending indefinitely.
     if (freq === "daily") {
-      // List of users who get 1-day grace period for daily tasks
-      const usersWithGracePeriod = [
-        "ARCHANA DAY",
-        "AMITA, POONIYA",
-        "INDRAJEET",
-      ].map((name) => name.toUpperCase());
-
-      const assignedToUpper = assignedTo ? assignedTo.trim().toUpperCase() : "";
-
-      // Check if user is in the grace period list
-      if (usersWithGracePeriod.includes(assignedToUpper)) {
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-
-        const taskDateStr = taskDate.getTime();
-        const todayStr = today.getTime();
-        const yesterdayStr = yesterday.getTime();
-
-        if (taskDateStr !== todayStr && taskDateStr !== yesterdayStr) {
-          return "Disabled"; // Overdue daily task (more than 2 days old)
-        }
-      } else {
-        // For all other users: normal daily logic (only today's tasks)
-        if (taskDate.getTime() !== today.getTime()) {
-          return "Disabled"; // Overdue daily task
-        }
+      if (taskDate.getTime() !== today.getTime()) {
+        return "Disabled"; // Overdue daily task
       }
     }
   }
@@ -781,30 +757,14 @@ function AccountDataPage() {
       const dateA = parseDateFromDDMMYYYY(a["col6"]);
       const dateB = parseDateFromDDMMYYYY(b["col6"]);
 
-      // List of users who get 1-day grace period
-      const usersWithGracePeriod = [
-        "ARCHANA DAY",
-        "AMITA, POONIYA",
-        "INDRAJEET"
-      ].map(name => name.toUpperCase());
-
-      const isAGracePeriodUser = a["col4"] && usersWithGracePeriod.includes(a["col4"].trim().toUpperCase());
-      const isBGracePeriodUser = b["col4"] && usersWithGracePeriod.includes(b["col4"].trim().toUpperCase());
-
       const isATodayTask = dateA && dateA.setHours(0, 0, 0, 0) === today.getTime();
-      const isAYesterdayTask = isAGracePeriodUser && dateA && dateA.setHours(0, 0, 0, 0) === yesterday.getTime();
-      const isATodayOrYesterdayTask = isATodayTask || isAYesterdayTask;
-
       const isBTodayTask = dateB && dateB.setHours(0, 0, 0, 0) === today.getTime();
-      const isBYesterdayTask = isBGracePeriodUser && dateB && dateB.setHours(0, 0, 0, 0) === yesterday.getTime();
-      const isBTodayOrYesterdayTask = isBTodayTask || isBYesterdayTask;
 
-      // Today's (and yesterday's for grace period users) tasks always come first
-      if (isATodayOrYesterdayTask && !isBTodayOrYesterdayTask) return -1;
-      if (!isATodayOrYesterdayTask && isBTodayOrYesterdayTask) return 1;
+      // Today's tasks always come first
+      if (isATodayTask && !isBTodayTask) return -1;
+      if (!isATodayTask && isBTodayTask) return 1;
 
-      // For today's/yesterday's tasks: Pending first, then sort by oldest
-      if (isATodayOrYesterdayTask && isBTodayOrYesterdayTask) {
+      if (isATodayTask && isBTodayTask) {
         const statusA = getTaskStatus(a["col10"], a["col15"], a["col6"], a["col4"], a["col7"], a["col16"]);
         const statusB = getTaskStatus(b["col10"], b["col15"], b["col6"], b["col4"], b["col7"], b["col16"]);
 
@@ -1075,12 +1035,6 @@ function AccountDataPage() {
         rows = data.values.map((row) => ({ c: row.map((val) => ({ v: val })) }))
       }
 
-      // List of users who get 1-day grace period
-      const usersWithGracePeriod = [
-        "ARCHANA DAY",
-        "AMITA, POONIYA",
-        "INDRAJEET"
-      ].map(name => name.toUpperCase());
 
       rows.forEach((row, rowIndex) => {
         if (rowIndex === 0) return
@@ -1201,19 +1155,8 @@ function AccountDataPage() {
           // Only add to tasks if it's NOT done, NOT admin done, and NOT leave
           const isNotDone = !hasColumnK && !isAdminDone && !isLeave
 
-          const assignedToUpper = assignedTo.trim().toUpperCase();
-          const isUserWithGracePeriod = usersWithGracePeriod.includes(assignedToUpper);
-
-          // For users with grace period: include today, tomorrow, yesterday, and past dates
-          if (isUserWithGracePeriod) {
-            if ((isToday || isTomorrow || isYesterday || isPastDate) && isNotDone) {
-              pendingAccounts.push(rowData)
-            }
-          } else {
-            // For all other users: normal logic (today, tomorrow, past dates)
-            if ((isToday || isTomorrow || isPastDate) && isNotDone) {
-              pendingAccounts.push(rowData)
-            }
+          if ((isToday || isTomorrow || isPastDate) && isNotDone) {
+            pendingAccounts.push(rowData)
           }
         }
       })
