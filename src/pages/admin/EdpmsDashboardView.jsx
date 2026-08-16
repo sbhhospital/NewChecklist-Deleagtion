@@ -599,8 +599,7 @@ export default function EdpmsDashboardView({
 
     // SLA compliance / On-Time Completion Rate: count tasks with 0 penalty points out of all tasks in date range
     const onTimeTasksCount = filteredTasks.filter(t => t.status === "completed" && t.penalty === 0).length
-    const totalFinishedTasks = filteredTasks.filter(t => t.status === "completed" || t.status === "overdue").length
-    const slaCompliance = totalFinishedTasks > 0 ? Math.round((onTimeTasksCount / totalFinishedTasks) * 100) : 100
+    const slaCompliance = filteredTasks.length > 0 ? Math.round((onTimeTasksCount / filteredTasks.length) * 100) : 100
 
     // PRE-INDEX/GROUP DATA FOR O(1) LOOKUPS
     const tasksByUser = {}
@@ -2533,7 +2532,7 @@ export default function EdpmsDashboardView({
                         {activeSource === "checklist" ? "Completed Checklists" : "Task Completion"}
                       </span>
                       <span className="text-lg font-black text-indigo-600">
-                        {activeSource === "checklist" ? `${activeStaffProfile.completedChecklistDays} Days` : `${activeStaffProfile.scoreBreakdown.completion} / 500`}
+                        {activeSource === "checklist" ? `${activeStaffProfile.completedChecklistDays} Days` : `${activeStaffProfile.completedTasks} / ${activeStaffProfile.totalTasks}`}
                       </span>
                     </div>
                     <div className="bg-white p-3 rounded-xl border border-slate-100">
@@ -2541,7 +2540,7 @@ export default function EdpmsDashboardView({
                         {activeSource === "checklist" ? "Missed Checklists" : "Task Quality"}
                       </span>
                       <span className="text-lg font-black text-indigo-600">
-                        {activeSource === "checklist" ? `${activeStaffProfile.missedChecklistDays} Days` : `${activeStaffProfile.scoreBreakdown.quality} / 300`}
+                        {activeSource === "checklist" ? `${activeStaffProfile.missedChecklistDays} Days` : `-${activeStaffProfile.totalPenalties} Pts`}
                       </span>
                     </div>
                     <div className="bg-white p-3 rounded-xl border border-slate-100">
@@ -2549,7 +2548,7 @@ export default function EdpmsDashboardView({
                         {activeSource === "checklist" ? "Missed Logins" : "Login Discipline"}
                       </span>
                       <span className="text-lg font-black text-indigo-600">
-                        {activeSource === "checklist" ? `${activeStaffProfile.missedLoginDays} Days` : `${activeStaffProfile.scoreBreakdown.login} / 200`}
+                        {activeSource === "checklist" ? `${activeStaffProfile.missedLoginDays} Days` : `-${activeStaffProfile.loginDeductions} Pts`}
                       </span>
                     </div>
                   </div>
