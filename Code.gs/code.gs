@@ -1056,7 +1056,7 @@ function uploadProfilePhoto(params) {
     
     // Update WhatsApp sheet Column H with the file URL
     var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
-    var whatsappSheet = ss.getSheetByName("Whatsapp");
+    var whatsappSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
     
     if (!whatsappSheet) {
       throw new Error("WhatsApp sheet not found");
@@ -1149,7 +1149,7 @@ function processChecklistAndGenerateTasks() {
     var isTodayWorkingDay = workingDates.includes(todayString);
     
     // Load inactive users from Whatsapp sheet
-    var whatsappSheet = ss.getSheetByName("Whatsapp");
+    var whatsappSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
     var inactiveUsers = {};
     if (whatsappSheet) {
       var whatsappData = whatsappSheet.getDataRange().getValues();
@@ -1782,7 +1782,7 @@ function recordLogout(username) {
 function runDailyLoginCheck() {
   try {
     var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
-    var masterSheet = ss.getSheetByName("Whatsapp");
+    var masterSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
     if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
     var deductionsSheet = ss.getSheetByName("Point Deductions");
@@ -1948,17 +1948,26 @@ function runDailyLoginCheck() {
     });
     
     // Send ONE consolidated message to escalation managers if there are non-compliant users
-      if (absentUsersSummary.length > 0) {
-        var summaryMsg = "🚨 *STAFF ATTENDANCE ESCALATION SUMMARY* 🚨\n\n";
-        summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
-        summaryMsg += "The following staff members missed their check-in:\n";
-        absentUsersSummary.forEach(function(item, idx) {
-          summaryMsg += (idx + 1) + ". *" + item.name + "*\n   ⏳ Days Missed: " + item.missed + "\n";
-        });
-        summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
+    if (absentUsersSummary.length > 0) {
+      var summaryMsg = "📌 *MANAGEMENT ATTENTION REQUIRED*\n" +
+                       "📋 *CHECKLIST & DELEGATION SYSTEM*\n" +
+                       "LOGIN COMPLIANCE REPORT\n" +
+                       "📅 *Report Date:* " + dateStr + "\n\n" +
+                       "⚠️ *Staff Login Pending / Inactivity Status*\n";
+      absentUsersSummary.forEach(function(item) {
+        summaryMsg += "👤 *" + item.name + "* — ⏳ *" + item.missed + " Day" + (item.missed > 1 ? "s" : "") + "*\n";
+      });
+      summaryMsg += "\n🔔 *Action Required:*\n" +
+                     "Concerned members are requested to complete their pending daily login/check-in at the earliest to maintain system compliance.\n\n" +
+                     "🔗 *Checklist & Delegation Portal:*\n" +
+                     "https://cdmsbh.vercel.app/\n\n" +
+                     "🏥 *Team SBH HOSPITAL*";
       
       sendWhatsAppNotification("+919039080203", summaryMsg);
       sendWhatsAppNotification("+919644404741", summaryMsg);
+      
+      // Also send premium HTML email report
+      sendComplianceEmail(dateStr, absentUsersSummary);
     }
     
     return { success: true, processedCount: results.length, results: results };
@@ -1998,7 +2007,7 @@ function sendWhatsAppNotification(phoneNumber, message) {
 function sendSameDayLoginReminder() {
   try {
     var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
-    var masterSheet = ss.getSheetByName("Whatsapp");
+    var masterSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
     if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
     
     var attendanceSheet = ss.getSheetByName("Attendance");
@@ -2060,7 +2069,16 @@ function sendSameDayLoginReminder() {
           checkDate.setDate(checkDate.getDate() - 1);
           var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
           
-          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in before midnight to avoid automatic point deductions tomorrow.\n\n*Best Regards,*\n*Team SBH HOSPITAL*");
+          var reminderMessage = "⏰ *OFFICIAL LOGIN REMINDER*\n" +
+                                "Dear *" + user + "*,\n\n" +
+                                "Your daily check-in on the *SBH Group of Hospitals – Delegation & Checklist Management System* is pending for today.\n\n" +
+                                "👤 *Username:* " + user + "\n" +
+                                "🔐 *Password:* Use your registered password\n" +
+                                "🌐 *Login Portal:* https://cdmsbh.vercel.app/\n\n" +
+                                "Please complete your login before midnight to avoid automatic point deduction.\n\n" +
+                                "Regards,\n" +
+                                "Team SBH HOSPITAL 🏥";
+          sendWhatsAppNotification(phone, reminderMessage);
           count++;
         }
       }
@@ -2589,7 +2607,7 @@ function cleanLeavesSheet() {
 function recalculateDeductionsFromAug1() {
   try {
     var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
-    var masterSheet = ss.getSheetByName("Whatsapp");
+    var masterSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
     var attendanceSheet = ss.getSheetByName("Attendance");
     var deductionsSheet = ss.getSheetByName("Point Deductions");
     
@@ -2736,4 +2754,210 @@ function recalculateDeductionsFromAug1() {
   } catch (error) {
     return { success: false, error: error.toString() };
   }
+}
+
+// ----------------------------------------------------
+// NEW: Custom Compliance Email Notification (Premium HTML)
+// ----------------------------------------------------
+function sendComplianceEmail(dateStr, absentUsersSummary, isTest) {
+  if (typeof isTest === 'undefined') isTest = false;
+  try {
+    if (absentUsersSummary.length === 0) return;
+    
+    var tableRowsHtml = "";
+    absentUsersSummary.forEach(function(item) {
+      tableRowsHtml += "<tr style='border-bottom: 1px solid #e2e8f0;'> " +
+                       "<td style='padding: 12px 15px; font-size: 13px; font-weight: 600; color: #1e293b;'>" + item.name + "</td>" +
+                       "<td style='padding: 12px 15px; font-size: 13px; color: #ef4444; font-weight: 700; text-align: center;'>" + item.missed + " Day" + (item.missed > 1 ? "s" : "") + "</td>" +
+                       "<td style='padding: 12px 15px; font-size: 13px; color: #dc2626; font-weight: 700; text-align: right;'>-" + item.deducted + " Pts</td>" +
+                       "</tr>";
+    });
+
+    var htmlBody = 
+      '<div style="font-family: \'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 20px 10px; margin: 0; min-height: 100%;">' +
+      '  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid #e2e8f0;">' +
+      '    <!-- Header -->' +
+      '    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 18px 10px; text-align: center;">' +
+      '      <img src="https://cdmsbh.vercel.app/logo.png" alt="SBH Group of Hospitals" style="height: 45px; width: auto; max-width: 100%; display: inline-block; filter: drop-shadow(0px 1px 3px rgba(0,0,0,0.1));" />' +
+      '      <p style="margin: 5px 0 0 0; font-size: 10px; color: #ffffff; opacity: 0.9; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Checklist & Delegation Compliance Report</p>' +
+      '    </div>' +
+      '    ' +
+      '    <!-- Body -->' +
+      '    <div style="padding: 30px 20px;">' +
+      '      <div style="text-align: center; margin-bottom: 25px;">' +
+      '        <span style="background-color: #fee2e2; color: #ef4444; font-size: 10px; font-weight: 800; padding: 5px 12px; border-radius: 9999px; text-transform: uppercase; display: inline-block; letter-spacing: 0.5px;">Management Attention Required</span>' +
+      '        <h3 style="color: #0f172a; margin: 12px 0 4px 0; font-size: 18px; font-weight: 700;">Login Non-Compliance Escalation Report</h3>' +
+      '        <p style="color: #64748b; font-size: 12px; margin: 0;">Report Date: <strong>' + dateStr + '</strong></p>' +
+      '      </div>' +
+      '      ' +
+      '      <p style="color: #334155; font-size: 13px; line-height: 1.5; margin-bottom: 20px;">' +
+      '        Respected Sir,<br/><br/>' +
+      '        This is an automated compliance escalation alert. The following active staff members failed to record their mandatory login/check-in on the portal yesterday:' +
+      '      </p>' +
+      '      ' +
+      '      <!-- Table -->' +
+      '      <table style="width: 100%; border-collapse: collapse; margin: 15px 0; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">' +
+      '        <thead>' +
+      '          <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">' +
+      '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Employee Name</th>' +
+      '            <th style="padding: 10px 12px; text-align: center; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Days Inactive</th>' +
+      '            <th style="padding: 10px 12px; text-align: right; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Penalty Deducted</th>' +
+      '          </tr>' +
+      '        </thead>' +
+      '        <tbody>' +
+      tableRowsHtml +
+      '        </tbody>' +
+      '      </table>' +
+      '      ' +
+      '      <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 15px; border-radius: 6px; margin: 20px 0;">' +
+      '        <p style="margin: 0; font-size: 11px; color: #1e3a8a; line-height: 1.5;">' +
+      '          <strong>Actions Taken:</strong><br/>' +
+      '          Concerned members have been notified via automated WhatsApp messages to complete their pending daily logins immediately to restore compliance.' +
+      '        </p>' +
+      '      </div>' +
+      '      ' +
+      '      <!-- CTA -->' +
+      '      <div style="text-align: center; margin: 25px 0 5px 0;">' +
+      '        <a href="https://cdmsbh.vercel.app/" style="background-color: #2563eb; color: #ffffff; font-size: 12px; font-weight: 700; text-decoration: none; padding: 12px 30px; border-radius: 6px; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2); display: inline-block; letter-spacing: 0.5px; transition: all 0.3s ease;">Access Compliance Dashboard</a>' +
+      '      </div>' +
+      '    </div>' +
+      '    ' +
+      '    <!-- Footer -->' +
+      '    <div style="background-color: #f8fafc; padding: 20px 25px; border-top: 1px solid #e2e8f0; text-align: center; color: #64748b; font-size: 10px; line-height: 1.4;">' +
+      '      <p style="margin: 0 0 4px 0; font-weight: 600;">Checklist & Delegation Management System (CDMSBH)</p>' +
+      '      <p style="margin: 0;">&copy; ' + new Date().getFullYear() + ' Team SBH HOSPITAL. All rights reserved.</p>' +
+      '    </div>' +
+      '  </div>' +
+      '</div>';
+
+    var recipientTo = "";
+    var ccEmails = "";
+
+    if (isTest) {
+      recipientTo = "dme@sbhhospital.com";
+    } else {
+      recipientTo = "dram@sbhhospital.com";
+      
+      // Fetch CC emails from Whatsapp/whats app sheet for all active users (no duplicates, no dram@sbhhospital.com)
+      try {
+        var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+        var masterSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
+        if (masterSheet) {
+          var masterData = masterSheet.getDataRange().getValues();
+          var headers = masterData[0];
+          var emailColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "email"; });
+          var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+          
+          if (emailColIndex === -1) emailColIndex = 5;
+          if (roleColIndex === -1) roleColIndex = 4;
+          
+          var uniqueEmails = [];
+          for (var i = 1; i < masterData.length; i++) {
+            var emailStr = String(masterData[i][emailColIndex]).trim().toLowerCase();
+            var roleStr = String(masterData[i][roleColIndex]).trim().toLowerCase();
+            
+            if (emailStr && emailStr.indexOf("@") !== -1 && roleStr !== "inactive" && roleStr !== "in active") {
+              if (emailStr !== "dram@sbhhospital.com" && uniqueEmails.indexOf(emailStr) === -1) {
+                uniqueEmails.push(emailStr);
+              }
+            }
+          }
+          ccEmails = uniqueEmails.join(", ");
+        }
+      } catch (err) {
+        Logger.log("Failed to fetch CC emails: " + err.toString());
+      }
+    }
+
+    var mailOptions = {
+      htmlBody: htmlBody,
+      name: "SBH Compliance System"
+    };
+
+    if (ccEmails) {
+      mailOptions.cc = ccEmails;
+    }
+
+    GmailApp.sendEmail(recipientTo, (isTest ? "[TEST] " : "") + "Daily Login Compliance Report - " + dateStr, "", mailOptions);
+    Logger.log("Escalation Email Sent to: " + recipientTo + (ccEmails ? " | CC: " + ccEmails : ""));
+  } catch (e) {
+    Logger.log("Email send error: " + e.toString());
+    throw new Error("Failed to send email: " + e.toString());
+  }
+}
+
+// ----------------------------------------------------
+// NEW: Google Sheets Menu Integrations
+// ----------------------------------------------------
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu("Compliance Reports 🏥")
+    .addItem("Send Daily Login Reminder (WhatsApp)", "triggerManualSameDayReminder")
+    .addItem("Send Daily Escalation Summary (WhatsApp & Email)", "triggerManualDailyCheck")
+    .addSeparator()
+    .addItem("Send Test WhatsApp Reminder to 9425616267", "triggerTestReminder")
+    .addItem("Send Test WhatsApp Escalation to 9425616267", "triggerTestEscalation")
+    .addItem("Send Test Compliance Email", "triggerTestEmail")
+    .addToUi();
+}
+
+function triggerManualSameDayReminder() {
+  var res = sendSameDayLoginReminder();
+  SpreadsheetApp.getUi().alert(
+    "WhatsApp Reminders Triggered!\n\n" +
+    "Result: Sent reminders to " + (res.remindedCount || 0) + " active users who have not logged in yet today."
+  );
+}
+
+function triggerManualDailyCheck() {
+  var res = runDailyLoginCheck();
+  SpreadsheetApp.getUi().alert(
+    "Daily Compliance Check Completed!\n\n" +
+    "Result: Checked " + (res.processedCount || 0) + " active users. " +
+    "Sent WhatsApp & Email notifications for non-compliant users."
+  );
+}
+
+function triggerTestReminder() {
+  var phone = "919425616267";
+  var reminderMessage = "⏰ *OFFICIAL LOGIN REMINDER*\n" +
+                        "Dear *TEST USER*,\n\n" +
+                        "Your daily check-in on the *SBH Group of Hospitals – Delegation & Checklist Management System* is pending for today.\n\n" +
+                        "👤 *Username:* TEST USER\n" +
+                        "🔐 *Password:* Use your registered password\n" +
+                        "🌐 *Login Portal:* https://cdmsbh.vercel.app/\n\n" +
+                        "Please complete your login before midnight to avoid automatic point deduction.\n\n" +
+                        "Regards,\n" +
+                        "Team SBH HOSPITAL 🏥";
+  sendWhatsAppNotification(phone, reminderMessage);
+  SpreadsheetApp.getUi().alert("Test reminder message triggered directly to phone: " + phone);
+}
+
+function triggerTestEscalation() {
+  var phone = "919425616267";
+  var dateStr = getFormattedDate(new Date());
+  var testEscMsg = "📌 *MANAGEMENT ATTENTION REQUIRED* [TEST]\n" +
+                   "📋 *CHECKLIST & DELEGATION SYSTEM*\n" +
+                   "LOGIN COMPLIANCE REPORT\n" +
+                   "📅 *Report Date:* " + dateStr + "\n\n" +
+                   "⚠️ *Staff Login Pending / Inactivity Status*\n" +
+                   "👤 *TEST EMP 1* — ⏳ *3 Days*\n" +
+                   "👤 *TEST EMP 2* — ⏳ *1 Day*\n\n" +
+                   "🔔 *Action Required:*\n" +
+                   "Concerned members are requested to complete their pending daily login/check-in at the earliest to maintain system compliance.\n\n" +
+                   "🔗 *Checklist & Delegation Portal:*\n" +
+                   "https://cdmsbh.vercel.app/\n\n" +
+                   "🏥 *Team SBH HOSPITAL*";
+  sendWhatsAppNotification(phone, testEscMsg);
+  SpreadsheetApp.getUi().alert("Test escalation summary triggered directly to phone: " + phone);
+}
+
+function triggerTestEmail() {
+  var dateStr = getFormattedDate(new Date());
+  var testSummary = [
+    { name: "TEST STAFF A", missed: 5, deducted: 50 },
+    { name: "TEST STAFF B", missed: 1, deducted: 10 }
+  ];
+  sendComplianceEmail(dateStr, testSummary, true);
+  SpreadsheetApp.getUi().alert("Test compliance email sent to: dme@sbhhospital.com");
 }

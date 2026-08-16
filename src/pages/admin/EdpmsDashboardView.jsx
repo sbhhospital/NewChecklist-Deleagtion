@@ -32,6 +32,7 @@ import Papa from "papaparse"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import * as XLSX from "xlsx"
+import sbhLogo from "../../assets/logo.png"
 
 const parseDateFromDDMMYYYY = (dateStr) => {
   if (!dateStr) return null
@@ -767,7 +768,7 @@ export default function EdpmsDashboardView({
 
       // For checklist mode: no login bonus, only login penalty (-10/day)
       // For delegation mode: login bonus is 1 pt per day
-      const loginBonus = activeSource === "checklist" ? 0 : [...new Set(userLogins.map(l => l.date))].length * 1
+      const loginBonus = (activeSource === "checklist" || tasks.length === 0) ? 0 : [...new Set(userLogins.map(l => l.date))].length * 1
       
       let delegationTotalTaskRewards = 0;
       let delegationTotalMainScorePenalties = 0;
@@ -780,8 +781,8 @@ export default function EdpmsDashboardView({
         });
       }
 
-      totalBonuses = checklistStaffRes
-        ? 0  // checklist: penalty-only, no bonus
+      totalBonuses = (checklistStaffRes || tasks.length === 0)
+        ? 0  // checklist or users with no tasks: penalty-only/no bonus
         : Math.min(20, delegationTotalTaskRewards + loginBonus);
       
       // Update totalPenalties for delegation mode to only show the main score penalties + login deduction in the UI overview
@@ -792,7 +793,7 @@ export default function EdpmsDashboardView({
 
       const uniqueLoginDatesList = [...new Set(userLogins.map(l => l.date))]
       uniqueLoginDatesList.forEach(dateStr => {
-        if (activeSource !== "checklist") {
+        if (activeSource !== "checklist" && tasks.length > 0) {
           dynamicPointLogs.push({
             date: dateStr,
             reason: "Daily Login Reward",
@@ -965,7 +966,17 @@ export default function EdpmsDashboardView({
           return String(d.reason).includes("(Delegation)");
         }
       });
-       const loginDisciplineDeduction = loginMissedDeductions.reduce((sum, d) => sum + (d.deducted || 0), 0);
+      // Group by date to prevent duplicate deductions on the same day due to spreadsheet duplication
+      const uniqueDateDeductions = {};
+      loginMissedDeductions.forEach(d => {
+        const dDate = d.date ? String(d.date).trim() : "";
+        if (dDate) {
+          if (!uniqueDateDeductions[dDate] || (d.deducted || 0) > uniqueDateDeductions[dDate]) {
+            uniqueDateDeductions[dDate] = d.deducted || 0;
+          }
+        }
+      });
+      const loginDisciplineDeduction = Object.values(uniqueDateDeductions).reduce((sum, val) => sum + val, 0);
       const uniqueLoginMissedDates = new Set();
       loginMissedDeductions.forEach(d => {
         if (d.date) uniqueLoginMissedDates.add(d.date.trim());
@@ -1133,9 +1144,6 @@ export default function EdpmsDashboardView({
 
     // Filter out users who have zero tasks in Checklist mode
     let filteredStaffList = staffCalculated
-    if (activeSource === "checklist") {
-      filteredStaffList = staffCalculated.filter(s => s.totalTasks > 0)
-    }
 
     const sortedPerformers = [...filteredStaffList].sort((a, b) => {
       if (b.aiScore !== a.aiScore) {
@@ -1397,7 +1405,7 @@ export default function EdpmsDashboardView({
                   "Weekly (A/D/P/O)", 
                   "Fortnightly (A/D/P/O)", 
                   "Monthly (A/D/P/O)", 
-                  "Others (A/D/P/O)", 
+                  "Yearly (A/D/P/O)", 
                   "Missed Logins (Days)", "Missed Logins (Deduction)", "Missed Checklists (Deduction)"
                 ])
                 usersToExport.forEach(staff => {
@@ -1565,132 +1573,189 @@ export default function EdpmsDashboardView({
             document.body.removeChild(link)
           }
         } else if (format === "pdf") {
-          const doc = new jsPDF(activeSource === "checklist" ? "landscape" : "portrait")
-          doc.setFont("helvetica", "bold")
-          doc.setFontSize(16)
-          const freqStr = (activeSource === "checklist" && checklistFrequencyFilter !== "all") ? ` (${checklistFrequencyFilter.toUpperCase()})` : ""
-          doc.text(activeSource === "checklist" ? `SBH Checklist${freqStr} Performance Report` : "SBH Performance Tasks Report", 14, 20)
-          doc.setFontSize(10)
-          doc.setFont("helvetica", "normal")
-          doc.text("Managed by IT Department | SBH Group of Hospitals", 14, 26)
-          let dateRangeStr = `Time Range: ${timeRange.toUpperCase()}`
-          if (timeRange === "custom") {
-            dateRangeStr = `Date Range: ${customStartDate} to ${customEndDate}`
-          }
-          doc.text(dateRangeStr, 14, 32)
-          doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 38)
-          
-          doc.setFont("helvetica", "bold")
-          doc.setFontSize(9)
-          doc.setTextColor(100, 100, 100)
-          doc.text("Legend: A = Assigned | D = Done | P = Pending | O = Overdue", 14, 44)
-          doc.setFont("helvetica", "normal")
-          doc.setTextColor(0, 0, 0)
+          const img = new Image()
+          img.src = sbhLogo
+          img.onload = () => {
+            const doc = new jsPDF(activeSource === "checklist" ? "landscape" : "portrait")
+            
+            const pageWidth = doc.internal.pageSize.getWidth()
+            const pageHeight = doc.internal.pageSize.getHeight()
 
-          if (activeSource === "checklist") {
-            let columns = []
-            let rows = []
-            if (checklistFrequencyFilter === "all") {
-              columns = [
-                "Employee Name", "Score (100)", 
-                "Daily (A/D/P/O)", "Weekly (A/D/P/O)", "Fortnightly (A/D/P/O)", "Monthly (A/D/P/O)", "Others (A/D/P/O)",
-                "Missed Logins (Days)", "Login Penalty", "Checklist Penalty"
-              ]
-              rows = filteredStaff.map(staff => [
-                staff.name,
-                staff.aiScore,
-                `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
-                `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
-                `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
-                `${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
-                `${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
-                staff.missedLoginDays,
-                `-${staff.loginDeductions} Pts`,
-                `-${staff.totalPenalties} Pts`
-              ])
-            } else {
-              columns = [
-                "Employee Name", "Score (100)", "Assigned", "Completed", "Pending", "Overdue",
-                "Missed Logins (Days)", "Login Penalty", "Missed Checklists (Days)", "Checklist Penalty"
-              ]
-              rows = filteredStaff.map(staff => [
-                staff.name,
-                staff.aiScore,
-                staff.totalTasks,
-                staff.completedTasks,
-                staff.pendingTasks,
-                staff.overdueTasks,
-                staff.missedLoginDays,
-                `-${staff.loginDeductions} Pts`,
-                staff.totalTasks - staff.completedTasks,
-                `-${staff.totalPenalties} Pts`
-              ])
+             const drawHeaderAndWatermark = (d) => {
+              // Draw page borders (Green outer, Red inner)
+              try {
+                d.saveGraphicsState();
+                d.setDrawColor(16, 185, 129) // Emerald Green
+                d.setLineWidth(0.7)
+                d.rect(5, 5, pageWidth - 10, pageHeight - 10)
+
+                d.setDrawColor(239, 68, 68) // Rose Red
+                d.setLineWidth(0.4)
+                d.rect(6.5, 6.5, pageWidth - 13, pageHeight - 13)
+                d.restoreGraphicsState();
+              } catch (err) {
+                console.error("Error drawing borders:", err)
+              }
+
+              // 1. Draw logo at top right (using correct 3.5:1 aspect ratio to avoid stretching)
+              try {
+                d.addImage(img, 'PNG', pageWidth - 49, 8, 35, 10)
+              } catch (err) {
+                console.error("Error drawing logo:", err)
+              }
+              // 2. Draw light, colorful rotated watermark (bottom-left to top-right diagonal)
+              try {
+                d.saveGraphicsState()
+                d.setGState(new d.GState({ opacity: 0.12 })) // Highlighted slightly more for visibility
+                const watermarkWidth = 120
+                const watermarkHeight = 35
+                // Centered and rotated by 30 degrees (tilted upwards from left to right)
+                d.addImage(img, 'PNG', (pageWidth - watermarkWidth) / 2, (pageHeight - watermarkHeight) / 2, watermarkWidth, watermarkHeight, undefined, 'none', 30)
+                d.restoreGraphicsState()
+              } catch (err) {
+                console.error("Error drawing watermark:", err)
+              }
             }
 
-            autoTable(doc, {
-              startY: 48,
-              head: [columns],
-              body: rows,
-              theme: "striped",
-              headStyles: { fillColor: [79, 70, 229] },
-              styles: { fontSize: 8 },
-              didParseCell: (data) => {
-                if (data.section === 'body' && data.column.index === 1) { // Score column
-                  const val = parseFloat(data.cell.raw);
-                  if (val >= 85) {
-                    data.cell.styles.textColor = [16, 185, 129]; // Emerald Green
-                    data.cell.styles.fontStyle = 'bold';
-                  } else if (val >= 50) {
-                    data.cell.styles.textColor = [245, 158, 11]; // Amber
-                    data.cell.styles.fontStyle = 'bold';
-                  } else {
-                    data.cell.styles.textColor = [239, 68, 68]; // Rose Red
-                    data.cell.styles.fontStyle = 'bold';
-                  }
-                }
-              }
-            })
-          } else {
-            const columns = [
-              "Employee Name", "Score", "Completed Tasks", "Total Tasks", "On-Time Rate", "Overdue", "Extensions", "Missed Logins", "Login Penalty"
-            ]
-            const rows = filteredStaff.map(staff => [
-              staff.name,
-              staff.aiScore,
-              staff.completedTasks,
-              staff.totalTasks,
-              `${staff.indexes.slaIndex}%`,
-              staff.overdueTasks,
-              staff.extensions,
-              `${staff.missedLoginDays} Days`,
-              `-${staff.loginDeductions} Pts`
-            ])
+            // Draw on first page
+            drawHeaderAndWatermark(doc)
 
-            autoTable(doc, {
-              startY: 48,
-              head: [columns],
-              body: rows,
-              theme: "striped",
-              headStyles: { fillColor: [79, 70, 229] },
-              styles: { fontSize: 8 },
-              didParseCell: (data) => {
-                if (data.section === 'body' && data.column.index === 1) { // Score column
-                  const val = parseFloat(data.cell.raw);
-                  if (val >= 850) {
-                    data.cell.styles.textColor = [16, 185, 129]; // Emerald Green
-                    data.cell.styles.fontStyle = 'bold';
-                  } else if (val >= 500) {
-                    data.cell.styles.textColor = [245, 158, 11]; // Amber
-                    data.cell.styles.fontStyle = 'bold';
-                  } else {
-                    data.cell.styles.textColor = [239, 68, 68]; // Rose Red
-                    data.cell.styles.fontStyle = 'bold';
+            doc.setFont("helvetica", "bold")
+            doc.setFontSize(16)
+            const freqStr = (activeSource === "checklist" && checklistFrequencyFilter !== "all") ? ` (${checklistFrequencyFilter.toUpperCase()})` : ""
+            doc.text(activeSource === "checklist" ? `SBH Checklist${freqStr} Performance Report` : "SBH Performance Tasks Report", 14, 20)
+            doc.setFontSize(10)
+            doc.setFont("helvetica", "normal")
+            doc.text("SBH Group of Hospitals", 14, 26)
+            let dateRangeStr = `Time Range: ${timeRange.toUpperCase()}`
+            if (timeRange === "custom") {
+              dateRangeStr = `Date Range: ${customStartDate} to ${customEndDate}`
+            }
+            doc.text(dateRangeStr, 14, 32)
+            doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 38)
+            
+            doc.setFont("helvetica", "bold")
+            doc.setFontSize(9)
+            doc.setTextColor(100, 100, 100)
+            doc.text("Legend: A = Assigned | D = Done | P = Pending | O = Overdue", 14, 44)
+            doc.setFont("helvetica", "normal")
+            doc.setTextColor(0, 0, 0)
+
+            if (activeSource === "checklist") {
+              let columns = []
+              let rows = []
+              if (checklistFrequencyFilter === "all") {
+                columns = [
+                  "Employee Name", "Score (100)", 
+                  "Daily (A/D/P/O)", "Weekly (A/D/P/O)", "Fortnightly (A/D/P/O)", "Monthly (A/D/P/O)", "Yearly (A/D/P/O)",
+                  "Missed Logins (Days)", "Login Penalty", "Checklist Penalty"
+                ]
+                rows = filteredStaff.map(staff => [
+                  staff.name,
+                  staff.aiScore,
+                  `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
+                  `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
+                  `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakdown?.fortnightly?.overdue || 0}`,
+                  `${staff.freqBreakdown?.monthly?.total || 0}/${staff.freqBreakdown?.monthly?.completed || 0}/${staff.freqBreakdown?.monthly?.pending || 0}/${staff.freqBreakdown?.monthly?.overdue || 0}`,
+                  `${staff.freqBreakdown?.other?.total || 0}/${staff.freqBreakdown?.other?.completed || 0}/${staff.freqBreakdown?.other?.pending || 0}/${staff.freqBreakdown?.other?.overdue || 0}`,
+                  staff.missedLoginDays,
+                  `-${staff.loginDeductions} Pts`,
+                  `-${staff.totalPenalties} Pts`
+                ])
+              } else {
+                columns = [
+                  "Employee Name", "Score (100)", "Assigned", "Completed", "Pending", "Overdue",
+                  "Missed Logins (Days)", "Login Penalty", "Missed Checklists (Days)", "Checklist Penalty"
+                ]
+                rows = filteredStaff.map(staff => [
+                  staff.name,
+                  staff.aiScore,
+                  staff.totalTasks,
+                  staff.completedTasks,
+                  staff.pendingTasks,
+                  staff.overdueTasks,
+                  staff.missedLoginDays,
+                  `-${staff.loginDeductions} Pts`,
+                  staff.totalTasks - staff.completedTasks,
+                  `-${staff.totalPenalties} Pts`
+                ])
+              }
+
+              autoTable(doc, {
+                startY: 48,
+                margin: { top: 30, bottom: 15, left: 14, right: 14 },
+                head: [columns],
+                body: rows,
+                theme: "striped",
+                headStyles: { fillColor: [79, 70, 229] },
+                bodyStyles: { textColor: [0, 0, 0] },
+                styles: { fontSize: 8 },
+                didDrawPage: (data) => {
+                  drawHeaderAndWatermark(doc)
+                },
+                didParseCell: (data) => {
+                  if (data.section === 'body' && data.column.index === 1) { // Score column
+                    const val = parseFloat(data.cell.raw);
+                    if (val >= 85) {
+                      data.cell.styles.textColor = [16, 185, 129]; // Emerald Green
+                      data.cell.styles.fontStyle = 'bold';
+                    } else if (val >= 50) {
+                      data.cell.styles.textColor = [245, 158, 11]; // Amber
+                      data.cell.styles.fontStyle = 'bold';
+                    } else {
+                      data.cell.styles.textColor = [239, 68, 68]; // Rose Red
+                      data.cell.styles.fontStyle = 'bold';
+                    }
                   }
                 }
-              }
-            })
+              })
+            } else {
+              const columns = [
+                "Employee Name", "Score", "Completed Tasks", "Total Tasks", "On-Time Rate", "Overdue", "Extensions", "Missed Logins", "Login Penalty"
+              ]
+              const rows = filteredStaff.map(staff => [
+                staff.name,
+                staff.aiScore,
+                staff.completedTasks,
+                staff.totalTasks,
+                `${staff.indexes.slaIndex}%`,
+                staff.overdueTasks,
+                staff.extensions,
+                `${staff.missedLoginDays} Days`,
+                `-${staff.loginDeductions} Pts`
+              ])
+
+              autoTable(doc, {
+                startY: 48,
+                margin: { top: 30, bottom: 15, left: 14, right: 14 },
+                head: [columns],
+                body: rows,
+                theme: "striped",
+                headStyles: { fillColor: [79, 70, 229] },
+                bodyStyles: { textColor: [0, 0, 0] },
+                styles: { fontSize: 8 },
+                didDrawPage: (data) => {
+                  drawHeaderAndWatermark(doc)
+                },
+                didParseCell: (data) => {
+                  if (data.section === 'body' && data.column.index === 1) { // Score column
+                    const val = parseFloat(data.cell.raw);
+                    if (val >= 850) {
+                      data.cell.styles.textColor = [16, 185, 129]; // Emerald Green
+                      data.cell.styles.fontStyle = 'bold';
+                    } else if (val >= 500) {
+                      data.cell.styles.textColor = [245, 158, 11]; // Amber
+                      data.cell.styles.fontStyle = 'bold';
+                    } else {
+                      data.cell.styles.textColor = [239, 68, 68]; // Rose Red
+                      data.cell.styles.fontStyle = 'bold';
+                    }
+                  }
+                }
+              })
+            }
+            doc.save(`SBH_${activeSource === "checklist" ? "Checklist" : "Performance"}_Report_${Date.now()}.pdf`)
           }
-          doc.save(`SBH_${activeSource === "checklist" ? "Checklist" : "Performance"}_Report_${Date.now()}.pdf`)
         }
 
         // Show successful download alert bar
@@ -2173,7 +2238,7 @@ export default function EdpmsDashboardView({
             { id: "weekly", label: "📅 Weekly Checklists" },
             { id: "fortnightly", label: "⏳ Fortnightly" },
             { id: "monthly", label: "🗓️ Monthly Checklists" },
-            { id: "other", label: "⚙️ Others" }
+            { id: "other", label: "⚙️ Yearly" }
           ].map(freq => {
             const data = processedStats.totalFreqBreakdown?.[freq.id] || { total: 0, completed: 0, pending: 0, overdue: 0 }
             return (
