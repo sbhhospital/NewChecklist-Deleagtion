@@ -8,13 +8,10 @@ import sbhLogo from "../assets/logo.png";
 const LoginPage = () => {
   const navigate = useNavigate();
   const [isDataLoading, setIsDataLoading] = useState(false);
-  const [isLoginLoading, setIsLoginLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false); // Controls button-level loading spinner
   const [visible, setVisible] = useState(false);
   const [masterData, setMasterData] = useState({
     userCredentials: {},
-    userRoles: {},
-    userEmails: {},
   });
   const [formData, setFormData] = useState({
     username: "",
@@ -30,28 +27,6 @@ const LoginPage = () => {
   const [captchaInput, setCaptchaInput] = useState("");
   const [lockedUsers, setLockedUsers] = useState([]);
   const [failedAttempts, setFailedAttempts] = useState({});
-
-  const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...");
-  
-  useEffect(() => {
-    if (!isLoginLoading && !isDataLoading) return;
-    const messages = [
-      "🏥 Updating SBH Group of Hospitals analytics...",
-      "💼 Assembling the management team for synergy...",
-      "☕ NM is approving the latest entries... please hold!",
-      "📊 Polishing employee scorecards for the monthly review...",
-      "📁 Finding files that were definitely archived correctly...",
-      "📧 Drafting emails that could have been quick meetings...",
-      "✨ Boosting team performance metrics by 200%...",
-      "🍪 Stealing biscuits from the office breakroom..."
-    ];
-    let idx = 0;
-    const timer = setInterval(() => {
-      idx = (idx + 1) % messages.length;
-      setFunnyMsg(messages[idx]);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [isLoginLoading, isDataLoading]);
 
   // Generate a random mathematical captcha
   const generateCaptcha = () => {
@@ -87,14 +62,11 @@ const LoginPage = () => {
           const lockedRes = await fetch(`${SCRIPT_URL}?action=getLockedUsers`);
           if (lockedRes.ok) {
             const resText = await lockedRes.text();
-            // Verify if it is valid JSON before parsing
             if (resText && (resText.startsWith("{") || resText.startsWith("["))) {
               const lockedData = JSON.parse(resText);
               if (lockedData && lockedData.success) {
                 setLockedUsers(lockedData.lockedUsers || []);
               }
-            } else {
-              console.warn("Apps Script returned text/html response instead of JSON. Will load once script is re-deployed.");
             }
           }
         } catch (lockErr) {
@@ -109,8 +81,6 @@ const LoginPage = () => {
         const data = JSON.parse(jsonString);
 
         const userCredentials = {};
-        const userRoles = {};
-        const userEmails = {};
 
         if (data.table && data.table.rows) {
           for (let i = 1; i < data.table.rows.length; i++) {
@@ -123,14 +93,19 @@ const LoginPage = () => {
             if (username && password && password.trim() !== "") {
               if (isInactiveRole(role)) continue;
               
-              userCredentials[username] = password;
-              userRoles[username] = role.toLowerCase();
-              userEmails[username] = email;
+              // Normalize username key to lowercase to support case-insensitive lookups
+              const lowerUser = username.toLowerCase().trim();
+              userCredentials[lowerUser] = {
+                username: username, // Original casing preserved
+                password: password,
+                role: role.toLowerCase(),
+                email: email
+              };
             }
           }
         }
 
-        setMasterData({ userCredentials, userRoles, userEmails });
+        setMasterData({ userCredentials });
       } catch (error) {
         console.error("Error Fetching Master Data:", error);
         showToast(`Network error: ${error.message}. Please try again later.`, "error");
@@ -235,107 +210,102 @@ const LoginPage = () => {
     setShowSadEmoji(false);
 
     const trimmedUsername = formData.username.trim();
+    const lowercaseUsername = trimmedUsername.toLowerCase();
     const trimmedPassword = formData.password.trim();
 
-    try {
-      // 1. Check if user is locked
-      const isUserLocked = lockedUsers.some(
-        (u) => String(u).toLowerCase().trim() === trimmedUsername.toLowerCase().trim()
-      );
-      if (isUserLocked) {
-        showToast("😞 Account is locked! Please contact AM Sir (Dr. A.M.) to unlock it.", "error");
-        setIsSubmitting(false);
-        return;
-      }
+    // 1. Check if user is locked (case-insensitive check)
+    const isUserLocked = lockedUsers.some(
+      (u) => String(u).toLowerCase().trim() === lowercaseUsername
+    );
+    if (isUserLocked) {
+      showToast("😞 Account is locked! Please contact AM Sir (Dr. A.M.) to unlock it.", "error");
+      setIsSubmitting(false);
+      return;
+    }
 
-      // 2. Validate Captcha
-      if (parseInt(captchaInput) !== captcha.answer) {
-        showToast("🤖 Incorrect Captcha calculation. Please try again.", "error");
+    // 2. Validate Captcha
+    if (parseInt(captchaInput) !== captcha.answer) {
+      showToast("🤖 Incorrect Captcha calculation. Please try again.", "error");
+      generateCaptcha();
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 3. Authenticate
+    if (lowercaseUsername in masterData.userCredentials) {
+      const userRecord = masterData.userCredentials[lowercaseUsername];
+      const correctPassword = userRecord.password;
+      const userRole = userRecord.role;
+      const userEmail = userRecord.email || "";
+      const originalUsername = userRecord.username;
+
+      if (correctPassword === trimmedPassword) {
+        // Success Path - Clear attempts
+        setFailedAttempts((prev) => {
+          const updated = { ...prev };
+          delete updated[lowercaseUsername];
+          return updated;
+        });
+
+        sessionStorage.setItem("username", originalUsername);
+        sessionStorage.setItem("email", userEmail);
+        setLoggedInUsername(originalUsername);
+
+        const isAdmin = userRole === "admin";
+        sessionStorage.setItem("role", isAdmin ? "admin" : "user");
+
+        if (isAdmin) {
+          sessionStorage.setItem("department", "all");
+          sessionStorage.setItem("isAdmin", "true");
+        } else {
+          sessionStorage.setItem("department", originalUsername);
+          sessionStorage.setItem("isAdmin", "false");
+        }
+
+        // Attendance logger triggers
+        logAttendance(originalUsername, userRole);
+        
+        setIsSubmitting(false);
+        setShowSuccessPopup(true);
+
+        setTimeout(() => {
+          navigate("/dashboard/admin");
+        }, 1800);
+
+        showToast(`Login successful. Welcome back, ${originalUsername}!`, "success");
+        return;
+      } else {
+        // Correct username but WRONG password -> Count attempts
+        const currentAttempts = (failedAttempts[lowercaseUsername] || 0) + 1;
+        setFailedAttempts((prev) => ({ ...prev, [lowercaseUsername]: currentAttempts }));
+        setShowSadEmoji(true);
+
+        if (currentAttempts >= 5) {
+          try {
+            await fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(originalUsername)}`);
+            setLockedUsers((prev) => [...prev, originalUsername]);
+            showToast("🔴 5 failed attempts! This account has been LOCKED. Please contact AM Sir.", "error");
+          } catch (err) {
+            console.error("Failed to lock user in database:", err);
+            showToast("🔴 5 failed attempts! Account is locked locally.", "error");
+          }
+        } else {
+          showToast(
+            `😢 Wrong password. Attempt ${currentAttempts}/5. ${5 - currentAttempts} attempts remaining before lockout!`,
+            "error"
+          );
+        }
         generateCaptcha();
         setIsSubmitting(false);
         return;
       }
-
-      // 3. Authenticate
-      if (trimmedUsername in masterData.userCredentials) {
-        const correctPassword = masterData.userCredentials[trimmedUsername];
-        const userRole = masterData.userRoles[trimmedUsername];
-        const userEmail = masterData.userEmails[trimmedUsername] || "";
-
-        if (correctPassword === trimmedPassword) {
-          // Success Path - Clear attempts
-          setFailedAttempts((prev) => {
-            const updated = { ...prev };
-            delete updated[trimmedUsername];
-            return updated;
-          });
-
-          // Correct password -> NOW trigger full-screen rotating loading screen overlay
-          setIsLoginLoading(true);
-
-          setTimeout(() => {
-            sessionStorage.setItem("username", trimmedUsername);
-            sessionStorage.setItem("email", userEmail);
-            setLoggedInUsername(trimmedUsername);
-
-            const isAdmin = userRole === "admin";
-            sessionStorage.setItem("role", isAdmin ? "admin" : "user");
-
-            if (isAdmin) {
-              sessionStorage.setItem("department", "all");
-              sessionStorage.setItem("isAdmin", "true");
-            } else {
-              sessionStorage.setItem("department", trimmedUsername);
-              sessionStorage.setItem("isAdmin", "false");
-            }
-
-            logAttendance(trimmedUsername, userRole);
-            
-            // Turn off loaders and show success overlay modal
-            setIsLoginLoading(false);
-            setIsSubmitting(false);
-            setShowSuccessPopup(true);
-
-            setTimeout(() => {
-              navigate("/dashboard/admin");
-            }, 2000);
-
-            showToast(`Login successful. Welcome back, ${trimmedUsername}!`, "success");
-          }, 1200); // 1.2s delay for professional rotating messages
-          
-          return;
-        }
-      }
-
-      // 4. Failed Login Path (Local check, no page loading)
-      const currentAttempts = (failedAttempts[trimmedUsername] || 0) + 1;
-      setFailedAttempts((prev) => ({ ...prev, [trimmedUsername]: currentAttempts }));
-      setShowSadEmoji(true);
-
-      if (currentAttempts >= 5) {
-        // Exceeded 5 attempts -> Lock user in Google Sheets LockedAccounts sheet
-        try {
-          await fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(trimmedUsername)}`);
-          setLockedUsers((prev) => [...prev, trimmedUsername]);
-          showToast("🔴 5 failed attempts! This account has been LOCKED. Please contact AM Sir.", "error");
-        } catch (err) {
-          console.error("Failed to lock user in database:", err);
-          showToast("🔴 5 failed attempts! Account is locked locally.", "error");
-        }
-      } else {
-        showToast(
-          `😢 Wrong password. Attempt ${currentAttempts}/5. ${5 - currentAttempts} attempts remaining before lockout!`,
-          "error"
-        );
-      }
-      generateCaptcha();
-      setIsSubmitting(false);
-
-    } catch (error) {
-      console.error("Login Error:", error);
-      showToast(`Login failed: ${error.message}. Please try again.`, "error");
-      setIsSubmitting(false);
     }
+
+    // 4. Username does NOT exist in sheet database
+    showToast("😢 Username does not exist or credentials incorrect!", "error");
+    setShowSadEmoji(true);
+    generateCaptcha();
+    setIsSubmitting(false);
   };
 
   const showToast = (message, type) => {
@@ -352,27 +322,6 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center p-3 md:p-6 pb-16 md:pb-20" style={{ background: 'linear-gradient(135deg, #eef7f2 0%, #ffffff 50%, #fef6f0 100%)', backgroundColor: '#eef7f2' }}>
       
-      {isLoginLoading && (
-        <div className="absolute inset-0 bg-white/95 backdrop-blur-md z-[9999] flex flex-col items-center justify-center min-h-[300px]">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <div className="relative flex items-center justify-center animate-bounce">
-              <svg className="animate-spin h-14 w-14 text-[#387f39]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle className="opacity-10" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </div>
-            <div className="text-center space-y-1 px-4">
-              <p className="text-slate-800 text-sm font-semibold tracking-wide animate-pulse">
-                {funnyMsg}
-              </p>
-              <p className="text-[10px] uppercase font-black tracking-widest text-[#f59e0b]">
-                Securing Access Portal...
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Container: Split screen on md+ */}
       <div className="w-full max-w-5xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col md:flex-row min-h-[580px]">
         
