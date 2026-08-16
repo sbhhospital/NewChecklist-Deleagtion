@@ -584,6 +584,17 @@ export default function PerformanceDashboard() {
       // Parse Delegation Sheet
       const delegationTasks = []
       const delegationStaffTracking = new Map()
+      const checklistStaffTracking = new Map()
+
+      // Initialize both tracking maps with all active users
+      doerOptions.forEach(name => {
+        delegationStaffTracking.set(name, {
+          name: name, totalTasks: 0, completedTasks: 0, pendingTasks: 0
+        })
+        checklistStaffTracking.set(name, {
+          name: name, totalTasks: 0, completedTasks: 0, pendingTasks: 0
+        })
+      })
 
       if (delegationJson.table && delegationJson.table.rows) {
         delegationJson.table.rows.forEach((row, rowIndex) => {
@@ -696,7 +707,6 @@ export default function PerformanceDashboard() {
 
       // Parse Checklist Sheet
       const checklistTasks = []
-      const checklistStaffTracking = new Map()
 
       if (checklistJson.table && checklistJson.table.rows) {
         checklistJson.table.rows.forEach((row, rowIndex) => {

@@ -679,6 +679,36 @@ export default function AdminDashboard() {
         console.error("Failed to fetch leaves data", e);
       }
 
+      // Fetch active users from Whatsapp sheet
+      const activeUserDisplayNames = [];
+      try {
+        const whatsappUrl = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`;
+        const whatsappRes = await fetch(whatsappUrl, { signal });
+        if (whatsappRes.ok) {
+          const wText = await whatsappRes.text();
+          const wJsonStart = wText.indexOf("{");
+          const wJsonEnd = wText.lastIndexOf("}");
+          if (wJsonStart !== -1 && wJsonEnd !== -1) {
+            const wData = JSON.parse(wText.substring(wJsonStart, wJsonEnd + 1));
+            if (wData.table && wData.table.rows) {
+              wData.table.rows.forEach((r, idx) => {
+                if (idx === 0) return;
+                const username = r.c && r.c[2] && r.c[2].v ? r.c[2].v.toString().trim() : "";
+                const role = r.c && r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
+                if (username) {
+                  const roleStr = String(role || "").toLowerCase().trim();
+                  if (roleStr !== "inactive" && roleStr !== "in active") {
+                    activeUserDisplayNames.push(username.trim());
+                  }
+                }
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch active users from Whatsapp sheet", e);
+      }
+
       // Initialize counters
       let totalTasks = 0;
       let completedTasks = 0;
@@ -706,6 +736,15 @@ export default function AdminDashboard() {
 
       const statusData = { Completed: 0, Pending: 0, Overdue: 0 };
       const staffTrackingMap = new Map();
+      activeUserDisplayNames.forEach(uName => {
+        staffTrackingMap.set(uName, {
+          name: uName,
+          totalTasks: 0,
+          completedTasks: 0,
+          pendingTasks: 0,
+          progress: 0,
+        });
+      });
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
