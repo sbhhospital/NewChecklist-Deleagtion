@@ -1,0 +1,401 @@
+=== FUNCTION sendSameDayLoginReminder ===
+entText());
+  } catch (e) {
+    Logger.log("WhatsApp send error: " + e.toString());
+  }
+}
+
+function sendSameDayLoginReminder() {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var masterSheet = ss.getSheetByName("Whatsapp");
+    if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
+    
+    var attendanceSheet = ss.getSheetByName("Attendance");
+    if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
+    
+    var today = new Date();
+    
+    // Skip Sunday reminder completely (leave day)
+    if (today.getDay() === 0) {
+      return { success: true, message: "Skipped same day reminder because today is Sunday (leave day)." };
+    }
+    
+    var dateStr = getFormattedDate(today);
+    
+    var masterData = masterSheet.getDataRange().getValues();
+    var headers = masterData[0];
+    var usernameColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
+    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
+    var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+    
+    if (usernameColIndex === -1) usernameColIndex = 2;
+    if (phoneColIndex === -1) phoneColIndex = 6;
+    if (roleColIndex === -1) roleColIndex = 4;
+    
+    var activeUsers = [];
+    var userPhones = {};
+    for (var i = 1; i < masterData.length; i++) {
+      var username = String(masterData[i][usernameColIndex]).trim();
+      var role = String(masterData[i][roleColIndex]).trim().toLowerCase();
+      var phone = String(masterData[i][phoneColIndex]).trim();
+      
+      if (username && role !== "inactive" && role !== "in active") {
+        activeUsers.push(username);
+        userPhones[username] = phone;
+      }
+    }
+    
+    var attendanceData = attendanceSheet.getDataRange().getValues();
+    var presentUsersToday = {};
+    for (var j = 1; j < attendanceData.length; j++) {
+      var rowDate = attendanceData[j][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      if (rowDateStr === dateStr && String(attendanceData[j][2]).toLowerCase() === "present") {
+        presentUsersToday[String(attendanceData[j][1]).trim().toLowerCase()] = true;
+      }
+    }
+    
+    var leavesSheet = ss.getSheetByName("Leaves");
+    var leavesCached = leavesSheet ? leavesSheet.getDataRange().getValues() : [];
+    var count = 0;
+    activeUsers.forEach(function(user) {
+      var userKey = user.toLowerCase();
+      var userOnLeave = isUserOnLeave(ss, user, dateStr, leavesCached);
+      if (!presentUsersToday[userKey] && !userOnLeave) {
+        var phone = userPhones[user];
+        if (phone) {
+          // Calculate consecutive missed days prior to today (excluding Sundays)
+          var checkDate = new Date(today);
+          checkDate.setDate(checkDate.getDate() - 1);
+          var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+          
+          sendWhatsAppNotification(phone, "⏰ *OFFICIAL LOGIN COMPLIANCE REMINDER* ⏰\n\nDear *" + user + "*,\n\nThis is to notify you that your daily check-in on the *SBH Group of Hospitals Delegation & Checklist Management System* is currently pending for today (" + dateStr + ").\n\nPlease log in before midnight to avoid automatic point deductions tomorrow.\n\n*Best Regar
+========================
+
+=== FUNCTION setupDailyTrigger ===
+oString()
+    };
+  }
+}
+
+// SETUP FUNCTION: Run this ONCE to create automatic daily trigger
+function setupDailyTrigger() {
+  try {
+    // Delete existing triggers for checklist processing
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === 'dailyChecklistProcessor') {
+        ScriptApp.deleteTrigger(triggers[i]);
+        Logger.log("Deleted existing trigger");
+      }
+    }
+    
+    // Create new automatic daily trigger at 12:00 PM (to match your manual trigger setting)
+    var trigger = ScriptApp.newTrigger('dailyChecklistProcessor')
+      .timeBased()
+      .everyDays(1)
+      .atHour(12) // 12 PM (noon) - matches your 12pm to 1pm setting
+      .create();
+    
+    Logger.log("✅ Automatic daily trigger created successfully!");
+    Logger.log("⏰ Will run dailyChecklistProcessor every day at 9:00 AM");
+    Logger.log("🆔 Trigger ID: " + trigger.getUniqueId());
+    
+    // Test run immediately
+    Logger.log("🧪 Running test to verify functionality...");
+    var result = processChecklistAndGenerateTasks();
+    Logger.log("✅ Test completed: " + JSON.stringify(result));
+    
+    return {
+      success: true,
+      message: "✅ Automatic daily trigger set up successfully! Will run every day at 9:00 AM",
+      triggerId: trigger.getUniqueId(),
+      testResult: result
+    };
+    
+  } catch (error) {
+    Logger.log("❌ Error setting up daily trigger: " + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+// Daily trigger function
+function dailyChecklistProcessor() {
+  try {
+    // Run the daily login and absent deduction check
+    var loginResult = runDailyLoginCheck();
+    Logger.log("Daily login check result: " + JSON.stringify(loginResult));
+    
+    return {
+      success: true,
+      loginResult: loginResult
+    };
+  } catch (error) {
+    Logger.log("Error in daily checklist processor: " + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+
+function setCorsHeaders(response) {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return response;
+}
+
+function doOptions(e) {
+  var response = ContentService.createTextOutput('');
+  return setCorsHeaders(response);
+}
+
+// ==========================================
+// NEW: Login Tracking & Deductions Log System
+// ==========================================
+
+function getFormattedDate(date) {
+  var d = date || new Date();
+  var day = d.getDate().toString().padStart(2, "0");
+  var month = (d.getMonth() + 1).toString().padStart(2, "0");
+  var year = d.getFullYear();
+  return day + "/" + month + "/" + year;
+}
+
+function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
+  var userKey = username.toLowerCase();
+  var consecutiveMissed = 0;
+  
+  var checkDate = new Date(asOfDate);
+  var limitDate = new Date(2026, 6, 27); // July 27, 2026
+  limitDate.setHours(0,0,0,0);
+  
+  // Build a presence map for this user to make lookups O(1)
+  var presenceMap = {};
+  for (var h = 1; h < attendanceData.length; h++) {
+    if (String(attendanceData[h][1]).trim().toLowerCase() === userKey) {
+      var rowDate = attendanceData[h][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      var status = String(attendanceData[h][2]).toLowerCase().trim();
+      if (status === "present") {
+        presenceMap[rowDateStr] = true;
+  
+========================
+
+=== FUNCTION dailyChecklistProcess ===
+();
+    for (var i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === 'dailyChecklistProcessor') {
+        ScriptApp.deleteTrigger(triggers[i]);
+        Logger.log("Deleted existing trigger");
+      }
+    }
+    
+    // Create new automatic daily trigger at 12:00 PM (to match your manual trigger setting)
+    var trigger = ScriptApp.newTrigger('dailyChecklistProcessor')
+      .timeBased()
+      .everyDays(1)
+      .atHour(12) // 12 PM (noon) - matches your 12pm to 1pm setting
+      .create();
+    
+    Logger.log("✅ Automatic daily trigger created successfully!");
+    Logger.log("⏰ Will run dailyChecklistProcessor every day at 9:00 AM");
+    Logger.log("🆔 Trigger ID: " + trigger.getUniqueId());
+    
+    // Test run immediately
+    Logger.log("🧪 Running test to verify functionality...");
+    var result = processChecklistAndGenerateTasks();
+    Logger.log("✅ Test completed: " + JSON.stringify(result));
+    
+    return {
+      success: true,
+      message: "✅ Automatic daily trigger set up successfully! Will run every day at 9:00 AM",
+      triggerId: trigger.getUniqueId(),
+      testResult: result
+    };
+    
+  } catch (error) {
+    Logger.log("❌ Error setting up daily trigger: " + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+// Daily trigger function
+function dailyChecklistProcessor() {
+  try {
+    // Run the daily login and absent deduction check
+    var loginResult = runDailyLoginCheck();
+    Logger.log("Daily login check result: " + JSON.stringify(loginResult));
+    
+    return {
+      success: true,
+      loginResult: loginResult
+    };
+  } catch (error) {
+    Logger.log("Error in daily checklist processor: " + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+
+function setCorsHeaders(response) {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return response;
+}
+
+function doOptions(e) {
+  var response = ContentService.createTextOutput('');
+  return setCorsHeaders(response);
+}
+
+// ==========================================
+// NEW: Login Tracking & Deductions Log System
+// ==========================================
+
+function getFormattedDate(date) {
+  var d = date || new Date();
+  var day = d.getDate().toString().padStart(2, "0");
+  var month = (d.getMonth() + 1).toString().padStart(2, "0");
+  var year = d.getFullYear();
+  return day + "/" + month + "/" + year;
+}
+
+function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
+  var userKey = username.toLowerCase();
+  var consecutiveMissed = 0;
+  
+  var checkDate = new Date(asOfDate);
+  var limitDate = new Date(2026, 6, 27); // July 27, 2026
+  limitDate.setHours(0,0,0,0);
+  
+  // Build a presence map for this user to make lookups O(1)
+  var presenceMap = {};
+  for (var h = 1; h < attendanceData.length; h++) {
+    if (String(attendanceData[h][1]).trim().toLowerCase() === userKey) {
+      var rowDate = attendanceData[h][0];
+      var rowDateStr = (rowDate instanceof Date) ? getFormattedDate(rowDate) : String(rowDate).trim();
+      var status = String(attendanceData[h][2]).toLowerCase().trim();
+      if (status === "present") {
+        presenceMap[rowDateStr] = true;
+      }
+    }
+  }
+  
+  while (true) {
+    if (checkDate < limitDate) {
+      break;
+    }
+    
+    // Skip Sundays
+    if (checkDate.getDay() === 0) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    
+    var 
+========================
+
+=== FUNCTION escalation ===
+nsecutiveMissed: consecutiveMissed });
+      }
+    });
+    
+    // Send ONE consolidated message to escalation managers if there are non-compliant users
+      if (absentUsersSummary.length > 0) {
+        var summaryMsg = "🚨 *STAFF ATTENDANCE ESCALATION SUMMARY* 🚨\n\n";
+        summaryMsg += "*Attendance Date:* " + dateStr + "\n\n";
+        summaryMsg += "The following staff members missed their check-in:\n";
+        absentUsersSummary.forEach(function(item, idx) {
+          summaryMsg += (idx + 1) + ". *" + item.name + "*\n   ⏳ Days Missed: " + item.missed + "\n";
+        });
+        summaryMsg += "\nImmediate review is suggested.\n\n*Best Regards,*\n*Team SBH HOSPITAL*";
+      
+      sendWhatsAppNotification("+919039080203", summaryMsg);
+      sendWhatsAppNotification("+919644404741", summaryMsg);
+    }
+    
+    return { success: true, processedCount: results.length, results: results };
+  } catch (error) {
+    return { success: false, error: error.toString() };
+  }
+}
+
+function sendWhatsAppNotification(phoneNumber, message) {
+  Logger.log("WhatsApp Notification Sent to " + phoneNumber + ": " + message);
+  try {
+    var cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    if (cleanPhone.length === 10) {
+      cleanPhone = "91" + cleanPhone;
+    }
+    
+    var url = "https://app.ceoitbox.com/message/new";
+    var payload = {
+      username: "SBH HOSPITAL",
+      password: "123456789",
+      receiverMobileNo: cleanPhone,
+      receiverName: "User",
+      message: message
+    };
+    
+    var response = UrlFetchApp.fetch(url, {
+      method: "post",
+      payload: payload,
+      muteHttpExceptions: true
+    });
+    Logger.log("WhatsApp Response status: " + response.getResponseCode() + ", Body: " + response.getContentText());
+  } catch (e) {
+    Logger.log("WhatsApp send error: " + e.toString());
+  }
+}
+
+function sendSameDayLoginReminder() {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var masterSheet = ss.getSheetByName("Whatsapp");
+    if (!masterSheet) return { success: false, error: "Whatsapp sheet not found" };
+    
+    var attendanceSheet = ss.getSheetByName("Attendance");
+    if (!attendanceSheet) return { success: false, error: "Attendance sheet not found" };
+    
+    var today = new Date();
+    
+    // Skip Sunday reminder completely (leave day)
+    if (today.getDay() === 0) {
+      return { success: true, message: "Skipped same day reminder because today is Sunday (leave day)." };
+    }
+    
+    var dateStr = getFormattedDate(today);
+    
+    var masterData = masterSheet.getDataRange().getValues();
+    var headers = masterData[0];
+    var usernameColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "username"; });
+    var phoneColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "phone" || String(h).trim().toLowerCase() === "mobile" || String(h).trim().toLowerCase() === "mobile number" || String(h).trim().toLowerCase() === "number"; });
+    var roleColIndex = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
+    
+    if (usernameColIndex === -1) usernameColIndex = 2;
+    if (phoneColIndex === -1) phoneColIndex = 6;
+    if (roleColIndex === -1) roleColIndex = 4;
+    
+    var activeUsers = [];
+    var userPhones = {};
+    for (var i = 1; i < masterData.length; i++) {
+      var username = String(masterData[i][usernameColIndex]).trim();
+      var role = String(masterData[i][roleColIndex]).trim().toLowerCase();
+      var phone = String(masterData[i][phoneColIndex]).trim();
+      
+  
+========================

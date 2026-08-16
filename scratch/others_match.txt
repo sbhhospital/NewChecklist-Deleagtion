@@ -1,0 +1,56 @@
+=== MATCH ===
+klistFrequencyFilter === "all") {
+                summaryRows.push([
+                  "Employee Name", "Score (100)", 
+                  "Daily (A/D/P/O)", 
+                  "Weekly (A/D/P/O)", 
+                  "Fortnightly (A/D/P/O)", 
+                  "Monthly (A/D/P/O)", 
+                  "Others (A/D/P/O)", 
+                  "Missed Logins (Days)", "Missed Logins (Deduction)", "Missed Checklists (Deduction)"
+                ])
+                usersToExport.forEach(staff => {
+                  summaryRows.push([
+                    staff.name,
+                    staff.aiScore,
+                    `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
+                    `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
+                    `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly
+=============
+
+=== MATCH ===
+checklist") {
+            let columns = []
+            let rows = []
+            if (checklistFrequencyFilter === "all") {
+              columns = [
+                "Employee Name", "Score (100)", 
+                "Daily (A/D/P/O)", "Weekly (A/D/P/O)", "Fortnightly (A/D/P/O)", "Monthly (A/D/P/O)", "Others (A/D/P/O)",
+                "Missed Logins (Days)", "Login Penalty", "Checklist Penalty"
+              ]
+              rows = filteredStaff.map(staff => [
+                staff.name,
+                staff.aiScore,
+                `${staff.freqBreakdown?.daily?.total || 0}/${staff.freqBreakdown?.daily?.completed || 0}/${staff.freqBreakdown?.daily?.pending || 0}/${staff.freqBreakdown?.daily?.overdue || 0}`,
+                `${staff.freqBreakdown?.weekly?.total || 0}/${staff.freqBreakdown?.weekly?.completed || 0}/${staff.freqBreakdown?.weekly?.pending || 0}/${staff.freqBreakdown?.weekly?.overdue || 0}`,
+                `${staff.freqBreakdown?.fortnightly?.total || 0}/${staff.freqBreakdown?.fortnightly?.completed || 0}/${staff.freqBreakdown?.fortnightly?.pending || 0}/${staff.freqBreakd
+=============
+
+=== MATCH ===
+de-in">
+          {[
+            { id: "daily", label: "☀️ Daily Checklists" },
+            { id: "weekly", label: "📅 Weekly Checklists" },
+            { id: "fortnightly", label: "⏳ Fortnightly" },
+            { id: "monthly", label: "🗓️ Monthly Checklists" },
+            { id: "other", label: "⚙️ Others" }
+          ].map(freq => {
+            const data = processedStats.totalFreqBreakdown?.[freq.id] || { total: 0, completed: 0, pending: 0, overdue: 0 }
+            return (
+              <div key={freq.id} className="bg-white rounded-xl border border-slate-100 p-3.5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden">
+                <div className="flex justify-between items-center text-slate-400">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-700">{freq.label}</span>
+                  <span className="text-[10px] bg-purple-50 text-purple-700 font-extrabold px-2 py-0.5 rounded-full">Act: {data.total}</span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 ga
+=============

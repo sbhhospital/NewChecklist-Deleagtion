@@ -1,0 +1,117 @@
+=== MATCH ===
+te new automatic daily trigger at 12:00 PM (to match your manual trigger setting)
+    var trigger = ScriptApp.newTrigger('dailyChecklistProcessor')
+      .timeBased()
+      .everyDays(1)
+      .atHour(12) // 12 PM (noon) - matches your 12pm to 1pm setting
+      .create();
+    
+    Logger.log("✅ Automatic daily trigger created successfully!");
+    Logger.log("⏰ Will run dailyChecklistProcessor every day at 9:00 AM");
+    Logger.log("🆔 Trigger ID: " + trigger.getUniqueId());
+    
+    // Test run immediately
+    Logger.log("🧪 Running test to verify functionality...");
+    var result = processChecklistAndGenerateTasks();
+    Logger.log("✅ Test completed: " + JSON.stringify(result));
+    
+    return {
+      success: true,
+      message: "✅ Automatic daily trigger set up successfully! Will run every day at 9:00 AM",
+      triggerId: trigger.getUniqueId(),
+      testResult: result
+    };
+    
+  } catch (error) {
+    Logger.log("❌ Error setting up daily trigger: " + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+// Daily trigger function
+fun
+=============
+
+=== MATCH ===
+eTrigger(triggers[i]);
+    }
+  }
+  
+  // 1. Trigger for sendSameDayLoginReminder at 6:10 PM daily
+  ScriptApp.newTrigger("sendSameDayLoginReminder")
+    .timeBased()
+    .everyDays(1)
+    .atHour(18)
+    .nearMinute(10)
+    .create();
+    
+  // 2. Trigger for runDailyLoginCheck at 10:00 AM daily
+  ScriptApp.newTrigger("runDailyLoginCheck")
+    .timeBased()
+    .everyDays(1)
+    .atHour(10)
+    .nearMinute(0)
+    .create();
+}
+
+function manageUser(params) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("master");
+    if (!sheet) {
+      throw new Error("Master sheet not found");
+    }
+    
+    var subAction = params.subAction; // 'insert', 'update', 'delete'
+    var rowData = JSON.parse(params.rowData);
+    
+    if (subAction === 'delete') {
+      var rowIndex = parseInt(params.rowIndex);
+      if (isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid row index: " + params.rowIndex);
+      }
+      // ONLY clear Columns C to H (index 3 to 8) to preserve Columns A & B
+      sheet.getRange(rowI
+=============
+
+=== MATCH ===
+
+    .nearMinute(10)
+    .create();
+    
+  // 2. Trigger for runDailyLoginCheck at 10:00 AM daily
+  ScriptApp.newTrigger("runDailyLoginCheck")
+    .timeBased()
+    .everyDays(1)
+    .atHour(10)
+    .nearMinute(0)
+    .create();
+}
+
+function manageUser(params) {
+  try {
+    var ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    var sheet = ss.getSheetByName("master");
+    if (!sheet) {
+      throw new Error("Master sheet not found");
+    }
+    
+    var subAction = params.subAction; // 'insert', 'update', 'delete'
+    var rowData = JSON.parse(params.rowData);
+    
+    if (subAction === 'delete') {
+      var rowIndex = parseInt(params.rowIndex);
+      if (isNaN(rowIndex) || rowIndex < 2) {
+        throw new Error("Invalid row index: " + params.rowIndex);
+      }
+      // ONLY clear Columns C to H (index 3 to 8) to preserve Columns A & B
+      sheet.getRange(rowIndex, 3, 1, 6).clearContent();
+      return { success: true, message: "User deleted successfully" };
+    }
+    
+    if (subAction === 'insert') {
+      // Find the first empty row in Column C to pres
+=============
