@@ -94,7 +94,8 @@ const UserLayout = ({ children }) => {
             ))}
           </ul>
         </nav>
-        <div className="border-t border-slate-200 p-4 menu-header-gradient">
+        {/* pb-12 raises layout up to sit comfortably above footer */}
+        <div className="border-t border-slate-200 p-4 pb-12 menu-header-gradient">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center border border-slate-350 shadow-xs">
@@ -166,7 +167,8 @@ const UserLayout = ({ children }) => {
           </nav>
         </div>
         
-        <div className="border-t border-slate-200 p-4 menu-header-gradient">
+        {/* pb-12 raises layout up to sit comfortably above footer */}
+        <div className="border-t border-slate-200 p-4 pb-12 menu-header-gradient">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-teal-500 flex items-center justify-center border border-slate-350 shadow-xs">
@@ -197,7 +199,7 @@ const UserLayout = ({ children }) => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 z-10 md:justify-end">
+        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 z-10 md:justify-between">
           <button 
             className="md:hidden text-[#387f39]" 
             onClick={() => setIsMobileMenuOpen(true)}
@@ -208,66 +210,81 @@ const UserLayout = ({ children }) => {
           <h1 className="text-lg font-semibold text-[#387f39] md:hidden">
             {isAdmin ? 'Admin Dashboard' : 'Staff Dashboard'}
           </h1>
+          
+          {/* Saturated Fluid Gradient text matching the footer layout */}
+          <h1 className="hidden md:flex text-sm md:text-xl font-bold items-center gap-2">
+            <span className="footer-gradient-text">
+              {(() => {
+                const hour = new Date().getHours()
+                let greeting = "Good Morning"
+                if (hour >= 12 && hour < 18) greeting = "Good Afternoon"
+                else if (hour >= 18) greeting = "Good Evening"
+
+                return `${greeting}, ${username ? username.toUpperCase() : "USER"}! Welcome On Board`
+              })()}
+            </span>
+            <span className="animate-bounce inline-block text-xl">👋</span>
+          </h1>
         </header>
         
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-14 md:pb-16 relative">
           {children}
-          
-          {/* Official Fluid Saturated Footer - Sleeker & Thinner Padding */}
-          <footer 
-            className="fixed md:left-64 left-0 right-0 bottom-0 py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10 text-white"
-            style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
-          >
-            <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
-            <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
-
-              {/* 📱 MOBILE VIEW */}
-              <div className="flex flex-col items-center justify-center md:hidden py-0.5">
-                <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
-                  <ShieldCheck size={10} className="text-white" />
-                  <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
-                    SBH Group Of Hospitals
-                  </span>
-                </a>
-                <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
-                  <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
-                    Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
-                  </span>
-                  <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
-                </a>
-              </div>
-
-              {/* 💻 DESKTOP VIEW */}
-              <div className="hidden md:flex items-center justify-between gap-6 h-6">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
-                    <Activity size={11} className="text-white" />
-                  </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
-                    <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
-                  </div>
-                </div>
-
-                <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
-                  <ShieldCheck size={10} className="text-white" />
-                  <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
-                    SBH Group Of Hospitals
-                  </span>
-                </a>
-
-                <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
-                  <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
-                  <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none">
-                    Naman Mishra
-                    <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
-                  </span>
-                </a>
-              </div>
-            </div>
-          </footer>
         </main>
       </div>
+
+      {/* Reverted to Full Width fixed footer z-index 2000 */}
+      <footer 
+        className="fixed left-0 right-0 bottom-0 py-0.5 md:py-1 overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10 text-white z-[2000]"
+        style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
+      >
+        <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
+        <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
+
+          {/* 📱 MOBILE VIEW */}
+          <div className="flex flex-col items-center justify-center md:hidden py-0.5">
+            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
+              <ShieldCheck size={10} className="text-white" />
+              <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
+                SBH Group Of Hospitals
+              </span>
+            </a>
+            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
+              <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
+                Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
+              </span>
+              <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
+            </a>
+          </div>
+
+          {/* 💻 DESKTOP VIEW */}
+          <div className="hidden md:flex items-center justify-between gap-6 h-6">
+            <div className="flex items-center gap-2.5">
+              <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
+                <Activity size={11} className="text-white" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
+                <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
+              </div>
+            </div>
+
+            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
+              <ShieldCheck size={10} className="text-white" />
+              <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
+                SBH Group Of Hospitals
+              </span>
+            </a>
+
+            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
+              <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
+              <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none">
+                Naman Mishra
+                <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
+              </span>
+            </a>
+          </div>
+        </div>
+      </footer>
 
     </div>
   );

@@ -26,7 +26,16 @@ const LoginPage = () => {
   const [captcha, setCaptcha] = useState({ num1: 0, num2: 0, answer: 0 });
   const [captchaInput, setCaptchaInput] = useState("");
   const [lockedUsers, setLockedUsers] = useState([]);
-  const [failedAttempts, setFailedAttempts] = useState({});
+
+  // Initialize failedAttempts registry directly from localStorage to survive page refresh
+  const [failedAttempts, setFailedAttempts] = useState(() => {
+    try {
+      const stored = localStorage.getItem("failedAttemptsRegistry");
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
   // Generate a random mathematical captcha
   const generateCaptcha = () => {
@@ -57,7 +66,19 @@ const LoginPage = () => {
       try {
         setIsDataLoading(true);
 
-        // Fetch locked users list with robust fallback handling
+        // Fetch locked users list from localStorage first as immediate fallback
+        let localLocked = [];
+        try {
+          const localStored = localStorage.getItem("locallyLockedUsers");
+          if (localStored) {
+            localLocked = JSON.parse(localStored);
+          }
+        } catch (e) {
+          console.warn("Local storage read failed", e);
+        }
+        setLockedUsers(localLocked);
+
+        // Fetch locked users list from Google Sheets DB
         try {
           const lockedRes = await fetch(`${SCRIPT_URL}?action=getLockedUsers`);
           if (lockedRes.ok) {
@@ -65,12 +86,14 @@ const LoginPage = () => {
             if (resText && (resText.startsWith("{") || resText.startsWith("["))) {
               const lockedData = JSON.parse(resText);
               if (lockedData && lockedData.success) {
-                setLockedUsers(lockedData.lockedUsers || []);
+                const serverLocked = lockedData.lockedUsers || [];
+                setLockedUsers(serverLocked);
+                localStorage.setItem("locallyLockedUsers", JSON.stringify(serverLocked));
               }
             }
           }
         } catch (lockErr) {
-          console.warn("Failed to fetch locked users from DB:", lockErr);
+          console.warn("Failed to fetch locked users from DB, falling back to local registry:", lockErr);
         }
 
         // Fetch user list
@@ -93,10 +116,9 @@ const LoginPage = () => {
             if (username && password && password.trim() !== "") {
               if (isInactiveRole(role)) continue;
               
-              // Normalize username key to lowercase to support case-insensitive lookups
               const lowerUser = username.toLowerCase().trim();
               userCredentials[lowerUser] = {
-                username: username, // Original casing preserved
+                username: username, 
                 password: password,
                 role: role.toLowerCase(),
                 email: email
@@ -213,10 +235,24 @@ const LoginPage = () => {
     const lowercaseUsername = trimmedUsername.toLowerCase();
     const trimmedPassword = formData.password.trim();
 
-    // 1. Check if user is locked (case-insensitive check)
+    // Fetch immediate local storage block fallback
+    let localLocked = [];
+    try {
+      const localStored = localStorage.getItem("locallyLockedUsers");
+      if (localStored) {
+        localLocked = JSON.parse(localStored);
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+
+    // 1. Check if user is locked (case-insensitive check against both local + DB list)
     const isUserLocked = lockedUsers.some(
       (u) => String(u).toLowerCase().trim() === lowercaseUsername
+    ) || localLocked.some(
+      (u) => String(u).toLowerCase().trim() === lowercaseUsername
     );
+
     if (isUserLocked) {
       showToast("😞 Account is locked! Please contact AM Sir (Dr. A.M.) to unlock it.", "error");
       setIsSubmitting(false);
@@ -240,10 +276,13 @@ const LoginPage = () => {
       const originalUsername = userRecord.username;
 
       if (correctPassword === trimmedPassword) {
-        // Success Path - Clear attempts
+        // Success Path - Clear attempts from state & localStorage
         setFailedAttempts((prev) => {
           const updated = { ...prev };
           delete updated[lowercaseUsername];
+          try {
+            localStorage.setItem("failedAttemptsRegistry", JSON.stringify(updated));
+          } catch (e) {}
           return updated;
         });
 
@@ -275,15 +314,34 @@ const LoginPage = () => {
         showToast(`Login successful. Welcome back, ${originalUsername}!`, "success");
         return;
       } else {
-        // Correct username but WRONG password -> Count attempts
+        // Correct username but WRONG password -> Count attempts and persist
         const currentAttempts = (failedAttempts[lowercaseUsername] || 0) + 1;
-        setFailedAttempts((prev) => ({ ...prev, [lowercaseUsername]: currentAttempts }));
+        
+        setFailedAttempts((prev) => {
+          const updated = { ...prev, [lowercaseUsername]: currentAttempts };
+          try {
+            localStorage.setItem("failedAttemptsRegistry", JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+        
         setShowSadEmoji(true);
 
         if (currentAttempts >= 5) {
+          // Lock user locally inside localStorage first
+          const updatedLocked = Array.from(new Set([...lockedUsers, ...localLocked, originalUsername]));
+          setLockedUsers(updatedLocked);
           try {
-            await fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(originalUsername)}`);
-            setLockedUsers((prev) => [...prev, originalUsername]);
+            localStorage.setItem("locallyLockedUsers", JSON.stringify(updatedLocked));
+          } catch (e) {
+            console.warn(e);
+          }
+
+          // Use mode: 'no-cors' to guarantee writing to LockedAccounts sheet by bypassing CORS blocks
+          try {
+            fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(originalUsername)}`, {
+              mode: 'no-cors'
+            });
             showToast("🔴 5 failed attempts! This account has been LOCKED. Please contact AM Sir.", "error");
           } catch (err) {
             console.error("Failed to lock user in database:", err);

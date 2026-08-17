@@ -198,3 +198,23 @@
       left: -24px;
     }
   }
+
+  .portal-footer {
+    left: 0 !important;
+    z-index: 2000 !important;
+  }
+
+  @media (min-width: 768px) {
+    .portal-footer {
+      left: 256px !important;
+    }
+  }
+
+  .footer-gradient-text {
+    background: linear-gradient(to right, #f59e0b, #10b981, #2e7d32) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+    color: transparent !important;
+    display: inline-block;
+  }
