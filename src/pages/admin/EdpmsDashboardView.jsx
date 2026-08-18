@@ -587,8 +587,14 @@ export default function EdpmsDashboardView({
       if (t.originalStatus === "Verify Pending") {
         verifyPending++
       }
-      if (t.status === "overdue" && t.penalty > 40) {
-        escalatedTasks++
+      if (activeSource === "checklist") {
+        if (t.status === "overdue" && t.penalty > 40) {
+          escalatedTasks++
+        }
+      } else {
+        if (t.status === "overdue" && t.delayDays >= 3) {
+          escalatedTasks++
+        }
       }
       if (t.extensionCount > 0) {
         extensionRequests += t.extensionCount
@@ -1014,10 +1020,8 @@ export default function EdpmsDashboardView({
         scoreLoginDiscipline = loginDisciplineDeduction
 
         const baseScore = 100;
-        const totalPenaltiesDelegation = totalMainScorePenalties + loginDisciplineDeduction;
-        const cappedBonusBuffer = Math.min(20, totalTaskRewards + loginBonus);
-        const netPenalty = Math.max(0, totalPenaltiesDelegation - cappedBonusBuffer);
-        finalScore = Math.max(0, baseScore - netPenalty);
+        const netLoginPenalty = Math.max(0, loginDisciplineDeduction - Math.min(20, totalTaskRewards + loginBonus));
+        finalScore = Math.max(0, baseScore - totalMainScorePenalties - netLoginPenalty);
         performancePercent = Math.round(finalScore);
       }
 
@@ -1349,12 +1353,26 @@ export default function EdpmsDashboardView({
 
   // Filter tasks list to display in the main list table
   const displayTasksList = useMemo(() => {
-    return processedStats.filteredTasks.filter(t => {
+    const filtered = processedStats.filteredTasks.filter(t => {
       const matchDept = !filterDept || filterDept === "all" || getDepartment(t.assignedTo) === filterDept
       const matchSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           t.assignedTo.toLowerCase().includes(searchQuery.toLowerCase())
       return matchDept && matchSearch
+    })
+    return filtered.sort((a, b) => {
+      const getPriority = (status) => {
+        if (status === "overdue") return 1
+        if (status === "pending") return 2
+        if (status === "completed") return 3
+        return 4
+      }
+      const pA = getPriority(a.status)
+      const pB = getPriority(b.status)
+      if (pA !== pB) return pA - pB
+      const dateA = parseDateFromDDMMYYYY(a.dueDate || a.taskStartDate) || new Date(0)
+      const dateB = parseDateFromDDMMYYYY(b.dueDate || b.taskStartDate) || new Date(0)
+      return dateA - dateB
     })
   }, [processedStats.filteredTasks, filterDept, searchQuery])
 
@@ -2464,7 +2482,13 @@ export default function EdpmsDashboardView({
                                 {task.completionReward > 0 && ` | +${task.completionReward}`}
                                 {task.extensionPenalty > 0 && ` | -${task.extensionPenalty}`}
                                 {task.delayPenalty > 0 && ` | -${task.delayPenalty}`}
+                                {task.mainScorePenalty > 0 && ` | Main Cut: -${task.mainScorePenalty}`}
                               </span>
+                              {task.mainScorePenalty > 0 && (
+                                <span className="text-[9px] text-rose-500 font-bold mt-0.5 whitespace-nowrap bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
+                                  Main Score Cut: -${task.mainScorePenalty} Pts
+                                </span>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -646,9 +646,10 @@ export default function PerformanceDashboard() {
           }
 
           let status = "pending"
-          if (statusColumnU === "Done") {
+          const dueDate = parseGoogleSheetsDate(getCellValue(row, 10)) || taskStartDate
+          if (statusColumnU === "Done" || statusColumnU === "Verify Pending") {
             status = "completed"
-          } else if (isDateInPast(taskStartDate) && !isDateToday(taskStartDate)) {
+          } else if (dueDate && isDateInPast(dueDate) && !isDateToday(dueDate)) {
             status = "overdue"
           }
 

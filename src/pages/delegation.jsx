@@ -2483,11 +2483,9 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Submission Status
                         </th>
-                        {userRole === "admin" && (
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Task Score
-                          </th>
-                        )}
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Task Score
+                        </th>
                         {/* Admin Select Column Header */}
                         {userRole === "admin" && (
                           <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
@@ -2643,48 +2641,52 @@ function DelegationDataPage() {
                                 </span>
                               </td>
                               {/* Task Score Column */}
-                              {userRole === "admin" && (
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-semibold">
-                                    {(() => {
-                                      if (matchingTask) {
-                                        const scoreDetails = calculateTaskScore(matchingTask, historyData);
-                                        return (
-                                          <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
-                                            <span className="font-bold text-green-600">
-                                              Score: {scoreDetails.score} Pts
+                                                            {/* Task Score Column */}
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold">
+                                  {(() => {
+                                    if (matchingTask) {
+                                      const scoreDetails = calculateTaskScore(matchingTask, historyData);
+                                      return (
+                                        <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
+                                          <span className="font-bold text-green-600">
+                                            Score: {scoreDetails.score} Pts
+                                          </span>
+                                          <span className="text-gray-600 font-medium">
+                                            Rating Base: {scoreDetails.baseScore} Pts
+                                          </span>
+                                          {scoreDetails.completionReward > 0 && (
+                                            <span className="text-green-600 font-medium">
+                                              Task Value: +{scoreDetails.completionReward} Pts
                                             </span>
-                                            <span className="text-gray-600 font-medium">
-                                              Rating Base: {scoreDetails.baseScore} Pts
+                                          )}
+                                          {scoreDetails.penalty > 0 && (
+                                            <span className="text-red-500 font-bold">
+                                              Total Penalty: -{scoreDetails.penalty} Pts
                                             </span>
-                                            {scoreDetails.completionReward > 0 && (
-                                              <span className="text-green-600 font-medium">
-                                                Task Value: +{scoreDetails.completionReward} Pts
-                                              </span>
-                                            )}
-                                            {scoreDetails.penalty > 0 && (
-                                              <span className="text-red-500 font-bold">
-                                                Total Penalty: -{scoreDetails.penalty} Pts
-                                              </span>
-                                            )}
-                                            {scoreDetails.extensionPenalty > 0 && (
-                                              <span className="text-red-500 font-medium pl-2">
-                                                ↳ Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
-                                              </span>
-                                            )}
-                                            {scoreDetails.delayPenalty > 0 && (
-                                              <span className="text-red-500 font-medium pl-2">
-                                                ↳ Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
-                                              </span>
-                                            )}
-                                          </div>
-                                        );
-                                      }
-                                      return <span className="text-gray-400">—</span>;
-                                    })()}
-                                  </div>
-                                </td>
-                              )}
+                                          )}
+                                          {scoreDetails.extensionPenalty > 0 && (
+                                            <span className="text-red-500 font-medium pl-2">
+                                              Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
+                                            </span>
+                                          )}
+                                          {scoreDetails.delayPenalty > 0 && (
+                                            <span className="text-red-500 font-medium pl-2">
+                                              Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
+                                            </span>
+                                          )}
+                                          {scoreDetails.mainScorePenalty > 0 && (
+                                            <span className="text-rose-600 font-bold mt-1 bg-rose-50 px-1 rounded text-center">
+                                              Main Score Cut: -{scoreDetails.mainScorePenalty} Pts
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    return <span className="text-gray-400">-</span>;
+                                  })()}
+                                </div>
+                              </td>
                               {/* Admin Select Checkbox */}
                               {userRole === "admin" && (
                                 <td className="px-3 py-4 w-12">
@@ -2854,7 +2856,7 @@ function DelegationDataPage() {
                       ) : (
                         <tr>
                           <td
-                            colSpan={userRole === "admin" ? 12 : 9}
+                            colSpan={20}
                             className="px-6 py-4 text-center text-gray-500"
                           >
                             {searchTerm || startDate || endDate
@@ -3021,11 +3023,9 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
-                        {userRole === "admin" && (
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Task Score
-                          </th>
-                        )}
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Task Score
+                        </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Task Start Date
                         </th>
@@ -3131,45 +3131,48 @@ function DelegationDataPage() {
                                   {account["col20"] || "—"}
                                 </span>
                               </td>
-                              {userRole === "admin" && (
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-semibold">
-                                    {(() => {
-                                      const scoreDetails = calculateTaskScore(account, historyData);
-                                      return (
-                                        <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
-                                          <span className="font-bold text-green-600">
-                                            Score: {scoreDetails.score} Pts
+                                                            <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold">
+                                  {(() => {
+                                    const scoreDetails = calculateTaskScore(account, historyData);
+                                    return (
+                                      <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
+                                        <span className="font-bold text-green-600">
+                                          Score: {scoreDetails.score} Pts
+                                        </span>
+                                        <span className="text-gray-600 font-medium">
+                                          Rating Base: {scoreDetails.baseScore} Pts
+                                        </span>
+                                        {scoreDetails.completionReward > 0 && (
+                                          <span className="text-green-600 font-medium">
+                                            Reward: +{scoreDetails.completionReward} Pts
                                           </span>
-                                          <span className="text-gray-600 font-medium">
-                                            Rating Base: {scoreDetails.baseScore} Pts
+                                        )}
+                                        {scoreDetails.penalty > 0 && (
+                                          <span className="text-red-500 font-bold">
+                                            Total Penalty: -{scoreDetails.penalty} Pts
                                           </span>
-                                          {scoreDetails.completionReward > 0 && (
-                                            <span className="text-green-600 font-medium">
-                                              Reward: +{scoreDetails.completionReward} Pts
-                                            </span>
-                                          )}
-                                          {scoreDetails.penalty > 0 && (
-                                            <span className="text-red-500 font-bold">
-                                              Total Penalty: -{scoreDetails.penalty} Pts
-                                            </span>
-                                          )}
-                                          {scoreDetails.extensionPenalty > 0 && (
-                                            <span className="text-red-500 font-medium pl-2">
-                                              ↳ Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
-                                            </span>
-                                          )}
-                                          {scoreDetails.delayPenalty > 0 && (
-                                            <span className="text-red-500 font-medium pl-2">
-                                              ↳ Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
-                                            </span>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
-                                  </div>
-                                </td>
-                              )}
+                                        )}
+                                        {scoreDetails.extensionPenalty > 0 && (
+                                          <span className="text-red-500 font-medium pl-2">
+                                            Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
+                                          </span>
+                                        )}
+                                        {scoreDetails.delayPenalty > 0 && (
+                                          <span className="text-red-500 font-medium pl-2">
+                                            Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
+                                          </span>
+                                        )}
+                                        {scoreDetails.mainScorePenalty > 0 && (
+                                          <span className="text-rose-600 font-bold mt-1 bg-rose-50 px-1 rounded text-center">
+                                            Main Score Cut: -{scoreDetails.mainScorePenalty} Pts
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
                                   {formatDateForDisplay(account["col0"]) || "—"}
@@ -3376,7 +3379,7 @@ function DelegationDataPage() {
                       ) : (
                         <tr>
                           <td
-                            colSpan={13}
+                            colSpan={20}
                             className="px-6 py-4 text-center text-gray-500"
                           >
                             {searchTerm

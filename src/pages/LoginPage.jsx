@@ -39,9 +39,20 @@ const LoginPage = () => {
 
   // Generate a random mathematical captcha
   const generateCaptcha = () => {
-    const num1 = Math.floor(Math.random() * 9) + 1;
-    const num2 = Math.floor(Math.random() * 9) + 1;
-    setCaptcha({ num1, num2, answer: num1 + num2 });
+    const isMinus = Math.random() < 0.5;
+    let num1, num2, answer, op;
+    if (isMinus) {
+      num1 = Math.floor(Math.random() * 8) + 2; // 2 to 9
+      num2 = Math.floor(Math.random() * (num1 - 1)) + 1; // 1 to num1 - 1
+      answer = num1 - num2;
+      op = "-";
+    } else {
+      num1 = Math.floor(Math.random() * 8) + 2; // 2 to 9
+      num2 = Math.floor(Math.random() * 8) + 1; // 1 to 8
+      answer = num1 + num2;
+      op = "+";
+    }
+    setCaptcha({ num1, num2, op, answer });
     setCaptchaInput("");
   };
 
@@ -63,74 +74,92 @@ const LoginPage = () => {
   useEffect(() => {
     generateCaptcha();
     const fetchMasterData = async () => {
+      // 1. Try to load from localStorage first for instant access
+      let localLocked = [];
+      let localCreds = null;
       try {
-        setIsDataLoading(true);
-
-        // Fetch locked users list from localStorage first as immediate fallback
-        let localLocked = [];
-        try {
-          const localStored = localStorage.getItem("locallyLockedUsers");
-          if (localStored) {
-            localLocked = JSON.parse(localStored);
-          }
-        } catch (e) {
-          console.warn("Local storage read failed", e);
+        const localStored = localStorage.getItem("locallyLockedUsers");
+        if (localStored) {
+          localLocked = JSON.parse(localStored);
         }
-        setLockedUsers(localLocked);
+        const cachedCreds = localStorage.getItem("cachedUserCredentials");
+        if (cachedCreds) {
+          localCreds = JSON.parse(cachedCreds);
+        }
+      } catch (e) {
+        console.warn("Local storage read failed", e);
+      }
 
-        // Fetch locked users list from Google Sheets DB
-        try {
-          const lockedRes = await fetch(`${SCRIPT_URL}?action=getLockedUsers`);
-          if (lockedRes.ok) {
-            const resText = await lockedRes.text();
-            if (resText && (resText.startsWith("{") || resText.startsWith("["))) {
-              const lockedData = JSON.parse(resText);
-              if (lockedData && lockedData.success) {
-                const serverLocked = lockedData.lockedUsers || [];
-                setLockedUsers(serverLocked);
-                localStorage.setItem("locallyLockedUsers", JSON.stringify(serverLocked));
+      if (localLocked.length > 0) {
+        setLockedUsers(localLocked);
+      }
+      if (localCreds) {
+        setMasterData({ userCredentials: localCreds });
+        // Since we have cached data, we don't need to show the loading state!
+        setIsDataLoading(false);
+      } else {
+        setIsDataLoading(true);
+      }
+
+      try {
+        // Fetch locked users and user list in parallel
+        const lockedPromise = fetch(`${SCRIPT_URL}?action=getLockedUsers`)
+          .then(res => res.ok ? res.text() : null)
+          .then(text => {
+            if (text && (text.startsWith("{") || text.startsWith("["))) {
+              const data = JSON.parse(text);
+              if (data && data.success) {
+                return data.lockedUsers || [];
               }
             }
-          }
-        } catch (lockErr) {
-          console.warn("Failed to fetch locked users from DB, falling back to local registry:", lockErr);
-        }
+            return null;
+          })
+          .catch(() => null);
 
-        // Fetch user list
         const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
-        const response = await fetch(sheetUrl);
-        const text = await response.text();
-        const jsonString = text.substring(47).slice(0, -2);
-        const data = JSON.parse(jsonString);
+        const credsPromise = fetch(sheetUrl)
+          .then(res => res.text())
+          .then(text => {
+            const jsonString = text.substring(47).slice(0, -2);
+            const data = JSON.parse(jsonString);
+            const userCredentials = {};
+            if (data.table && data.table.rows) {
+              for (let i = 1; i < data.table.rows.length; i++) {
+                const row = data.table.rows[i];
+                const username = row.c[2] ? String(row.c[2].v || "").trim() : "";
+                const password = row.c[3] ? String(row.c[3].v || "").trim() : "";
+                const role = row.c[4] ? String(row.c[4].v || "").trim() : "user";
+                const email = row.c[5] ? String(row.c[5].v || "").trim() : "";
 
-        const userCredentials = {};
-
-        if (data.table && data.table.rows) {
-          for (let i = 1; i < data.table.rows.length; i++) {
-            const row = data.table.rows[i];
-            const username = row.c[2] ? String(row.c[2].v || "").trim() : "";
-            const password = row.c[3] ? String(row.c[3].v || "").trim() : "";
-            const role = row.c[4] ? String(row.c[4].v || "").trim() : "user";
-            const email = row.c[5] ? String(row.c[5].v || "").trim() : "";
-
-            if (username && password && password.trim() !== "") {
-              if (isInactiveRole(role)) continue;
-              
-              const lowerUser = username.toLowerCase().trim();
-              userCredentials[lowerUser] = {
-                username: username, 
-                password: password,
-                role: role.toLowerCase(),
-                email: email
-              };
+                if (username && password && password.trim() !== "") {
+                  if (isInactiveRole(role)) continue;
+                  
+                  const lowerUser = username.toLowerCase().trim();
+                  userCredentials[lowerUser] = {
+                    username: username, 
+                    password: password,
+                    role: role.toLowerCase(),
+                    email: email
+                  };
+                }
+              }
             }
-          }
-        }
+            return userCredentials;
+          })
+          .catch(() => null);
 
-        setMasterData({ userCredentials });
+        const [serverLocked, serverCreds] = await Promise.all([lockedPromise, credsPromise]);
+
+        if (serverLocked) {
+          setLockedUsers(serverLocked);
+          localStorage.setItem("locallyLockedUsers", JSON.stringify(serverLocked));
+        }
+        if (serverCreds && Object.keys(serverCreds).length > 0) {
+          setMasterData({ userCredentials: serverCreds });
+          localStorage.setItem("cachedUserCredentials", JSON.stringify(serverCreds));
+        }
       } catch (error) {
         console.error("Error Fetching Master Data:", error);
-        showToast(`Network error: ${error.message}. Please try again later.`, "error");
       } finally {
         setIsDataLoading(false);
       }
@@ -398,7 +427,7 @@ const LoginPage = () => {
               <ShieldCheck className="h-5 w-5 text-yellow-100" />
             </div>
             <span className="text-[10px] uppercase tracking-widest font-black text-white/90">
-              Official Secure Node
+              Official Administrative System
             </span>
           </div>
 
@@ -433,7 +462,7 @@ const LoginPage = () => {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Active Staff Directory</h4>
-                  <p className="text-[10px] text-white/85 mt-0.5">Synced dynamically with WhatsApp master sheets</p>
+                  <p className="text-[10px] text-white/85 mt-0.5">Synced dynamically with central database</p>
                 </div>
               </div>
 
@@ -564,16 +593,16 @@ const LoginPage = () => {
               </div>
               
               <div className="flex items-center gap-3">
-                <div className="bg-slate-800 text-white font-black text-xs px-3.5 py-2.5 rounded-xl select-none tracking-wider shadow-sm min-w-[85px] text-center">
-                  {captcha.num1} + {captcha.num2} =
+                <div className="bg-slate-100 text-slate-800 font-extrabold text-sm border border-slate-200 px-4 py-2.5 rounded-xl flex items-center justify-center tracking-wider select-none shrink-0 min-w-[100px] shadow-sm">
+                  {captcha.num1} {captcha.op || "+"} {captcha.num2} =
                 </div>
                 <input
                   type="number"
-                  placeholder="Solve sum..."
+                  placeholder="Answer"
                   required
                   value={captchaInput}
                   onChange={(e) => setCaptchaInput(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] text-xs font-black text-slate-800 text-center bg-white"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent text-sm font-extrabold text-slate-800 text-center bg-white placeholder-slate-400 transition-all shadow-sm"
                 />
               </div>
             </div>
@@ -594,7 +623,7 @@ const LoginPage = () => {
                   <span>Loading Database...</span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <span>Secure Login</span>
+                    <span>Login</span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </span>
                 )}
