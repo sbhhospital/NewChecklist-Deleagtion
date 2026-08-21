@@ -3,6 +3,11 @@ function doGet(e) {
     e = { parameter: {} }; // Initialize e if undefined
   }
   try {
+    try {
+      createHolidaysSheetIfMissing();
+    } catch(he) {
+      console.warn("Holidays init failed: " + he.message);
+    }
     var params = e.parameter;
     
     // Handle username lookup request
@@ -1181,6 +1186,46 @@ function processChecklistAndGenerateTasks() {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
+    // Create Holidays sheet if missing
+    try {
+      createHolidaysSheetIfMissing();
+    } catch(e) {
+      Logger.log("Holidays init failed: " + e.toString());
+    }
+    
+    var today = new Date();
+    var todayString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    
+    // Skip generation on holidays
+    var holidaysSheet = ss.getSheetByName("Holidays");
+    if (holidaysSheet) {
+      var holidaysData = holidaysSheet.getDataRange().getValues();
+      for (var h = 1; h < holidaysData.length; h++) {
+        if (holidaysData[h][0]) {
+          var hDateValue = holidaysData[h][0];
+          var hFormattedDate;
+          if (hDateValue instanceof Date) {
+            hFormattedDate = Utilities.formatDate(hDateValue, Session.getScriptTimeZone(), "dd/MM/yyyy");
+          } else {
+            try {
+              var parsedDate = new Date(hDateValue);
+              hFormattedDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+            } catch (e) {
+              hFormattedDate = hDateValue.toString();
+            }
+          }
+          if (hFormattedDate === todayString) {
+            Logger.log("Today is holiday: " + holidaysData[h][1] + ". Skipping generation.");
+            return {
+              success: true,
+              tasksGenerated: 0,
+              message: "Skipped checklist generation due to Holiday: " + holidaysData[h][1]
+            };
+          }
+        }
+      }
+    }
+    
     // Get sheets
     var checklistSheet = ss.getSheetByName("Unique");
     var workingCalendarSheet = ss.getSheetByName("Working Day Calendar");
@@ -1197,10 +1242,6 @@ function processChecklistAndGenerateTasks() {
     if (checklistData.length < 1) {
       throw new Error("Checklist sheet is empty");
     }
-    
-    // Get today's date in DD/MM/YYYY format
-    var today = new Date();
-    var todayString = Utilities.formatDate(today, Session.getScriptTimeZone(), "dd/MM/yyyy");
     
     // Get ALL working dates from column A of working calendar
     var calendarData = workingCalendarSheet.getDataRange().getValues();
@@ -2725,6 +2766,30 @@ function recalculateDeductionsFromAug1() {
     var leavesSheet = ss.getSheetByName("Leaves");
     var leavesCached = leavesSheet ? leavesSheet.getDataRange().getValues() : [];
     
+    // Cache holidays data
+    var holidaysSheet = ss.getSheetByName("Holidays");
+    var holidaysCached = holidaysSheet ? holidaysSheet.getDataRange().getValues() : [];
+    var holidayDatesSet = {};
+    for (var h = 1; h < holidaysCached.length; h++) {
+      if (holidaysCached[h][0]) {
+        var hDateValue = holidaysCached[h][0];
+        var hFormattedDate;
+        if (hDateValue instanceof Date) {
+          hFormattedDate = Utilities.formatDate(hDateValue, Session.getScriptTimeZone(), "dd/MM/yyyy");
+        } else {
+          try {
+            var parsedDate = new Date(hDateValue);
+            hFormattedDate = Utilities.formatDate(parsedDate, Session.getScriptTimeZone(), "dd/MM/yyyy");
+          } catch (e) {
+            hFormattedDate = String(hDateValue).trim();
+          }
+        }
+        if (hFormattedDate) {
+          holidayDatesSet[hFormattedDate] = true;
+        }
+      }
+    }
+    
     // Find the earliest present date for each user to avoid retrospective penalties
     var userFirstPresentDate = {};
     for (var j = 1; j < attendanceData.length; j++) {
@@ -2764,6 +2829,12 @@ function recalculateDeductionsFromAug1() {
       }
       
       var dateStr = getFormattedDate(loopDate);
+      
+      // Skip holidays
+      if (holidayDatesSet[dateStr]) {
+        loopDate.setDate(loopDate.getDate() + 1);
+        continue;
+      }
       
       // Find who was present/absent on this day
       var presentUsers = {};
@@ -2850,7 +2921,6 @@ function sendComplianceEmail(dateStr, absentUsersSummary, isTest) {
       tableRowsHtml += "<tr style='border-bottom: 1px solid #e2e8f0;'> " +
                        "<td style='padding: 12px 15px; font-size: 13px; font-weight: 600; color: #1e293b;'>" + item.name + "</td>" +
                        "<td style='padding: 12px 15px; font-size: 13px; color: #ef4444; font-weight: 700; text-align: center;'>" + item.missed + " Day" + (item.missed > 1 ? "s" : "") + "</td>" +
-                       "<td style='padding: 12px 15px; font-size: 13px; color: #dc2626; font-weight: 700; text-align: right;'>-" + item.deducted + " Pts</td>" +
                        "</tr>";
     });
 
@@ -2882,7 +2952,6 @@ function sendComplianceEmail(dateStr, absentUsersSummary, isTest) {
       '          <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">' +
       '            <th style="padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Employee Name</th>' +
       '            <th style="padding: 10px 12px; text-align: center; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Days Inactive</th>' +
-      '            <th style="padding: 10px 12px; text-align: right; font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Penalty Deducted</th>' +
       '          </tr>' +
       '        </thead>' +
       '        <tbody>' +
@@ -3210,5 +3279,35 @@ function sendChangeLogEmail() {
     logSheet.appendRow(["Timestamp", "User Email", "Sheet Name", "Cell", "Old Value", "New Value"]);
   } catch (err) {
     Logger.log("Error sending change log email: " + err.toString());
+  }
+}
+
+// Helper to create and pre-populate Holidays sheet
+function createHolidaysSheetIfMissing() {
+  var ss = null;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {}
+  if (!ss) {
+    try {
+      ss = SpreadsheetApp.openById("1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0");
+    } catch (e) {}
+  }
+  if (!ss) return;
+  
+  var sheet = ss.getSheetByName("Holidays");
+  if (!sheet) {
+    sheet = ss.insertSheet("Holidays");
+    sheet.appendRow(["Date", "Holiday Name"]);
+    
+    // Add default Indian National Holidays
+    sheet.appendRow(["26/01/2026", "Republic Day"]);
+    sheet.appendRow(["15/08/2026", "Independence Day"]);
+    sheet.appendRow(["02/10/2026", "Gandhi Jayanti"]);
+    
+    // Format sheet
+    sheet.getRange("A1:B1").setFontWeight("bold").setBackground("#e2effa").setHorizontalAlignment("center");
+    sheet.setColumnWidth(1, 150);
+    sheet.setColumnWidth(2, 200);
   }
 }

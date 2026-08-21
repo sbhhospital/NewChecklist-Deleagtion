@@ -62,6 +62,16 @@ const parseDateFromDDMMYYYY = (dateStr) => {
   return null
 }
 
+const formatDateToDDMMYYYY = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 const getTierBadge = (tier) => {
   switch (tier) {
     case "Platinum":
@@ -388,7 +398,8 @@ export default function EdpmsDashboardView({
   pointDeductions = [],
   tabLoading = false,
   inactiveUsers = [],
-  leavesList = []
+  leavesList = [],
+  holidaysList = []
 }) {
   const [selectedStaffName, setSelectedStaffName] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
@@ -665,7 +676,27 @@ export default function EdpmsDashboardView({
       const name = staff.name
       const dept = getDepartment(name)
       const nameKey = name.toLowerCase().trim()
-      const tasks = tasksByUser[nameKey] || []
+      const holidayDates = new Set((holidaysList || []).map(h => h.date));
+      const tasks = (tasksByUser[nameKey] || []).map(t => {
+        const tDate = t.taskStartDate;
+        const taskDateObj = parseDateFromDDMMYYYY(tDate);
+        let isHoliday = false;
+        if (taskDateObj) {
+          const formattedDate = formatDateToDDMMYYYY(taskDateObj);
+          if (holidayDates.has(formattedDate)) {
+            isHoliday = true;
+          }
+        }
+        if (isHoliday) {
+          return {
+            ...t,
+            status: "Leave",
+            originalStatus: "Leave",
+            remarks: "National Holiday"
+          };
+        }
+        return t;
+      });
       
       const completed = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "completed" : t.status === "completed")
       const pending = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "pending" : t.status === "pending")
@@ -846,13 +877,17 @@ export default function EdpmsDashboardView({
       // Missed daily logins deductions (Filtered by selected date range)
       const rawUserDeductions = deductionsByUser[nameKey] || []
       const userDeductions = rawUserDeductions.filter(d => {
-        // Parse date for filtering
-        const parts = String(d.date || "").split("/");
+        // Parse date for filtering robustly (strip time if present)
+        const dateStr = String(d.date || "").trim();
+        const dateOnly = dateStr.split(" ")[0];
+        const parts = dateOnly.split("/");
+        
         let deductionDate = null;
         if (parts.length === 3) {
-          deductionDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+          deductionDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), 0, 0, 0, 0);
         } else {
           deductionDate = new Date(d.date);
+          if (deductionDate) deductionDate.setHours(0, 0, 0, 0);
         }
         if (isNaN(deductionDate.getTime())) return true; // keep if invalid
         
@@ -861,23 +896,26 @@ export default function EdpmsDashboardView({
         globalCutoff.setHours(0, 0, 0, 0);
         if (deductionDate < globalCutoff) return false;
         
-        const now = new Date();
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        if (deferredTimeRange === "daily") {
+          return deductionDate.getTime() === today.getTime();
+        }
         if (deferredTimeRange === "weekly") {
-          const currentDay = now.getDay();
-          const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
-          const monday = new Date(now);
-          monday.setDate(now.getDate() + distanceToMon);
-          monday.setHours(0,0,0,0);
-          const saturday = new Date(monday);
-          saturday.setDate(monday.getDate() + 5);
-          saturday.setHours(23,59,59,999);
-          return deductionDate >= monday && deductionDate <= saturday;
+          const { start, end } = getLastWeekMonToSatRange();
+          return deductionDate >= start && deductionDate <= end;
         }
         if (deferredTimeRange === "monthly") {
-          return deductionDate.getMonth() === deferredSelectedMonth && deductionDate.getFullYear() === deferredSelectedYear;
+          return deductionDate.getMonth() === Number(deferredSelectedMonth) && deductionDate.getFullYear() === Number(deferredSelectedYear);
+        }
+        if (deferredTimeRange === "quarterly") {
+          const currentQuarter = Math.floor(today.getMonth() / 3);
+          const decQuarter = Math.floor(deductionDate.getMonth() / 3);
+          return currentQuarter === decQuarter && deductionDate.getFullYear() === today.getFullYear();
         }
         if (deferredTimeRange === "yearly") {
-          return deductionDate.getFullYear() === deferredSelectedYear;
+          return deductionDate.getFullYear() === Number(deferredSelectedYear);
         }
         if (deferredTimeRange === "custom") {
           let start = null;
@@ -898,6 +936,34 @@ export default function EdpmsDashboardView({
       })
       // Collect leave dates for this specific user (Only if applied in advance or same day)
       const userLeaveDates = new Set();
+      
+      // Populate userLeaveDates from holidaysList
+      (holidaysList || []).forEach(h => {
+        if (h.date) {
+          userLeaveDates.add(h.date.trim());
+        }
+      });
+
+      // Populate userLeaveDates from leavesList for this specific user
+      (leavesList || []).forEach(l => {
+        if (l.username && l.username.toLowerCase().trim() === nameKey) {
+          const start = new Date(l.startDateObj);
+          const end = new Date(l.endDateObj);
+          if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+            start.setHours(0,0,0,0);
+            end.setHours(23,59,59,999);
+            const curr = new Date(start);
+            while (curr <= end) {
+              const dd = String(curr.getDate()).padStart(2, '0');
+              const mm = String(curr.getMonth() + 1).padStart(2, '0');
+              const yyyy = curr.getFullYear();
+              userLeaveDates.add(`${dd}/${mm}/${yyyy}`);
+              curr.setDate(curr.getDate() + 1);
+            }
+          }
+        }
+      });
+
       filteredTasks.forEach(t => {
         const tUser = t.Name || t.assignedTo || t.name || "";
         const colQVal = t.col16 || t.col15 || ""; // Column Q

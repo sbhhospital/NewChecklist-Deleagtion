@@ -1101,6 +1101,31 @@ function DelegationDataPage() {
         console.error("Failed to fetch leaves data", e);
       }
 
+      // Fetch holidays sheet
+      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`;
+      const holidayDates = new Set();
+      try {
+        const holidaysRes = await fetch(holidaysUrl, { signal });
+        if (holidaysRes.ok) {
+          const hText = await holidaysRes.ok ? await holidaysRes.text() : "";
+          if (hText) {
+            const hJsonString = hText.substring(47).slice(0, -2);
+            const hData = JSON.parse(hJsonString);
+            if (hData.table && hData.table.rows) {
+              hData.table.rows.slice(1).forEach(row => {
+                const parsedHolidayD = parseDateValue(row.c && row.c[0]);
+                const formattedHolidayD = parsedHolidayD ? formatDateToDDMMYYYY(parsedHolidayD) : (row.c && row.c[0] ? String(row.c[0].v || "").trim() : "");
+                if (formattedHolidayD) {
+                  holidayDates.add(formattedHolidayD);
+                }
+              });
+            }
+          }
+        }
+      } catch (hErr) {
+        console.warn("Failed to fetch holidays in delegation.jsx", hErr);
+      }
+
       // Process main delegation data - ADD USER FILTERING LOGIC
       const allDelegationData = [];
       const rawDelegationList = [];
@@ -1205,6 +1230,20 @@ function DelegationDataPage() {
             rowData["col16"] = "Leave";
             rowData["col12"] = "Leave";
           }
+        }
+
+        let isHoliday = false;
+        if (taskDateObj) {
+          const formattedDate = formatDateToDDMMYYYY(taskDateObj);
+          if (holidayDates.has(formattedDate)) {
+            isHoliday = true;
+          }
+        }
+        if (isHoliday) {
+          isLeave = true;
+          rowData["col16"] = "Leave";
+          rowData["col12"] = "Leave";
+          rowData["col20"] = "Leave";
         }
 
         if (taskStatus && taskStatus.toString().trim().toLowerCase() === "done") {

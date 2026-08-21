@@ -52,6 +52,16 @@ const parseDateValue = (cell) => {
   return null;
 }
 
+const formatDateToDDMMYYYY = (date) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 const isDateInPast = (dateStr) => {
   const date = parseDateFromDDMMYYYY(dateStr)
   if (!date) return false
@@ -420,7 +430,7 @@ export default function PerformanceDashboard() {
   }
 
   const fetchPerformanceData = async (signal) => {
-    let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null, whatsappJson = null;
+    let masterJson, delegationJson, checklistJson, historyJson = null, loginJson = null, deductionsJson = null, whatsappJson = null, holidaysJson = null;
 
     try {
       setLoading(true)
@@ -436,8 +446,9 @@ export default function PerformanceDashboard() {
       const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
       const whatsappUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`
       const leavesUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`
+      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`
 
-      const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes, leavesRes] = await Promise.all([
+      const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes, leavesRes, holidaysRes] = await Promise.all([
         fetch(masterUrl, { signal }),
         fetch(delegationUrl, { signal }),
         fetch(checklistUrl, { signal }),
@@ -469,6 +480,9 @@ export default function PerformanceDashboard() {
       if (leavesRes && leavesRes.ok) {
         leavesJson = await parseResponseJson(leavesRes).catch(() => null)
       }
+      if (holidaysRes && holidaysRes.ok) {
+        holidaysJson = await parseResponseJson(holidaysRes).catch(() => null)
+      }
       
       if (historyRes && historyRes.ok) {
         historyJson = await parseResponseJson(historyRes)
@@ -485,8 +499,10 @@ export default function PerformanceDashboard() {
       const loginList = []
       if (loginJson && loginJson.table && loginJson.table.rows) {
         loginJson.table.rows.slice(1).forEach(row => {
+          const parsedLoginD = parseDateValue(row.c && row.c[0]);
+          const formattedLoginD = parsedLoginD ? formatDateToDDMMYYYY(parsedLoginD) : (getCellValue(row, 0) || "");
           loginList.push({
-            date: getCellValue(row, 0),
+            date: formattedLoginD,
             username: getCellValue(row, 1),
             loginTime: getCellValue(row, 2),
             logoutTime: getCellValue(row, 3),
@@ -500,14 +516,31 @@ export default function PerformanceDashboard() {
       const deductionsList = []
       if (deductionsJson && deductionsJson.table && deductionsJson.table.rows) {
         deductionsJson.table.rows.slice(1).forEach(row => {
+          const parsedDeductionD = parseDateValue(row.c && row.c[0]);
+          const formattedDeductionD = parsedDeductionD ? formatDateToDDMMYYYY(parsedDeductionD) : (getCellValue(row, 0) || "");
           deductionsList.push({
-            date: getCellValue(row, 0),
+            date: formattedDeductionD,
             username: getCellValue(row, 1),
             reason: getCellValue(row, 2),
             deducted: parseFloat(getCellValue(row, 3)) || 0,
             balance: parseFloat(getCellValue(row, 4)) || 0
           })
         })
+      }
+
+      const holidaysList = []
+      if (holidaysJson && holidaysJson.table && holidaysJson.table.rows) {
+        holidaysJson.table.rows.slice(1).forEach(row => {
+          const parsedHolidayD = parseDateValue(row.c && row.c[0]);
+          const formattedHolidayD = parsedHolidayD ? formatDateToDDMMYYYY(parsedHolidayD) : (getCellValue(row, 0) || "");
+          const holidayName = getCellValue(row, 1);
+          if (formattedHolidayD) {
+            holidaysList.push({
+              date: String(formattedHolidayD).trim(),
+              name: holidayName ? String(holidayName).trim() : ""
+            });
+          }
+        });
       }
 
       const leavesList = []
@@ -634,6 +667,15 @@ export default function PerformanceDashboard() {
             if (isL) return; // Skip
           }
 
+          let isHoliday = false;
+          if (taskDateObj) {
+            const formattedDate = formatDateToDDMMYYYY(taskDateObj);
+            const holidayDates = new Set((holidaysList || []).map(h => h.date));
+            if (holidayDates.has(formattedDate)) {
+              isHoliday = true;
+            }
+          }
+
           const completionDateVal = getCellValue(row, 11) // Column L
           const completionDate = completionDateVal ? parseGoogleSheetsDate(String(completionDateVal)) : ""
 
@@ -652,6 +694,9 @@ export default function PerformanceDashboard() {
           } else if (dueDate && isDateInPast(dueDate) && !isDateToday(dueDate)) {
             status = "overdue"
           }
+          if (isHoliday) {
+            status = "Leave"
+          }
 
           const rawTask = {
             id: String(taskId).trim(),
@@ -660,12 +705,13 @@ export default function PerformanceDashboard() {
             taskStartDate,
             dueDate: parseGoogleSheetsDate(getCellValue(row, 10)) || taskStartDate, // Column K Target Date
             completionDate,
-            status,
+            status: isHoliday ? "Leave" : status,
             frequency: getCellValue(row, 7) || "one-time",
-            originalStatus: statusColumnU,
+            originalStatus: isHoliday ? "Leave" : statusColumnU,
             rating: getCellValue(row, 17) || "",
             weight: parseInt(getCellValue(row, 21), 10) || 3,
-            sheetExtensionCount: parseInt(getCellValue(row, 22), 10) || 0
+            sheetExtensionCount: parseInt(getCellValue(row, 22), 10) || 0,
+            remarks: isHoliday ? "National Holiday" : (getCellValue(row, 12) || "")
           }
 
           // Compute penalty and score matching calculateTaskScore
@@ -688,9 +734,11 @@ export default function PerformanceDashboard() {
           delegationTasks.push(rawTask)
 
           const s = delegationStaffTracking.get(assignedTo)
-          s.totalTasks++
-          if (status === "completed") s.completedTasks++
-          else s.pendingTasks++
+          if (status !== "Leave") {
+            s.totalTasks++
+            if (status === "completed") s.completedTasks++
+            else s.pendingTasks++
+          }
         })
       }
 
@@ -751,6 +799,15 @@ export default function PerformanceDashboard() {
             if (isL) return; // Skip
           }
 
+          let isHoliday2 = false;
+          if (taskDateObj) {
+            const formattedDate2 = formatDateToDDMMYYYY(taskDateObj);
+            const holidayDates2 = new Set((holidaysList || []).map(h => h.date));
+            if (holidayDates2.has(formattedDate2)) {
+              isHoliday2 = true;
+            }
+          }
+
           const completionDateVal = getCellValue(row, 10) // Column K
           const completionDate = completionDateVal ? parseGoogleSheetsDate(String(completionDateVal)) : ""
 
@@ -766,6 +823,9 @@ export default function PerformanceDashboard() {
             status = "completed"
           } else if (isChecklistTaskOverdue(taskStartDate, freq)) {
             status = "overdue"
+          }
+          if (isHoliday2) {
+            status = "Leave"
           }
 
           const rawTask = {
@@ -798,9 +858,11 @@ export default function PerformanceDashboard() {
           checklistTasks.push(rawTask)
 
           const s = checklistStaffTracking.get(assignedTo)
-          s.totalTasks++
-          if (status === "completed") s.completedTasks++
-          else s.pendingTasks++
+          if (status !== "Leave") {
+            s.totalTasks++
+            if (status === "completed") s.completedTasks++
+            else s.pendingTasks++
+          }
         })
       }
 
@@ -827,7 +889,8 @@ export default function PerformanceDashboard() {
         loginHistory: loginList,
         pointDeductions: deductionsList,
         inactiveUsers: Array.from(inactiveUsers),
-        leavesList
+        leavesList,
+        holidaysList
       })
 
     } catch (err) {
