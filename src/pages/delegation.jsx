@@ -1102,7 +1102,7 @@ function DelegationDataPage() {
       }
 
       // Fetch holidays sheet
-      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`;
+      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`;
       const holidayDates = new Set();
       try {
         const holidaysRes = await fetch(holidaysUrl, { signal });
