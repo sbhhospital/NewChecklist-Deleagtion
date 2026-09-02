@@ -24,6 +24,10 @@ function doGet(e) {
     if (params.action === 'unlockUser') {
       return unlockUser(params.username);
     }
+    if (params.action === 'processChecklist') {
+      var result = processChecklistAndGenerateTasks();
+      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+    }
 
     // Existing functionality
     if (params.sheet && params.action === 'fetch') {
@@ -1269,6 +1273,16 @@ function processChecklistAndGenerateTasks() {
     
     // Check if today is a working day
     var isTodayWorkingDay = workingDates.includes(todayString);
+    
+    // Auto-fallback: If Working Day Calendar has ended or does not contain today's date,
+    // automatically treat any day that is not Sunday (getDay() !== 0) and not a holiday as a working day!
+    if (!isTodayWorkingDay) {
+      var isSunday = (today.getDay() === 0);
+      if (!isSunday) {
+        Logger.log("Today " + todayString + " not found in Working Day Calendar, but is not Sunday or Holiday. Automatically treating as working day.");
+        isTodayWorkingDay = true;
+      }
+    }
     
     // Load inactive users from Whatsapp sheet
     var whatsappSheet = ss.getSheetByName("Whatsapp") || ss.getSheetByName("whats app") || ss.getSheetByName("WhatsApp") || ss.getSheetByName("whats app sheet") || ss.getSheetByName("master");
@@ -3309,5 +3323,46 @@ function createHolidaysSheetIfMissing() {
     sheet.getRange("A1:B1").setFontWeight("bold").setBackground("#e2effa").setHorizontalAlignment("center");
     sheet.setColumnWidth(1, 150);
     sheet.setColumnWidth(2, 200);
+  }
+}
+
+function extendWorkingDayCalendar() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var workingCalendarSheet = ss.getSheetByName("Working Day Calendar");
+    if (!workingCalendarSheet) return;
+    
+    var lastRow = workingCalendarSheet.getLastRow();
+    var lastDateVal = workingCalendarSheet.getRange(lastRow, 1).getValue();
+    var startDate = new Date();
+    if (lastDateVal instanceof Date) {
+      startDate = new Date(lastDateVal.getTime() + 24 * 60 * 60 * 1000);
+    } else {
+      startDate = new Date(2026, 8, 2); // 02-09-2026
+    }
+    
+    var endDate = new Date(2028, 11, 31);
+    var newRows = [];
+    var cur = new Date(startDate);
+    var dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    
+    while (cur <= endDate) {
+      if (cur.getDay() !== 0) { // Skip Sundays
+        var dayName = dayNames[cur.getDay()];
+        var monthName = monthNames[cur.getMonth()];
+        var onejan = new Date(cur.getFullYear(), 0, 1);
+        var weekNum = Math.ceil((((cur - onejan) / 86400000) + onejan.getDay() + 1) / 7);
+        newRows.push([new Date(cur), dayName, weekNum, monthName]);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    
+    if (newRows.length > 0) {
+      workingCalendarSheet.getRange(lastRow + 1, 1, newRows.length, 4).setValues(newRows);
+      Logger.log("Successfully extended Working Day Calendar with " + newRows.length + " days.");
+    }
+  } catch(e) {
+    Logger.log("Failed to extend working day calendar: " + e.toString());
   }
 }

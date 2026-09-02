@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ShieldAlert, RefreshCw, Lock, User, Key, Frown, ClipboardList, CheckCircle2, Users, ArrowRight, Award, ShieldCheck, Linkedin, Activity } from "lucide-react";
+import { Eye, EyeOff, ShieldAlert, RefreshCw, Lock, User, Key, Frown, ClipboardList, CheckCircle2, Users, ArrowRight, Award, ShieldCheck, Linkedin, Activity, ChevronDown, Search, X } from "lucide-react";
 import sbhLogo from "../assets/logo.png";
 
 const LoginPage = () => {
@@ -21,6 +21,35 @@ const LoginPage = () => {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [loggedInUsername, setLoggedInUsername] = useState("");
   const [showSadEmoji, setShowSadEmoji] = useState(false);
+
+  // Username dropdown and search state
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [usernameSearch, setUsernameSearch] = useState("");
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const availableUsers = useMemo(() => {
+    if (!masterData.userCredentials) return [];
+    return Object.values(masterData.userCredentials)
+      .map((u) => u.username)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [masterData.userCredentials]);
+
+  const filteredUsers = useMemo(() => {
+    if (!usernameSearch.trim()) return availableUsers;
+    const q = usernameSearch.toLowerCase().trim();
+    return availableUsers.filter((name) => name.toLowerCase().includes(q));
+  }, [availableUsers, usernameSearch]);
 
   // Captcha and Lockout States
   const [captcha, setCaptcha] = useState({ num1: 0, num2: 0, answer: 0 });
@@ -260,8 +289,26 @@ const LoginPage = () => {
     setIsSubmitting(true);
     setShowSadEmoji(false);
 
-    const trimmedUsername = formData.username.trim();
+        const trimmedUsername = formData.username.trim();
     const lowercaseUsername = trimmedUsername.toLowerCase();
+
+    // Mandatory Selection Validation
+    if (!trimmedUsername) {
+      showToast("⚠️ कृपया ड्रॉपडाउन से अपना Username सेलेक्ट करें!", "error");
+      setIsDropdownOpen(true);
+      setIsSubmitting(false);
+      return;
+    }
+
+    const isUserInList = availableUsers.some(
+      (u) => u.toLowerCase().trim() === lowercaseUsername
+    );
+    if (!isUserInList) {
+      showToast("⚠️ कृपया लिस्ट में से ही मान्य Username सेलेक्ट करें!", "error");
+      setIsDropdownOpen(true);
+      setIsSubmitting(false);
+      return;
+    }
     const trimmedPassword = formData.password.trim();
 
     // Fetch immediate local storage block fallback
@@ -529,23 +576,122 @@ const LoginPage = () => {
               </div>
             )}
 
-            {/* Username Input */}
-            <div className="space-y-1">
-              <label htmlFor="username" className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
-                Username / Identifier
-              </label>
+            {/* Mandatory Username Dropdown with Search */}
+            <div className="space-y-1" ref={dropdownRef}>
+              <div className="flex items-center justify-between">
+                <label className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
+                  Select Username / Staff Name <span className="text-red-500">*</span>
+                </label>
+                {formData.username && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, username: "" }));
+                      setUsernameSearch("");
+                    }}
+                    className="text-[10px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors"
+                  >
+                    <X className="h-3 w-3" /> Change / Clear
+                  </button>
+                )}
+              </div>
+
               <div className="relative">
-                <User className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  placeholder="Enter your username"
-                  required
-                  value={formData.username}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent transition-all text-xs font-semibold text-slate-800 bg-[#f4f6f9]"
-                />
+                {/* Clickable selector box */}
+                <div
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className={`w-full pl-10 pr-10 py-3.5 border rounded-xl flex items-center justify-between cursor-pointer transition-all text-xs font-semibold select-none ${
+                    formData.username
+                      ? "border-emerald-300 bg-emerald-50/40 text-slate-800 ring-1 ring-emerald-200"
+                      : "border-slate-200 bg-[#f4f6f9] text-slate-400 hover:border-slate-300"
+                  }`}
+                >
+                  <User className={`absolute left-3.5 top-3.5 h-4 w-4 ${formData.username ? "text-[#387f39]" : "text-slate-400"}`} />
+                  
+                  <span className={formData.username ? "text-slate-800 font-bold" : "text-slate-400"}>
+                    {formData.username ? formData.username : "Click to select your Username from list..."}
+                  </span>
+
+                  <ChevronDown
+                    className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+                      isDropdownOpen ? "rotate-180 text-[#387f39]" : ""
+                    }`}
+                  />
+                </div>
+
+                {/* Dropdown Menu Modal */}
+                {isDropdownOpen && (
+                  <div className="absolute left-0 right-0 mt-1.5 max-h-64 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 flex flex-col">
+                    {/* Search Input inside Dropdown */}
+                    <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                      <Search className="h-4 w-4 text-slate-400 shrink-0 ml-1" />
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Search name or username..."
+                        value={usernameSearch}
+                        onChange={(e) => setUsernameSearch(e.target.value)}
+                        className="w-full bg-transparent text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-400"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {usernameSearch && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUsernameSearch("");
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-0.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Staff List */}
+                    <div className="overflow-y-auto max-h-52 divide-y divide-slate-50">
+                      {filteredUsers.length === 0 ? (
+                        <div className="px-4 py-4 text-center text-xs text-slate-400 font-medium">
+                          No staff member found matching "{usernameSearch}"
+                        </div>
+                      ) : (
+                        filteredUsers.map((user) => {
+                          const isLocked = lockedUsers.some(
+                            (u) => String(u).toLowerCase().trim() === user.toLowerCase().trim()
+                          );
+                          const isSelected = formData.username.toLowerCase().trim() === user.toLowerCase().trim();
+                          return (
+                            <div
+                              key={user}
+                              onClick={() => {
+                                setFormData((prev) => ({ ...prev, username: user }));
+                                setUsernameSearch("");
+                                setIsDropdownOpen(false);
+                              }}
+                              className={`px-4 py-2.5 flex items-center justify-between text-xs font-semibold cursor-pointer transition-colors ${
+                                isSelected
+                                  ? "bg-emerald-50 text-emerald-800 font-bold"
+                                  : "text-slate-700 hover:bg-slate-50 hover:text-[#387f39]"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                <span>{user}</span>
+                              </div>
+                              {isLocked ? (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600 shrink-0">
+                                  Locked
+                                </span>
+                              ) : isSelected ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
