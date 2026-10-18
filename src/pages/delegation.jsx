@@ -233,6 +233,8 @@ function DelegationDataPage() {
   });
 
   const [editingRemarks, setEditingRemarks] = useState({});
+  const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
+  const [extensionModal, setExtensionModal] = useState({ isOpen: false, task: null, historyEntries: [] });
   const [tempRemarks, setTempRemarks] = useState({});
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -1246,6 +1248,11 @@ function DelegationDataPage() {
           rowData["col20"] = "Leave";
         }
 
+        // Filter out tasks already marked Admin Done in DELEGATION sheet (col19) or Done
+        const adminDoneCol = (rowData["col19"] || "").toString().trim().toLowerCase();
+        if (adminDoneCol === "admin done" || adminDoneCol === "done") {
+          return;
+        }
         if (taskStatus && taskStatus.toString().trim().toLowerCase() === "done") {
           return; // Skip Done tasks from regular view
         }
@@ -1341,41 +1348,12 @@ function DelegationDataPage() {
     [handleSelectItem]
   );
 
-  const handleSelectAllItems = useCallback(
-    (e) => {
-      e.stopPropagation();
-      const checked = e.target.checked;
-
-      if (checked) {
-        // Create a new Set with currently selected items
-        const newSelected = new Set(selectedItems);
-
-        // Add only enabled items to the selection (based on user role)
-        filteredAccountData.forEach((item) => {
-          if (!isTaskDisabled(item["col20"], userRole)) {
-            newSelected.add(item._id);
-          }
-        });
-
-        setSelectedItems(newSelected);
-
-        // Update status for enabled items only
-        const newStatusData = {};
-        newSelected.forEach((id) => {
-          newStatusData[id] = "Done";
-        });
-        setStatusData((prev) => ({ ...prev, ...newStatusData }));
-      } else {
-        // Remove all items from selection
-        setSelectedItems(new Set());
-        setAdditionalData({});
-        setRemarksData({});
-        setStatusData({});
-        setNextTargetDate({});
-      }
-    },
-    [filteredAccountData, isTaskDisabled, selectedItems, userRole]
-  );
+    const handleSelectAllItems = useCallback((e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (e && e.preventDefault) e.preventDefault();
+    setShowSelectAllWarning(true);
+    return false;
+  }, []);
 
   const handleImageUpload = useCallback(async (id, e) => {
     const file = e.target.files[0];
@@ -2000,402 +1978,194 @@ function DelegationDataPage() {
   return (
     <AdminLayout>
       <div className="space-y-6 relative min-h-[500px]">
-
-        {/* Scoring Summary Cards */}
-        {!loading && (
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-6 mt-4">
-            {userRole === "admin" && (
-              <div className="p-4 rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm flex flex-col justify-between">
-                <span className="text-xs font-semibold text-purple-600 uppercase tracking-wider">Delegation Score</span>
-                <div className="flex flex-col mt-2">
-                  <span className={`text-3xl font-extrabold ${
-                    scoringSummary.avgScore >= 80 ? "text-green-600" : scoringSummary.avgScore >= 50 ? "text-yellow-600" : "text-red-600"
-                  }`}>
-                    {scoringSummary.avgScore}
-                  </span>
-                </div>
-                <span className="text-[10px] text-gray-500 mt-1">Delegation Rating</span>
-              </div>
-            )}
-
-            <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/20 to-white shadow-sm flex flex-col justify-between">
-              <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending Tasks</span>
-              <span className="text-3xl font-extrabold text-amber-600 mt-2">
-                {scoringSummary.totalTasks - scoringSummary.completedTasks}
+        {/* Compact Clean Top Controls Header */}
+        <div className="bg-white p-3 rounded-xl border border-purple-100 shadow-sm flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            {/* Title & Badge */}
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl md:text-2xl font-black tracking-tight text-purple-700 whitespace-nowrap">
+                {showHistory ? CONFIG.PAGE_CONFIG.historyTitle : CONFIG.PAGE_CONFIG.title}
+              </h1>
+              <span className="text-[11px] bg-purple-100 text-purple-700 font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                {showHistory ? scoringSummary.completedTasks : (scoringSummary.totalTasks - scoringSummary.completedTasks)} / {scoringSummary.totalTasks} Tasks
               </span>
-              <span className="text-[10px] text-gray-500 mt-1">Remaining to complete</span>
             </div>
 
-            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Tasks</span>
-              <span className="text-3xl font-extrabold text-gray-800 mt-2">{scoringSummary.totalTasks}</span>
-              <span className="text-[10px] text-gray-500 mt-1">Assigned Tasks</span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-              <span className="text-xs font-semibold text-green-600 uppercase tracking-wider">Completed</span>
-              <span className="text-3xl font-extrabold text-green-600 mt-2">{scoringSummary.completedTasks}</span>
-              <span className="text-[10px] text-gray-500 mt-1">Tasks Completed</span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between">
-              <span className="text-xs font-semibold text-yellow-600 uppercase tracking-wider">Extended</span>
-              <span className="text-3xl font-extrabold text-yellow-600 mt-2">{scoringSummary.extendedTasks}</span>
-              <span className="text-[10px] text-gray-500 mt-1">Tasks Extended</span>
-            </div>
-
-            <div className="p-4 rounded-xl border border-gray-100 bg-white shadow-sm flex flex-col justify-between col-span-2 md:col-span-1">
-              <span className="text-xs font-semibold text-red-600 uppercase tracking-wider">Late / Overdue</span>
-              <span className="text-3xl font-extrabold text-red-600 mt-2">{scoringSummary.lateTasks}</span>
-              <span className="text-[10px] text-gray-500 mt-1">Submitted / Pending Late</span>
-            </div>
-          </div>
-        )}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <h1 className="text-3xl font-bold tracking-tight text-purple-700 whitespace-nowrap">
-            {showHistory
-              ? CONFIG.PAGE_CONFIG.historyTitle
-              : CONFIG.PAGE_CONFIG.title}
-          </h1>
-
-          {/* Search Input */}
-          <div className="relative w-full sm:flex-1 sm:mx-8 sm:max-w-2xl">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <Search className="text-purple-300" size={18} />
-            </div>
-            <input
-              type="text"
-              placeholder={
-                showHistory ? "Search by Task ID..." : "Search tasks..."
-              }
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 bg-purple-50/50 border border-purple-100 rounded-md text-purple-900 placeholder-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-200 w-full transition-all"
-            />
-          </div>
-
-          {/* Buttons Section - Rearranged for mobile */}
-          <div className="flex flex-col gap-2 w-full sm:hidden">
-            {/* Filters Button */}
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              <div className="flex items-center justify-center">
-                <Filter className="h-4 w-4 mr-1" />
-                <span>Filters</span>
-              </div>
-            </button>
-
-            {/* History Toggle Button */}
-            <button
-              onClick={toggleHistory}
-              className="w-full gradient-bg py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              {showHistory ? (
-                <div className="flex items-center justify-center">
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  <span>Back to Tasks</span>
+            {/* Controls: Search, Staff Filter, Buttons */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Task Search Input */}
+              <div className="relative min-w-[200px] max-w-xs flex-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5">
+                  <Search className="text-purple-400" size={14} />
                 </div>
-              ) : (
-                <div className="flex items-center justify-center">
-                  <History className="h-4 w-4 mr-1" />
-                  <span>View History</span>
+                <input
+                  type="text"
+                  placeholder={showHistory ? "Search Task ID..." : "Search tasks..."}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 bg-purple-50/50 border border-purple-200 rounded-lg text-xs text-purple-900 placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-300 w-full"
+                />
+              </div>
+
+              {/* Staff Member Search Dropdown for Admin */}
+              {userRole === "admin" && (
+                <div ref={employeeRef} className="relative min-w-[190px]">
+                  <input
+                    type="text"
+                    placeholder="Staff: All (Type name)..."
+                    value={staffSearchText}
+                    onChange={(e) => {
+                      const txt = e.target.value;
+                      setStaffSearchText(txt);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    className="border border-purple-200 rounded-lg px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-purple-300 shadow-sm uppercase font-semibold bg-purple-50/30 text-purple-900"
+                  />
+                  {showSuggestions && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-100 min-w-[220px]">
+                      <div
+                        onClick={() => {
+                          setNameFilter("");
+                          setStaffSearchText("");
+                          setShowSuggestions(false);
+                        }}
+                        className="px-3 py-1.5 hover:bg-purple-50 text-xs font-bold text-slate-500 uppercase cursor-pointer"
+                      >
+                        All Staff Members (Reset)
+                      </div>
+                      {uniqueNames.filter(n => n.toLowerCase().includes(staffSearchText.toLowerCase())).map(name => (
+                        <div
+                          key={name}
+                          onClick={() => {
+                            setNameFilter(name);
+                            setStaffSearchText(name);
+                            setShowSuggestions(false);
+                          }}
+                          className="px-3 py-1.5 hover:bg-purple-600 hover:text-white text-xs font-bold text-slate-700 uppercase cursor-pointer"
+                        >
+                          {name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-            </button>
 
-            {/* Admin Mark Done Button for mobile (only in history view) */}
-            {showHistory &&
-              userRole === "admin" &&
-              selectedHistoryItems.length > 0 && (
+              {/* Filters Toggle Button */}
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors shadow-sm ${
+                  showFilters ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-700 hover:bg-purple-50'
+                }`}
+              >
+                <Filter className="h-3.5 w-3.5" />
+                <span>Filters</span>
+              </button>
+
+              {/* History Toggle Button */}
+              <button
+                onClick={toggleHistory}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors text-xs font-medium bg-white shadow-sm"
+              >
+                {showHistory ? (
+                  <>
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Back to Tasks</span>
+                  </>
+                ) : (
+                  <>
+                    <History className="h-3.5 w-3.5" />
+                    <span>History</span>
+                  </>
+                )}
+              </button>
+
+              {/* Top Submit Button */}
+              {!showHistory && (
                 <button
-                  onClick={handleMarkMultipleDone}
-                  disabled={markingAsDone}
-                  className="w-full bg-green-600 py-3 px-4 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  onClick={handleSubmit}
+                  disabled={selectedItemsCount === 0 || isSubmitting}
+                  className={`flex items-center justify-center gap-1.5 gradient-bg text-white px-5 py-1.5 rounded-lg focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-bold shadow-md ${
+                    !isSubmitting && selectedItemsCount > 0 ? 'hover:scale-105 active:scale-95' : ''
+                  }`}
                 >
-                  {markingAsDone
-                    ? "Processing..."
-                    : `Mark ${selectedHistoryItems.length} Items as Admin Done`}
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                      </svg>
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>✅ Submit ({selectedItemsCount})</span>
+                  )}
                 </button>
               )}
-
-            {/* Submit Button (only show in tasks view) */}
-            {!showHistory && (
-              <button
-                onClick={handleSubmit}
-                disabled={selectedItemsCount === 0 || isSubmitting}
-                className={`flex items-center justify-center gap-2 w-full py-3 px-4 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg ${
-                  isSubmitting ? 'bg-purple-400' : 'gradient-bg hover:scale-[1.02] active:scale-95'
-                }`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                    </svg>
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <span>✅ Submit Selected ({selectedItemsCount})</span>
-                )}
-              </button>
-            )}
-          </div>
-
-          {/* Desktop Buttons */}
-          <div className="hidden sm:flex items-center gap-3">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 rounded-md border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors text-sm font-medium bg-white"
-            >
-              <Filter className="h-4 w-4" />
-              Filters
-            </button>
-
-            <button
-              onClick={toggleHistory}
-              className="flex items-center gap-2 px-4 py-2 rounded-md border border-purple-200 text-purple-700 hover:bg-purple-50 transition-colors text-sm font-medium bg-white"
-            >
-              {showHistory ? (
-                <>
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </>
-              ) : (
-                <>
-                  <History className="h-4 w-4" />
-                  History
-                </>
-              )}
-            </button>
-
-            {/* Admin Mark Done Button */}
-            {showHistory &&
-              userRole === "admin" &&
-              selectedHistoryItems.length > 0 && (
-                <div className="fixed top-40 right-10 z-50">
-                  <button
-                    onClick={handleMarkMultipleDone}
-                    disabled={markingAsDone}
-                    className="rounded-md bg-green-600 text-white px-4 py-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                  >
-                    {markingAsDone
-                      ? "Processing..."
-                      : `Mark ${selectedHistoryItems.length} Items Done`}
-                  </button>
-                </div>
-              )}
-
-            {/* Submit Button */}
-            {!showHistory && (
-              <button
-                onClick={handleSubmit}
-                disabled={selectedItemsCount === 0 || isSubmitting}
-                className={`flex items-center justify-center gap-2 gradient-bg text-white px-6 py-2 rounded-full focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-medium shadow-md ${
-                  !isSubmitting && selectedItemsCount > 0 ? 'hover:scale-105 active:scale-95' : ''
-                }`}
-              >
-                {isSubmitting ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                    </svg>
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <span>✅ Submit ({selectedItemsCount})</span>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {showFilters && (
-          <div className="w-full flex flex-wrap items-center gap-4 mt-4 mb-4">
-            {/* Name Filter */}
-            <div className="flex items-center">
-              <select
-                id="name-filter"
-                value={nameFilter}
-                onChange={(e) => setNameFilter(e.target.value)}
-                className="border border-purple-300 rounded-lg px-3 py-2 text-sm min-w-[160px] max-w-[200px] focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm uppercase"
-                disabled={userRole !== "admin" && uniqueNames.length <= 1}
-              >
-                <option value="">All Names</option>
-                {uniqueNames.map((name) => (
-                  <option key={name} value={name} className="uppercase">
-                    {name}
-                  </option>
-                ))}
-              </select>
             </div>
+          </div>
 
-            {/* Date Filter */}
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <label
-                  htmlFor="start-date"
-                  className="text-sm font-semibold text-purple-700"
+          {/* Filter Dropdowns when open */}
+          {showFilters && (
+            <div className="w-full flex flex-wrap items-center gap-3 pt-2 border-t border-purple-100 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-gray-500">Staff:</span>
+                <select
+                  id="name-filter"
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                  className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-purple-400 uppercase"
+                  disabled={userRole !== "admin" && uniqueNames.length <= 1}
                 >
-                  From:
-                </label>
-                <input
-                  type="date"
-                  id="start-date"
-                  value={dateRange.start}
-                  onChange={(e) =>
-                    setDateRange((prev) => ({ ...prev, start: e.target.value }))
-                  }
-                  className="border border-purple-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <label
-                  htmlFor="end-date"
-                  className="text-sm font-semibold text-purple-700"
-                >
-                  To:
-                </label>
-                <input
-                  type="date"
-                  id="end-date"
-                  value={dateRange.end}
-                  onChange={(e) =>
-                    setDateRange((prev) => ({ ...prev, end: e.target.value }))
-                  }
-                  className="border border-purple-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-                />
-              </div>
-            </div>
-
-            {/* Status Filter */}
-            <div className="flex items-center">
-              <select
-                id="status-filter"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="border border-purple-300 rounded-lg px-3 py-2 text-sm min-w-[160px] max-w-[200px] focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm"
-              >
-                <option value="">
-                  All Status ({filteredAccountData.length})
-                </option>
-                {/* <option value="Done">✅ Done ({statusCounts.Done})</option> */}
-                <option value="Pending">
-                  🕒 Pending ({statusCounts.Pending})
-                </option>
-                <option value="Verify Pending">
-                  🔍 Verify Pending ({statusCounts["Verify Pending"]})
-                </option>
-                <option value="Planned">
-                  📜 Planned ({statusCounts.Planned})
-                </option>
-              </select>
-            </div>
-
-            {/* Clear Filters Button */}
-            {(nameFilter || statusFilter || dateRange.start || dateRange.end) && (
-              <button
-                onClick={() => {
-                  setNameFilter("");
-                  setDateRange({ start: "", end: "" });
-                  setStatusFilter("");
-                }}
-                className="ml-auto flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-all duration-200"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                Clear Filters
-              </button>
-            )}
-          </div>
-        )}
-
-        {successMessage && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md flex items-center justify-between">
-            <div className="flex items-center">
-              <CheckCircle2 className="h-5 w-5 mr-2 text-green-500" />
-              {successMessage}
-            </div>
-            <button
-              onClick={() => setSuccessMessage("")}
-              className="text-green-500 hover:text-green-700"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-
-        {/* User Selection Dropdown for Admin */}
-        {userRole === "admin" && (
-          <div className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex flex-col sm:flex-row sm:items-center gap-3">
-            <span className="text-sm font-semibold text-purple-700 uppercase tracking-wider">
-              Search Staff Member:
-            </span>
-            <div ref={employeeRef} className="relative">
-              <input
-                type="text"
-                placeholder="Type name to search..."
-                value={staffSearchText}
-                onChange={(e) => {
-                  const txt = e.target.value;
-                  setStaffSearchText(txt);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                className="border border-purple-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-sm uppercase font-semibold bg-purple-50/20"
-              />
-              {showSuggestions && (
-                <div className="absolute left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-50 divide-y divide-slate-50 min-w-[220px]">
-                  <div
-                    onClick={() => {
-                      setNameFilter("");
-                      setStaffSearchText("");
-                      setShowSuggestions(false);
-                    }}
-                    className="px-4 py-2 hover:bg-purple-50 text-xs font-bold text-slate-500 uppercase cursor-pointer"
-                  >
-                    All Staff Members (Reset)
-                  </div>
-                  {uniqueNames.filter(n => n.toLowerCase().includes(staffSearchText.toLowerCase())).map(name => (
-                    <div
-                      key={name}
-                      onClick={() => {
-                        setNameFilter(name);
-                        setStaffSearchText(name);
-                        setShowSuggestions(false);
-                      }}
-                      className="px-4 py-2 hover:bg-purple-600 hover:text-white text-xs font-bold text-slate-700 uppercase cursor-pointer"
-                    >
-                      {name}
-                    </div>
+                  <option value="">All Staff</option>
+                  {uniqueNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
                   ))}
-                </div>
-              )}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-gray-500">Status:</span>
+                <select
+                  id="status-filter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-purple-400"
+                >
+                  <option value="All Status">All Status ({statusCounts["All Status"]})</option>
+                  <option value="Pending">🔴 Pending ({statusCounts["Pending"]})</option>
+                  <option value="Verify Pending">🔍 Verify Pending ({statusCounts["Verify Pending"]})</option>
+                  <option value="Planned">🟡 Planned ({statusCounts["Planned"]})</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-gray-500">From:</span>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none"
+                />
+                <span className="font-semibold text-gray-500">To:</span>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none"
+                />
+              </div>
+
+              <button
+                onClick={resetFilters}
+                className="px-2.5 py-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-md border border-purple-200 transition-colors ml-auto font-medium"
+              >
+                Reset Filters
+              </button>
             </div>
-            {nameFilter && (
-              <span className="text-xs text-purple-600 font-medium">
-                Showing delegation performance and tasks for <strong className="uppercase">{nameFilter}</strong>
-              </span>
-            )}
-          </div>
-        )}
-
-
+          )}
+        </div>
 
         <div className="rounded-lg border border-purple-200 shadow-md bg-white overflow-hidden relative min-h-[300px]">
           {loading && (
@@ -3033,17 +2803,17 @@ function DelegationDataPage() {
               </div>
 
               {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto sticky top-0 max-h-[calc(100vh-300px)] overflow-y-auto">
+              <div className="hidden md:block overflow-x-auto sticky top-0 max-h-[calc(100vh-170px)] overflow-y-auto">
                 <div className="min-w-full">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0 z-10">
+                  <table className="min-w-full divide-y divide-gray-200 text-[11px] leading-tight border-collapse">
+                    <thead className="bg-gray-100/90 backdrop-blur-sm sticky top-0 z-10 border-b border-gray-300 shadow-sm">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {/* 1. Checkbox */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider w-8 whitespace-nowrap">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                             checked={
-                              // Check if all enabled items are selected
                               filteredAccountData.filter(
                                 (item) => !isTaskDisabled(item["col20"], userRole)
                               ).length > 0 &&
@@ -3059,64 +2829,64 @@ function DelegationDataPage() {
                             onChange={handleSelectAllItems}
                           />
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {/* 2. Status */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           Status
                         </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Task Score
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Task Start Date
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {/* 3. Task ID */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           Task ID
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Department
-                        </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-purple-50" : ""
-                            }`}
-                        >
-                          Remarks
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Given By
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {/* 4. Name */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           Name
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {/* 5. Task Description */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider min-w-[180px] max-w-xs">
                           Task Description
                         </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-yellow-50" : ""
-                            }`}
-                        >
+                        {/* 6. Task Start Date */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                          Task Start Date
+                        </th>
+                        {/* 7. Extension Count & Date Action */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[130px]">
+                          Dates / Extensions
+                        </th>
+                        {/* 8. Task Score */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                          Task Score
+                        </th>
+                        {/* 9. Department */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                          Department
+                        </th>
+                        {/* 10. Remarks */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider min-w-[130px]">
+                          Remarks
+                        </th>
+                        {/* 11. Given By */}
+                        <th className="px-2 py-2 text-left font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                          Given By
+                        </th>
+                        {/* 12. Old Deadline Date */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           Old Deadline Date
                         </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-green-50" : ""
-                            }`}
-                        >
+                        {/* 13. New Deadline Date */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           New Deadline Date
                         </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-blue-50" : ""
-                            }`}
-                        >
+                        {/* 14. Action Status */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider min-w-[100px]">
                           Status
                         </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-indigo-50" : ""
-                            }`}
-                        >
+                        {/* 15. Next Target Date */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider min-w-[120px]">
                           Next Target Date
                         </th>
-                        <th
-                          className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${!accountData["col17"] ? "bg-orange-50" : ""
-                            }`}
-                        >
+                        {/* 16. Upload Image */}
+                        <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider min-w-[110px]">
                           Upload Image
                         </th>
                       </tr>
@@ -3124,10 +2894,10 @@ function DelegationDataPage() {
                     {loading && (
                       <tbody>
                         <tr>
-                          <td colSpan="20" className="text-center py-3 bg-blue-50 border-t border-blue-200">
+                          <td colSpan="16" className="text-center py-2.5 bg-blue-50 border-t border-blue-200">
                             <div className="flex items-center justify-center gap-2">
-                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-                              <span className="text-blue-600 text-sm">Loading data...</span>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                              <span className="text-blue-600 text-xs">Loading data...</span>
                             </div>
                           </td>
                         </tr>
@@ -3138,19 +2908,31 @@ function DelegationDataPage() {
                         filteredAccountData.map((account) => {
                           const isSelected = selectedItems.has(account._id);
                           const rowColorClass = getRowColor(account["col17"]);
+                          const taskId = account["col1"];
+                          
+                          // Find all extension & completion history records for this task
+                          const taskHistoryEntries = historyData ? historyData.filter(
+                            (h) => String(h["col1"]).trim() === String(taskId).trim()
+                          ) : [];
+                          
+                          const extensionEntries = taskHistoryEntries.filter(
+                            (h) => String(h["col2"]).toLowerCase() === "extend date" || String(h["col2"]).toLowerCase() === "extended"
+                          );
+                          const extensionCount = extensionEntries.length;
+
                           return (
                             <tr
                               key={account._id}
-                              className={`${isSelected ? "bg-purple-50" : ""
-                                } hover:bg-gray-50 ${rowColorClass} ${isTaskDisabled(account["col20"], userRole)
+                              className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50/80 transition-colors ${rowColorClass} ${isTaskDisabled(account["col20"], userRole)
                                   ? "opacity-50 bg-gray-100 cursor-not-allowed"
                                   : ""
                                 }`}
                             >
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              {/* 1. Checkbox */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap">
                                 <input
                                   type="checkbox"
-                                  className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                  className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                                   checked={isSelected}
                                   onChange={(e) =>
                                     handleCheckboxClick(e, account._id)
@@ -3161,76 +2943,115 @@ function DelegationDataPage() {
                                   )}
                                 />
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+
+                              {/* 2. Status Badge */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap">
                                 <span
-                                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(
+                                  className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full ${getStatusColor(
                                     account["col20"]
                                   )}`}
                                 >
                                   {account["col20"] || "—"}
                                 </span>
                               </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-semibold">
-                                  {(() => {
-                                    const scoreDetails = calculateTaskScore(account, historyData);
-                                    return (
-                                      <div className="flex flex-col text-xs space-y-0.5 border border-purple-50 p-1.5 rounded bg-purple-50/10">
-                                        <span className="font-bold text-green-600">
-                                          Score: {scoreDetails.score} Pts
+
+                              {/* 3. Task ID */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap text-gray-900 font-bold">
+                                {account["col1"] || "—"}
+                              </td>
+
+                              {/* 4. Name */}
+                              <td className="px-2 py-1.5 whitespace-nowrap text-gray-900 font-bold">
+                                {account["col4"] || "—"}
+                              </td>
+
+                              {/* 5. Task Description */}
+                              <td className="px-2 py-1.5 min-w-[180px] max-w-xs">
+                                <div
+                                  className="text-gray-900 font-bold line-clamp-2 leading-relaxed"
+                                  title={account["col5"]}
+                                >
+                                  {account["col5"] || "—"}
+                                </div>
+                              </td>
+
+                              {/* 6. Task Start Date */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap text-gray-700 font-medium">
+                                {formatDateForDisplay(account["col0"] || account["col6"]) || "—"}
+                              </td>
+
+                              {/* 7. Extension Count & Date Action (Popup) */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap min-w-[130px]">
+                                <div className="inline-flex flex-col items-center gap-1">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                    extensionCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+                                  }`}>
+                                    {extensionCount > 0 ? `Extended: ${extensionCount}x` : 'Extended: 0'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExtensionModal({
+                                      isOpen: true,
+                                      task: account,
+                                      historyEntries: taskHistoryEntries
+                                    })}
+                                    className="text-[10px] text-purple-700 hover:text-purple-900 font-bold underline bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded transition-colors flex items-center gap-1"
+                                    title="View all date changes and details"
+                                  >
+                                    📅 See More
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* 8. Task Score */}
+                              <td className="px-2 py-1.5 whitespace-nowrap">
+                                {(() => {
+                                  const scoreDetails = calculateTaskScore(account, historyData);
+                                  return (
+                                    <div className="flex flex-col text-[10px] space-y-0.5 border border-purple-100 p-1 rounded bg-purple-50/20 max-w-[150px]">
+                                      <span className="font-bold text-green-700">
+                                        Score: {scoreDetails.score} Pts
+                                      </span>
+                                      <span className="text-gray-500 font-medium">
+                                        Rating Base: {scoreDetails.baseScore} Pts
+                                      </span>
+                                      {scoreDetails.completionReward > 0 && (
+                                        <span className="text-green-600 font-medium">
+                                          Reward: +{scoreDetails.completionReward} Pts
                                         </span>
-                                        <span className="text-gray-600 font-medium">
-                                          Rating Base: {scoreDetails.baseScore} Pts
+                                      )}
+                                      {scoreDetails.penalty > 0 && (
+                                        <span className="text-red-500 font-bold">
+                                          Total Penalty: -{scoreDetails.penalty} Pts
                                         </span>
-                                        {scoreDetails.completionReward > 0 && (
-                                          <span className="text-green-600 font-medium">
-                                            Reward: +{scoreDetails.completionReward} Pts
-                                          </span>
-                                        )}
-                                        {scoreDetails.penalty > 0 && (
-                                          <span className="text-red-500 font-bold">
-                                            Total Penalty: -{scoreDetails.penalty} Pts
-                                          </span>
-                                        )}
-                                        {scoreDetails.extensionPenalty > 0 && (
-                                          <span className="text-red-500 font-medium pl-2">
-                                            Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
-                                          </span>
-                                        )}
-                                        {scoreDetails.delayPenalty > 0 && (
-                                          <span className="text-red-500 font-medium pl-2">
-                                            Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
-                                          </span>
-                                        )}
-                                        {scoreDetails.mainScorePenalty > 0 && (
-                                          <span className="text-rose-600 font-bold mt-1 bg-rose-50 px-1 rounded text-center">
-                                            Main Score Cut: -{scoreDetails.mainScorePenalty} Pts
-                                          </span>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
+                                      )}
+                                      {scoreDetails.extensionPenalty > 0 && (
+                                        <span className="text-red-500 font-medium pl-1">
+                                          Ext Penalty: -{scoreDetails.extensionPenalty} Pts (Ext: {scoreDetails.extensionCount})
+                                        </span>
+                                      )}
+                                      {scoreDetails.delayPenalty > 0 && (
+                                        <span className="text-red-500 font-medium pl-1">
+                                          Delay Penalty: -{scoreDetails.delayPenalty} Pts (Delay: {scoreDetails.delayDays}d)
+                                        </span>
+                                      )}
+                                      {scoreDetails.mainScorePenalty > 0 && (
+                                        <span className="text-rose-600 font-bold bg-rose-50 px-1 rounded text-center">
+                                          Main Score Cut: -{scoreDetails.mainScorePenalty} Pts
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {formatDateForDisplay(account["col0"]) || "—"}
-                                </div>
+
+                              {/* 9. Department */}
+                              <td className="px-2 py-1.5 whitespace-nowrap text-gray-700 font-semibold uppercase">
+                                {account["col2"] || "—"}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {account["col1"] || "—"}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {account["col2"] || "—"}
-                                </div>
-                              </td>
-                              <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-purple-50" : ""
-                                  }`}
-                              >
+
+                              {/* 10. Remarks */}
+                              <td className="px-2 py-1.5 min-w-[130px]">
                                 <input
                                   type="text"
                                   placeholder="Enter remarks"
@@ -3245,47 +3066,27 @@ function DelegationDataPage() {
                                       [account._id]: e.target.value,
                                     }))
                                   }
-                                  className="border rounded-md px-2 py-1 w-full border-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                  className="border rounded px-1.5 py-1 text-[11px] w-full border-gray-300 focus:outline-none focus:ring-1 focus:ring-purple-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                 />
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {account["col3"] || "—"}
-                                </div>
+
+                              {/* 11. Given By */}
+                              <td className="px-2 py-1.5 whitespace-nowrap text-gray-700">
+                                {account["col3"] || "—"}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {account["col4"] || "—"}
-                                </div>
+
+                              {/* 12. Old Deadline Date */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap text-gray-700 font-medium">
+                                {formatDateForDisplay(account["col6"]) || "—"}
                               </td>
-                              <td className="px-6 py-4 min-w-[250px]">
-                                <div
-                                  className="text-sm text-gray-900 max-w-md whitespace-normal break-words"
-                                  title={account["col5"]}
-                                >
-                                  {account["col5"] || "—"}
-                                </div>
+
+                              {/* 13. New Deadline Date */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap text-gray-700 font-medium">
+                                {formatDateForDisplay(account["col10"]) || "—"}
                               </td>
-                              <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-yellow-50" : ""
-                                  }`}
-                              >
-                                <div className="text-sm text-gray-900">
-                                  {formatDateForDisplay(account["col6"])}
-                                </div>
-                              </td>
-                              <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-green-50" : ""
-                                  }`}
-                              >
-                                <div className="text-sm text-gray-900">
-                                  {formatDateForDisplay(account["col10"])}
-                                </div>
-                              </td>
-                              <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-blue-50" : ""
-                                  }`}
-                              >
+
+                              {/* 14. Status (Action Select) */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap min-w-[100px]">
                                 <select
                                   disabled={
                                     !isSelected ||
@@ -3295,17 +3096,16 @@ function DelegationDataPage() {
                                   onChange={(e) =>
                                     handleStatusChange(account._id, e.target.value)
                                   }
-                                  className="border border-gray-300 rounded-md px-2 py-1 w-full disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                  className="border border-gray-300 rounded px-1.5 py-1 text-[11px] w-full font-medium focus:outline-none focus:ring-1 focus:ring-purple-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                 >
                                   <option value="">Select</option>
                                   <option value="Done">Done</option>
                                   <option value="Extend date">Extend date</option>
                                 </select>
                               </td>
-                              <td
-                                className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-indigo-50" : ""
-                                  }`}
-                              >
+
+                              {/* 15. Next Target Date */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap min-w-[120px]">
                                 <input
                                   type="date"
                                   disabled={
@@ -3344,16 +3144,14 @@ function DelegationDataPage() {
                                       handleNextTargetDateChange(account._id, "");
                                     }
                                   }}
-                                  className="border border-gray-300 rounded-md px-2 py-1 w-full disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                  className="border border-gray-300 rounded px-1.5 py-1 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-purple-400 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                 />
                               </td>
 
-                              <td
-                                  className={`px-6 py-4 whitespace-nowrap ${!account["col17"] ? "bg-orange-50" : ""
-                                  }`}
-                              >
+                              {/* 16. Upload Image */}
+                              <td className="px-2 py-1.5 text-center whitespace-nowrap min-w-[110px]">
                                 {account.image ? (
-                                  <div className="flex items-center">
+                                  <div className="flex items-center justify-center gap-1.5">
                                     <img
                                       src={
                                         typeof account.image === "string"
@@ -3361,41 +3159,37 @@ function DelegationDataPage() {
                                           : URL.createObjectURL(account.image)
                                       }
                                       alt="Receipt"
-                                      className="h-10 w-10 object-cover rounded-md mr-2"
+                                      className="h-7 w-7 object-cover rounded border border-gray-200"
                                     />
-                                    <div className="flex flex-col">
-                                      {/* <span className="text-xs text-gray-500"> */}
+                                    <div className="flex flex-col text-left">
                                       {account.image instanceof File ? (
-                                        <span className="text-xs text-green-600">
-                                          Ready to upload
+                                        <span className="text-[10px] text-green-600 font-bold">
+                                          Ready
                                         </span>
                                       ) : (
                                         <button
-                                          className="text-xs text-purple-600 hover:text-purple-800"
+                                          className="text-[10px] text-purple-600 hover:text-purple-800 underline font-medium"
                                           onClick={() =>
                                             window.open(account.image, "_blank")
                                           }
                                         >
-                                          View Full Image
+                                          View
                                         </button>
                                       )}
                                     </div>
                                   </div>
                                 ) : (
                                   <label
-                                    className={`flex items-center cursor-pointer ${account["col9"]?.toUpperCase() === "YES"
-                                      ? "text-red-600 font-medium"
-                                      : "text-purple-600"
+                                    className={`inline-flex items-center justify-center gap-1 cursor-pointer ${account["col9"]?.toUpperCase() === "YES"
+                                      ? "text-red-600 font-bold"
+                                      : "text-purple-600 font-medium"
                                       } hover:text-purple-800`}
                                   >
-                                    <Upload className="h-4 w-4 mr-1" />
-                                    <span className="text-xs">
+                                    <Upload className="h-3.5 w-3.5" />
+                                    <span className="text-[11px]">
                                       {account["col9"]?.toUpperCase() === "YES"
-                                        ? "Required Upload"
-                                        : "Upload Image"}
-                                      {account["col9"]?.toUpperCase() === "YES" && (
-                                        <span className="text-red-500 ml-1">*</span>
-                                      )}
+                                        ? "Required*"
+                                        : "Upload"}
                                     </span>
                                     <input
                                       type="file"
@@ -3418,8 +3212,8 @@ function DelegationDataPage() {
                       ) : (
                         <tr>
                           <td
-                            colSpan={20}
-                            className="px-6 py-4 text-center text-gray-500"
+                            colSpan={16}
+                            className="px-6 py-4 text-center text-gray-500 text-xs"
                           >
                             {searchTerm
                               ? "No tasks matching your search"
@@ -3434,6 +3228,201 @@ function DelegationDataPage() {
             </>
           )}
         </div>
+        {/* Task Extension & Date Change History Modal */}
+        {extensionModal.isOpen && extensionModal.task && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-200">
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-purple-700 to-indigo-700 p-4 text-white flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
+                      #{extensionModal.task["col1"]}
+                    </span>
+                    <h3 className="text-base font-bold">
+                      Task Dates & Extension History
+                    </h3>
+                  </div>
+                  <p className="text-xs text-purple-100 mt-1 line-clamp-1">
+                    {extensionModal.task["col5"]}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+                  className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                {/* Core Task Info Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-purple-50/50 p-3 rounded-xl border border-purple-100">
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">Assigned Staff</span>
+                    <p className="font-bold text-gray-900 mt-0.5">{extensionModal.task["col4"] || "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">Given By</span>
+                    <p className="font-medium text-gray-800 mt-0.5">{extensionModal.task["col3"] || "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">Current Status</span>
+                    <p className="font-bold text-purple-700 mt-0.5">{extensionModal.task["col20"] || "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">Task Start Date</span>
+                    <p className="font-bold text-blue-700 mt-0.5">
+                      {formatDateForDisplay(extensionModal.task["col0"] || extensionModal.task["col6"]) || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">Old Deadline Date</span>
+                    <p className="font-bold text-amber-700 mt-0.5">
+                      {formatDateForDisplay(extensionModal.task["col6"]) || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-semibold uppercase">New Deadline Date</span>
+                    <p className="font-bold text-emerald-700 mt-0.5">
+                      {formatDateForDisplay(extensionModal.task["col10"]) || "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Date Extension / Completion Timeline */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                      <span>Timeline of Date Changes & Completions</span>
+                      <span className="bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded text-[10px]">
+                        {extensionModal.historyEntries.length} Records
+                      </span>
+                    </h4>
+                  </div>
+
+                  {extensionModal.historyEntries && extensionModal.historyEntries.length > 0 ? (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 shadow-sm">
+                      {extensionModal.historyEntries.map((entry, idx) => {
+                        const actionStatus = entry["col2"] || "—";
+                        const isDone = actionStatus.toLowerCase() === "done" || actionStatus.toLowerCase().includes("done");
+                        const isExtend = actionStatus.toLowerCase().includes("extend");
+
+                        return (
+                          <div key={idx} className="p-3 bg-white hover:bg-gray-50 flex items-start gap-3">
+                            <span className="text-base mt-0.5">
+                              {isDone ? "✅" : isExtend ? "🔄" : "📌"}
+                            </span>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className={`font-bold ${
+                                  isDone ? 'text-green-700' : isExtend ? 'text-amber-700' : 'text-gray-800'
+                                }`}>
+                                  Action: {actionStatus}
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  Submitted on: <strong className="text-gray-600">{formatDateForDisplay(entry["col0"]) || "—"}</strong>
+                                </span>
+                              </div>
+
+                              {entry["col3"] && (
+                                <p className="text-[11px] text-gray-700 mt-1">
+                                  Target / Next Deadline Date: <strong className="text-purple-700">{formatDateForDisplay(entry["col3"])}</strong>
+                                </p>
+                              )}
+
+                              {entry["col4"] && (
+                                <p className="text-[11px] text-gray-600 mt-0.5 bg-gray-50 p-1.5 rounded border border-gray-100">
+                                  Remarks: <span className="italic">"{entry["col4"]}"</span>
+                                </p>
+                              )}
+
+                              {entry["col7"] && (
+                                <p className="text-[10px] text-gray-400 mt-1">
+                                  Submitted by: {entry["col7"]}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-center text-gray-500">
+                      No past extension or completion records for this task yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+                  className="px-4 py-1.5 bg-purple-700 text-white rounded-lg text-xs font-bold hover:bg-purple-800 transition-colors shadow-sm"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Funny Select-All Block Warning Modal */}
+        {showSelectAllWarning && (
+          <div 
+            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" 
+            style={{ zIndex: 99999 }}
+            onClick={() => setShowSelectAllWarning(false)}
+          >
+            <div 
+              className="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden border border-gray-200 text-center p-5 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowSelectAllWarning(false)}
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 w-8 h-8 flex items-center justify-center text-lg font-bold"
+              >
+                ✕
+              </button>
+
+              {/* Bada sa Hath aur Hasne ka Emoji */}
+              <div className="text-5xl my-2 flex items-center justify-center gap-2 select-none">
+                <span>✋</span>
+                <span>😂</span>
+              </div>
+
+              <div className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
+                रुको जरा... सब्र करो!
+              </div>
+
+              <h3 className="text-base font-extrabold text-gray-900 leading-snug">
+                देख भाई, मुझे भी घर जाना है! 🏃‍♂️💨
+              </h3>
+
+              <div className="text-xs text-gray-700 mt-3 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100 text-center font-medium">
+                एक ही Click में सारे Task Complete मत मारो! 😜<br />
+                कृपया <strong>एक-एक Task को Check करके</strong> उसका Status और Remark भरें, फिर Submit करें। Shortcut नहीं चलेगा! 📋✨
+              </div>
+
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowSelectAllWarning(false)}
+                  className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow transition-colors cursor-pointer"
+                >
+                  ठीक है, एक-एक करके करूँगा 🫡
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <ConfirmationModal
           isOpen={confirmationModal.isOpen}
           itemCount={confirmationModal.itemCount}

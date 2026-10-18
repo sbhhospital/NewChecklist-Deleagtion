@@ -1,28 +1,39 @@
+import { Capacitor } from "@capacitor/core";
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, ShieldAlert, RefreshCw, Lock, User, Key, Frown, ClipboardList, CheckCircle2, Users, ArrowRight, Award, ShieldCheck, Linkedin, Activity, ChevronDown, Search, X } from "lucide-react";
+import { 
+  Eye, EyeOff, ShieldAlert, RefreshCw, Lock, User, Key, 
+  ClipboardList, CheckCircle2, Users, ArrowRight, Award, 
+  ShieldCheck, Linkedin, Activity, ChevronDown, Search, X, 
+  Smartphone, Crown, Fingerprint, Sparkles, Check, Flame
+} from "lucide-react";
 import sbhLogo from "../assets/logo.png";
 
 const LoginPage = () => {
   const navigate = useNavigate();
+
+  // Check if already logged in on mount
+  useEffect(() => {
+    const existingUser = sessionStorage.getItem("username") || localStorage.getItem("username");
+    if (existingUser) {
+      navigate("/dashboard/admin", { replace: true });
+    }
+  }, [navigate]);
   const [isDataLoading, setIsDataLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Controls button-level loading spinner
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [masterData, setMasterData] = useState({
-    userCredentials: {},
-  });
-  const [formData, setFormData] = useState({
-    username: "",
-    password: "",
-  });
+  const [rememberMe, setRememberMe] = useState(true);
+  const [activeTab, setActiveTab] = useState("login");
+  const [masterData, setMasterData] = useState({ userCredentials: {} });
+  const [formData, setFormData] = useState({ username: "", password: "" });
   const [toast, setToast] = useState({ show: false, message: "", type: "" });
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [loggedInUsername, setLoggedInUsername] = useState("");
-  const [showSadEmoji, setShowSadEmoji] = useState(false);
+  const [biometricScanning, setBiometricScanning] = useState(false);
 
-  // Username dropdown and search state
+  // Username dropdown search state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [usernameSearch, setUsernameSearch] = useState("");
   const dropdownRef = useRef(null);
@@ -54,30 +65,18 @@ const LoginPage = () => {
   // Captcha and Lockout States
   const [captcha, setCaptcha] = useState({ num1: 0, num2: 0, answer: 0 });
   const [captchaInput, setCaptchaInput] = useState("");
-  const [lockedUsers, setLockedUsers] = useState([]);
 
-  // Initialize failedAttempts registry directly from localStorage to survive page refresh
-  const [failedAttempts, setFailedAttempts] = useState(() => {
-    try {
-      const stored = localStorage.getItem("failedAttemptsRegistry");
-      return stored ? JSON.parse(stored) : {};
-    } catch (e) {
-      return {};
-    }
-  });
-
-  // Generate a random mathematical captcha
   const generateCaptcha = () => {
     const isMinus = Math.random() < 0.5;
     let num1, num2, answer, op;
     if (isMinus) {
-      num1 = Math.floor(Math.random() * 8) + 2; // 2 to 9
-      num2 = Math.floor(Math.random() * (num1 - 1)) + 1; // 1 to num1 - 1
+      num1 = Math.floor(Math.random() * 8) + 2;
+      num2 = Math.floor(Math.random() * (num1 - 1)) + 1;
       answer = num1 - num2;
       op = "-";
     } else {
-      num1 = Math.floor(Math.random() * 8) + 2; // 2 to 9
-      num2 = Math.floor(Math.random() * 8) + 1; // 1 to 8
+      num1 = Math.floor(Math.random() * 8) + 2;
+      num2 = Math.floor(Math.random() * 8) + 1;
       answer = num1 + num2;
       op = "+";
     }
@@ -85,149 +84,83 @@ const LoginPage = () => {
     setCaptchaInput("");
   };
 
-  const isInactiveRole = (role) => {
-    if (!role) return false;
-    const normalizedRole = String(role).toLowerCase().trim();
-    return (
-      normalizedRole === "inactive" ||
-      normalizedRole === "in active" ||
-      normalizedRole === "inactiv" ||
-      normalizedRole === "in activ"
-    );
-  };
-
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec";
   const SPREADSHEET_ID = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
 
-  // Fetch master data and locked users on mount
   useEffect(() => {
     generateCaptcha();
     const fetchMasterData = async () => {
-      // 1. Try to load from localStorage first for instant access
-      let localLocked = [];
       let localCreds = null;
       try {
-        const localStored = localStorage.getItem("locallyLockedUsers");
-        if (localStored) {
-          localLocked = JSON.parse(localStored);
-        }
         const cachedCreds = localStorage.getItem("cachedUserCredentials");
-        if (cachedCreds) {
-          localCreds = JSON.parse(cachedCreds);
-        }
-      } catch (e) {
-        console.warn("Local storage read failed", e);
-      }
+        if (cachedCreds) localCreds = JSON.parse(cachedCreds);
+      } catch (e) {}
 
-      if (localLocked.length > 0) {
-        setLockedUsers(localLocked);
-      }
       if (localCreds) {
         setMasterData({ userCredentials: localCreds });
-        // Since we have cached data, we don't need to show the loading state!
         setIsDataLoading(false);
       } else {
         setIsDataLoading(true);
       }
 
       try {
-        // Fetch locked users and user list in parallel
-        const lockedPromise = fetch(`${SCRIPT_URL}?action=getLockedUsers`)
-          .then(res => res.ok ? res.text() : null)
-          .then(text => {
-            if (text && (text.startsWith("{") || text.startsWith("["))) {
-              const data = JSON.parse(text);
-              if (data && data.success) {
-                return data.lockedUsers || [];
-              }
-            }
-            return null;
-          })
-          .catch(() => null);
-
         const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
-        const credsPromise = fetch(sheetUrl)
-          .then(res => res.text())
-          .then(text => {
-            const jsonString = text.substring(47).slice(0, -2);
-            const data = JSON.parse(jsonString);
-            const userCredentials = {};
-            if (data.table && data.table.rows) {
-              for (let i = 1; i < data.table.rows.length; i++) {
-                const row = data.table.rows[i];
-                const username = row.c[2] ? String(row.c[2].v || "").trim() : "";
-                const password = row.c[3] ? String(row.c[3].v || "").trim() : "";
-                const role = row.c[4] ? String(row.c[4].v || "").trim() : "user";
-                const email = row.c[5] ? String(row.c[5].v || "").trim() : "";
+        const res = await fetch(sheetUrl);
+        const text = await res.text();
+        const jsonString = text.substring(47).slice(0, -2);
+        const data = JSON.parse(jsonString);
 
-                if (username && password && password.trim() !== "") {
-                  if (isInactiveRole(role)) continue;
-                  
-                  const lowerUser = username.toLowerCase().trim();
-                  userCredentials[lowerUser] = {
-                    username: username, 
-                    password: password,
-                    role: role.toLowerCase(),
-                    email: email
-                  };
-                }
+        if (data.table && data.table.rows) {
+          const credentials = {};
+          data.table.rows.forEach((row) => {
+            if (row.c && row.c[2] && row.c[3]) {
+              const username = String(row.c[2].v || "").trim();
+              const password = String(row.c[3].v || "").trim();
+              const role = String(row.c[4] ? row.c[4].v || "" : "user").trim().toLowerCase();
+              const email = String(row.c[5] ? row.c[5].v || "" : "").trim();
+
+              const isInactive = role.includes("in active") || role.includes("inactive") || role.includes("inactiv");
+
+              if (username && password && !isInactive) {
+                credentials[username.toLowerCase()] = { username, password, role, email };
               }
             }
-            return userCredentials;
-          })
-          .catch(() => null);
-
-        const [serverLocked, serverCreds] = await Promise.all([lockedPromise, credsPromise]);
-
-        if (serverLocked) {
-          setLockedUsers(serverLocked);
-          localStorage.setItem("locallyLockedUsers", JSON.stringify(serverLocked));
+          });
+          setMasterData({ userCredentials: credentials });
+          localStorage.setItem("cachedUserCredentials", JSON.stringify(credentials));
         }
-        if (serverCreds && Object.keys(serverCreds).length > 0) {
-          setMasterData({ userCredentials: serverCreds });
-          localStorage.setItem("cachedUserCredentials", JSON.stringify(serverCreds));
-        }
-      } catch (error) {
-        console.error("Error Fetching Master Data:", error);
+      } catch (err) {
+        console.error("Master data fetch failed:", err);
       } finally {
         setIsDataLoading(false);
       }
     };
-
     fetchMasterData();
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const showToast = (message, type) => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: "", type: "" });
+    }, 4000);
   };
 
   const logAttendance = async (username, role) => {
     try {
-      let clientIp = "—";
-      try {
-        const ipRes = await fetch("https://api.ipify.org?format=json");
-        if (ipRes.ok) {
-          const ipData = await ipRes.json();
-          clientIp = ipData.ip;
-        }
-      } catch (ipErr) {
-        console.warn("Could not fetch client IP:", ipErr);
-      }
-
+      const isNativeAPK = Capacitor.isNativePlatform();
       const userAgent = navigator.userAgent;
-      let browserName = "Unknown";
-      if (userAgent.indexOf("Firefox") > -1) browserName = "Firefox";
-      else if (userAgent.indexOf("Chrome") > -1) browserName = "Chrome";
-      else if (userAgent.indexOf("Safari") > -1) browserName = "Safari";
-      else if (userAgent.indexOf("MSIE") > -1 || !!document.documentMode === true) browserName = "IE";
-
-      let devicePlatform = navigator.platform || "Unknown";
+      let browserName = isNativeAPK ? "Mobile APK App" : "Web Browser";
+      if (!isNativeAPK) {
+        if (userAgent.indexOf("Firefox") > -1) browserName = "Firefox (Web)";
+        else if (userAgent.indexOf("Chrome") > -1) browserName = "Chrome (Web)";
+        else if (userAgent.indexOf("Safari") > -1) browserName = "Safari (Web)";
+      }
+      let devicePlatform = isNativeAPK ? "Android Native APK" : (navigator.platform || "Web Browser");
 
       const recordPayload = new FormData();
       recordPayload.append("action", "recordLogin");
       recordPayload.append("username", username);
-      recordPayload.append("ip", clientIp);
+      recordPayload.append("ip", "—");
       recordPayload.append("browser", browserName);
       recordPayload.append("device", devicePlatform);
 
@@ -236,621 +169,487 @@ const LoginPage = () => {
         mode: "no-cors",
         body: recordPayload,
       }).catch((err) => console.error("Login History logging failed", err));
-
-      const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance%20Login`;
-      const response = await fetch(sheetUrl);
-      const text = await response.text();
-      const jsonString = text.substring(47).slice(0, -2);
-      const data = JSON.parse(jsonString);
-
-      let rowIndex = -1;
-      if (data.table && data.table.rows) {
-        for (let i = 0; i < data.table.rows.length; i++) {
-          const row = data.table.rows[i];
-          const cellValue = row.c && row.c[1] ? String(row.c[1].v || "").trim().toLowerCase() : "";
-          if (cellValue === username.trim().toLowerCase()) {
-            rowIndex = i + 2;
-            break;
-          }
-        }
-      }
-
-      if (rowIndex === -1) return;
-
-      const now = new Date();
-      const day = now.getDate().toString().padStart(2, "0");
-      const month = (now.getMonth() + 1).toString().padStart(2, "0");
-      const year = now.getFullYear();
-      const hours = now.getHours().toString().padStart(2, "0");
-      const minutes = now.getMinutes().toString().padStart(2, "0");
-      const seconds = now.getSeconds().toString().padStart(2, "0");
-      const formattedTimestamp = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-
-      const payload = new FormData();
-      payload.append("sheetName", "Attendance Login");
-      payload.append("action", "update");
-      payload.append("rowIndex", rowIndex.toString());
-
-      const rowData = ["", "", formattedTimestamp];
-      payload.append("rowData", JSON.stringify(rowData));
-
-      fetch(SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: payload,
-      }).catch((err) => console.error("Attendance logging failed", err));
     } catch (error) {
       console.error("Error preparing attendance log:", error);
     }
   };
 
+  const executeSuccessfulLogin = (userRecord) => {
+    const isAdmin = userRecord.role === "admin";
+    
+    sessionStorage.setItem("username", userRecord.username);
+    localStorage.setItem("username", userRecord.username);
+    localStorage.setItem("saved_biometric_user", userRecord.username);
+    if (userRecord.password) localStorage.setItem("saved_biometric_pass", userRecord.password);
+    sessionStorage.setItem("email", userRecord.email || "");
+    localStorage.setItem("email", userRecord.email || "");
+    sessionStorage.setItem("role", isAdmin ? "admin" : "user");
+    localStorage.setItem("role", isAdmin ? "admin" : "user");
+    sessionStorage.setItem("department", isAdmin ? "all" : userRecord.username);
+    localStorage.setItem("department", isAdmin ? "all" : userRecord.username);
+    sessionStorage.setItem("isAdmin", isAdmin ? "true" : "false");
+    localStorage.setItem("isAdmin", isAdmin ? "true" : "false");
+
+    logAttendance(userRecord.username, userRecord.role);
+    setLoggedInUsername(userRecord.username);
+    setIsSubmitting(false);
+    setShowSuccessPopup(true);
+
+    setTimeout(() => {
+      navigate("/dashboard/admin");
+    }, 1500);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setShowSadEmoji(false);
 
-        const trimmedUsername = formData.username.trim();
+    const trimmedUsername = formData.username.trim();
     const lowercaseUsername = trimmedUsername.toLowerCase();
 
-    // Mandatory Selection Validation
     if (!trimmedUsername) {
-      showToast("⚠️ कृपया ड्रॉपडाउन से अपना Username सेलेक्ट करें!", "error");
+      showToast("⚠️ Select your Username from the dropdown!", "error");
       setIsDropdownOpen(true);
       setIsSubmitting(false);
       return;
     }
 
-    const isUserInList = availableUsers.some(
-      (u) => u.toLowerCase().trim() === lowercaseUsername
-    );
-    if (!isUserInList) {
-      showToast("⚠️ कृपया लिस्ट में से ही मान्य Username सेलेक्ट करें!", "error");
-      setIsDropdownOpen(true);
-      setIsSubmitting(false);
-      return;
-    }
-    const trimmedPassword = formData.password.trim();
-
-    // Fetch immediate local storage block fallback
-    let localLocked = [];
-    try {
-      const localStored = localStorage.getItem("locallyLockedUsers");
-      if (localStored) {
-        localLocked = JSON.parse(localStored);
-      }
-    } catch (err) {
-      console.warn(err);
-    }
-
-    // 1. Check if user is locked (case-insensitive check against both local + DB list)
-    const isUserLocked = lockedUsers.some(
-      (u) => String(u).toLowerCase().trim() === lowercaseUsername
-    ) || localLocked.some(
-      (u) => String(u).toLowerCase().trim() === lowercaseUsername
-    );
-
-    if (isUserLocked) {
-      showToast("😞 Account is locked! Please contact AM Sir (Dr. A.M.) to unlock it.", "error");
-      setIsSubmitting(false);
-      return;
-    }
-
-    // 2. Validate Captcha
     if (parseInt(captchaInput) !== captcha.answer) {
-      showToast("🤖 Incorrect Captcha calculation. Please try again.", "error");
+      showToast("🤖 Incorrect Captcha calculation. Try again.", "error");
       generateCaptcha();
       setIsSubmitting(false);
       return;
     }
 
-    // 3. Authenticate
     if (lowercaseUsername in masterData.userCredentials) {
       const userRecord = masterData.userCredentials[lowercaseUsername];
-      const correctPassword = userRecord.password;
-      const userRole = userRecord.role;
-      const userEmail = userRecord.email || "";
-      const originalUsername = userRecord.username;
-
-      if (correctPassword === trimmedPassword) {
-        // Success Path - Clear attempts from state & localStorage
-        setFailedAttempts((prev) => {
-          const updated = { ...prev };
-          delete updated[lowercaseUsername];
-          try {
-            localStorage.setItem("failedAttemptsRegistry", JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
-
-        sessionStorage.setItem("username", originalUsername);
-        sessionStorage.setItem("email", userEmail);
-        setLoggedInUsername(originalUsername);
-
-        const isAdmin = userRole === "admin";
-        sessionStorage.setItem("role", isAdmin ? "admin" : "user");
-
-        if (isAdmin) {
-          sessionStorage.setItem("department", "all");
-          sessionStorage.setItem("isAdmin", "true");
-        } else {
-          sessionStorage.setItem("department", originalUsername);
-          sessionStorage.setItem("isAdmin", "false");
-        }
-
-        // Attendance logger triggers
-        logAttendance(originalUsername, userRole);
-        
-        setIsSubmitting(false);
-        setShowSuccessPopup(true);
-
-        setTimeout(() => {
-          navigate("/dashboard/admin");
-        }, 1800);
-
-        showToast(`Login successful. Welcome back, ${originalUsername}!`, "success");
-        return;
-      } else {
-        // Correct username but WRONG password -> Count attempts and persist
-        const currentAttempts = (failedAttempts[lowercaseUsername] || 0) + 1;
-        
-        setFailedAttempts((prev) => {
-          const updated = { ...prev, [lowercaseUsername]: currentAttempts };
-          try {
-            localStorage.setItem("failedAttemptsRegistry", JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
-        
-        setShowSadEmoji(true);
-
-        if (currentAttempts >= 5) {
-          // Lock user locally inside localStorage first
-          const updatedLocked = Array.from(new Set([...lockedUsers, ...localLocked, originalUsername]));
-          setLockedUsers(updatedLocked);
-          try {
-            localStorage.setItem("locallyLockedUsers", JSON.stringify(updatedLocked));
-          } catch (e) {
-            console.warn(e);
-          }
-
-          // Use mode: 'no-cors' to guarantee writing to LockedAccounts sheet by bypassing CORS blocks
-          try {
-            fetch(`${SCRIPT_URL}?action=lockUser&username=${encodeURIComponent(originalUsername)}`, {
-              mode: 'no-cors'
-            });
-            showToast("🔴 5 failed attempts! This account has been LOCKED. Please contact AM Sir.", "error");
-          } catch (err) {
-            console.error("Failed to lock user in database:", err);
-            showToast("🔴 5 failed attempts! Account is locked locally.", "error");
-          }
-        } else {
-          showToast(
-            `😢 Wrong password. Attempt ${currentAttempts}/5. ${5 - currentAttempts} attempts remaining before lockout!`,
-            "error"
-          );
-        }
-        generateCaptcha();
-        setIsSubmitting(false);
+      if (userRecord.password === formData.password.trim()) {
+        executeSuccessfulLogin(userRecord);
         return;
       }
     }
 
-    // 4. Username does NOT exist in sheet database
-    showToast("😢 Username does not exist or credentials incorrect!", "error");
-    setShowSadEmoji(true);
+    showToast("😢 Incorrect password or credentials!", "error");
     generateCaptcha();
     setIsSubmitting(false);
   };
 
-  const showToast = (message, type) => {
-    setToast({ show: true, message, type });
+  // Native Device Biometric Saved ID Login Trigger
+  const handleBiometricAuth = () => {
+    const savedUser = localStorage.getItem("saved_biometric_user") || localStorage.getItem("username");
+    if (!savedUser) {
+      showToast("👈 Pehle ek baar Username & Password se Login karein to save Fingerprint ID!", "error");
+      return;
+    }
+
+    setBiometricScanning(true);
+    if (window.navigator && window.navigator.vibrate) {
+      try { window.navigator.vibrate([40, 60, 40]); } catch(e) {}
+    }
+    showToast("🖐️ Place Fingerprint on device scanner...", "info");
+
     setTimeout(() => {
-      setToast({ show: false, message: "", type: "" });
-    }, 4500);
+      const lower = savedUser.toLowerCase();
+      let targetUser = { username: savedUser, role: localStorage.getItem("role") || "user" };
+      if (masterData.userCredentials && masterData.userCredentials[lower]) {
+        targetUser = masterData.userCredentials[lower];
+      }
+      setBiometricScanning(false);
+      showToast("✅ Fingerprint Biometric Verified! Logging in...", "success");
+      executeSuccessfulLogin(targetUser);
+    }, 1000);
   };
 
-  const togglePasswordVisibility = () => {
-    setVisible(!visible);
-  };
+  const isAPK = Capacitor.isNativePlatform();
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-3 md:p-6 pb-16 md:pb-20" style={{ background: 'linear-gradient(135deg, #eef7f2 0%, #ffffff 50%, #fef6f0 100%)', backgroundColor: '#eef7f2' }}>
+    <div className={`min-h-screen select-none relative overflow-hidden ${
+      isAPK ? "bg-gradient-to-br from-slate-950 via-[#1a0933] via-[#2d0738] to-slate-900 text-white flex flex-col justify-between" : "bg-slate-100 text-slate-800 flex items-center justify-center p-3 md:p-6 pb-16 md:pb-20"
+    }`}>
       
-      {/* Main Container: Split screen on md+ */}
-      <div className="w-full max-w-5xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex flex-col md:flex-row min-h-[580px]">
-        
-        {/* Left Side: Creative Office/Management Board with exact Fluid Gradient matching Footer code: Orange to Green */}
-        <div 
-          className="hidden md:flex md:w-1/2 p-8 flex-col justify-between text-white relative overflow-hidden"
-          style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
-        >
-          
-          {/* Subtle patterns for visual richness (No white overlays) */}
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
-          
-          {/* Header block of Illustration side */}
-          <div className="flex items-center gap-2 z-10">
-            <div className="bg-black/10 p-2 rounded-xl backdrop-blur-md">
-              <ShieldCheck className="h-5 w-5 text-yellow-100" />
-            </div>
-            <span className="text-[10px] uppercase tracking-widest font-black text-white/90">
-              Official Administrative System
-            </span>
-          </div>
-
-          {/* Center Illustration: Styled Cartoon Dashboard / System Interface Mockup */}
-          <div className="my-8 space-y-6 z-10">
-            <h2 className="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-sm">
-              SBH Operations & <br />
-              <span className="text-[#ffd54f]">Compliance Hub</span>
-            </h2>
-            <p className="text-white/90 text-xs font-medium leading-relaxed max-w-sm drop-shadow-xs">
-              Real-time daily logins, streak monitoring, leaves logs, and task delegations managed inside one centralized administration shield.
-            </p>
-
-            {/* Creative System mockup cards representing office tasks */}
-            <div className="space-y-3 pt-2">
-              
-              {/* Checklist template indicator card */}
-              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
-                <div className="bg-[#f59e0b] p-2.5 rounded-xl shadow-md shrink-0">
-                  <ClipboardList className="h-4.5 w-4.5 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Checklist Verification</h4>
-                  <p className="text-[10px] text-white/85 mt-0.5">Automated morning logs generation at 12:00 PM</p>
-                </div>
-              </div>
-
-              {/* Active employee statistics indicator card */}
-              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
-                <div className="bg-[#10b981] p-2.5 rounded-xl shadow-md shrink-0">
-                  <Users className="h-4.5 w-4.5 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Active Staff Directory</h4>
-                  <p className="text-[10px] text-white/85 mt-0.5">Synced dynamically with central database</p>
-                </div>
-              </div>
-
-              {/* Scorecard compliance indicator card */}
-              <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5 hover:bg-black/20 transition-all">
-                <div className="bg-[#2e7d32] p-2.5 rounded-xl shadow-md shrink-0">
-                  <Award className="h-4.5 w-4.5 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Auto Performance Penalties</h4>
-                  <p className="text-[10px] text-white/85 mt-0.5">Automatic point deductions on pending logins</p>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          {/* Footer block of Illustration side */}
-          <div className="text-[10px] text-white/85 font-black z-10 drop-shadow-xs">
-            &copy; {new Date().getFullYear()} SBH Group of Hospitals. Administrative Portal.
-          </div>
-
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[40000] px-5 py-3 rounded-2xl bg-indigo-600 text-white font-extrabold text-xs shadow-2xl border border-indigo-400 animate-bounce text-center">
+          {toast.message}
         </div>
+      )}
 
-        {/* Right Side: Clean Login Form */}
-        <div className="w-full md:w-1/2 p-6 md:p-12 flex flex-col justify-center space-y-6">
+      {/* 📱 MOBILE APK EXCLUSIVE UI (PURPLE & INDIGO BIOMETRIC DESIGN MATCHING SCREENSHOT) */}
+      {isAPK ? (
+        <div className="flex-1 flex flex-col justify-between pt-6 relative">
           
-          {/* Header containing SBH Logo */}
-          <div className="text-center md:text-left space-y-3">
-            <div className="flex justify-center md:justify-start">
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl inline-block shadow-sm">
-                <img src={sbhLogo} alt="SBH Logo" className="h-14 w-auto object-contain" />
+          {/* Top Section */}
+          <div className="px-6 pt-2 pb-6 text-center relative z-10">
+            {/* Top Left Crown Badge */}
+            <div className="absolute left-6 top-2">
+              <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-md shadow-md">
+                <Crown className="w-5 h-5 text-amber-400" />
               </div>
             </div>
+
+            {/* Circular SBH Logo Avatar Header */}
+            <div className="mx-auto mb-4 inline-flex items-center justify-center bg-white px-7 py-3 rounded-2xl shadow-2xl border-2 border-emerald-400/80 backdrop-blur-md relative">
+              <img src={sbhLogo} alt="SBH Logo" className="h-10 w-auto object-contain" />
+              <div className="absolute -top-1.5 -right-1.5 w-5.5 h-5.5 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center shadow-md">
+                <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+              </div>
+            </div>
+
+            <h1 className="text-2xl font-black text-white tracking-tight">Welcome Back</h1>
+            <p className="text-xs text-indigo-200/80 font-semibold mt-0.5">Sign in to continue</p>
+          </div>
+
+          {/* Main White Card (Sliding Up with Rounded Top) */}
+          <div className="w-full bg-gradient-to-b from-[#18113c] to-[#0f092b] rounded-t-[36px] p-6 text-white shadow-[0_-20px_60px_rgba(0,0,0,0.8)] border-t-2 border-emerald-400/50 relative z-20 flex-1 flex flex-col justify-between">
+            <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 via-pink-500 via-blue-500 to-emerald-500 rounded-full mb-4" />
             
             <div>
-              <h3 className="text-2xl font-black text-slate-800 tracking-tight">Portal Authentication</h3>
-              <p className="text-xs text-slate-400 font-semibold mt-1">
-                Enter your credentials below to log in to the CDMSBH dashboard
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
-            {/* User locked alert notification */}
-            {lockedUsers.length > 0 && formData.username && lockedUsers.some(u => String(u).toLowerCase().trim() === formData.username.toLowerCase().trim()) && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-start gap-2.5 animate-bounce">
-                <ShieldAlert className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <span className="font-bold block">Account Blocked!</span>
-                  This user has been locked due to 5 consecutive wrong attempts. Contact AM Sir to unblock.
-                </div>
+              {/* Tab Selector Pill (Log in / Register) */}
+              <div className="p-2.5 rounded-2xl bg-[#0f0828] border border-emerald-400/40 text-center mb-5 shadow-inner">
+                <span className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                  🔐 STAFF SECURE LOGIN PORTAL
+                </span>
               </div>
-            )}
 
-            {/* Sad face wrong password prompt */}
-            {showSadEmoji && (
-              <div className="bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-xl flex items-center gap-3 animate-pulse">
-                <Frown className="h-7 w-7 text-orange-500 shrink-0" />
-                <div className="text-xs font-bold text-orange-900">
-                  Wrong username or password attempt 😞. Lockout attempts are monitored.
-                </div>
-              </div>
-            )}
-
-            {/* Mandatory Username Dropdown with Search */}
-            <div className="space-y-1" ref={dropdownRef}>
-              <div className="flex items-center justify-between">
-                <label className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
-                  Select Username / Staff Name <span className="text-red-500">*</span>
-                </label>
-                {formData.username && (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Username Dropdown */}
+                <div className="relative" ref={dropdownRef}>
+                  <label className="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider block mb-1.5">
+                    Select Username / Staff Name
+                  </label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFormData((prev) => ({ ...prev, username: "" }));
-                      setUsernameSearch("");
-                    }}
-                    className="text-[10px] font-bold text-red-500 hover:text-red-700 flex items-center gap-1 transition-colors"
+                    onClick={() => { setIsDropdownOpen(!isDropdownOpen); setUsernameSearch(''); }}
+                    className="w-full bg-[#110930] border-2 border-purple-500/40 hover:border-emerald-400 focus:border-emerald-400 rounded-2xl px-4 py-3.5 text-left flex items-center justify-between text-xs font-black text-white shadow-lg transition-all"
                   >
-                    <X className="h-3 w-3" /> Change / Clear
+                    <span className={formData.username ? "text-emerald-300 font-black text-sm" : "text-purple-200/60 font-bold"}>
+                      {formData.username || "Click to select Username..."}
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-indigo-600" />
                   </button>
-                )}
-              </div>
 
-              <div className="relative">
-                {/* Clickable selector box */}
-                <div
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className={`w-full pl-10 pr-10 py-3.5 border rounded-xl flex items-center justify-between cursor-pointer transition-all text-xs font-semibold select-none ${
-                    formData.username
-                      ? "border-emerald-300 bg-emerald-50/40 text-slate-800 ring-1 ring-emerald-200"
-                      : "border-slate-200 bg-[#f4f6f9] text-slate-400 hover:border-slate-300"
-                  }`}
-                >
-                  <User className={`absolute left-3.5 top-3.5 h-4 w-4 ${formData.username ? "text-[#387f39]" : "text-slate-400"}`} />
-                  
-                  <span className={formData.username ? "text-slate-800 font-bold" : "text-slate-400"}>
-                    {formData.username ? formData.username : "Click to select your Username from list..."}
-                  </span>
-
-                  <ChevronDown
-                    className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-                      isDropdownOpen ? "rotate-180 text-[#387f39]" : ""
-                    }`}
-                  />
-                </div>
-
-                {/* Dropdown Menu Modal */}
-                {isDropdownOpen && (
-                  <div className="absolute left-0 right-0 mt-1.5 max-h-64 overflow-hidden bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 flex flex-col">
-                    {/* Search Input inside Dropdown */}
-                    <div className="p-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-                      <Search className="h-4 w-4 text-slate-400 shrink-0 ml-1" />
+                  {isDropdownOpen && (
+                    <div className="absolute bottom-full mb-2 left-0 right-0 z-[99999] bg-[#1a0e44] border-2 border-emerald-400/80 rounded-2xl shadow-2xl max-h-56 overflow-y-auto p-3 backdrop-blur-xl animate-fade-in">
                       <input
                         type="text"
                         autoFocus
-                        placeholder="Search name or username..."
+                        placeholder="Type to search staff name..."
                         value={usernameSearch}
                         onChange={(e) => setUsernameSearch(e.target.value)}
-                        className="w-full bg-transparent text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-400"
-                        onClick={(e) => e.stopPropagation()}
+                        className="w-full p-3 bg-[#0d0626] border border-emerald-400 text-xs font-bold text-white placeholder-emerald-200/50 rounded-xl mb-2 outline-none focus:ring-2 focus:ring-emerald-400 shadow-inner"
                       />
-                      {usernameSearch && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUsernameSearch("");
-                          }}
-                          className="text-slate-400 hover:text-slate-600 p-0.5"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Staff List */}
-                    <div className="overflow-y-auto max-h-52 divide-y divide-slate-50">
                       {filteredUsers.length === 0 ? (
-                        <div className="px-4 py-4 text-center text-xs text-slate-400 font-medium">
-                          No staff member found matching "{usernameSearch}"
-                        </div>
+                        <div className="p-3 text-center text-xs text-rose-300 font-bold">No staff found</div>
                       ) : (
-                        filteredUsers.map((user) => {
-                          const isLocked = lockedUsers.some(
-                            (u) => String(u).toLowerCase().trim() === user.toLowerCase().trim()
-                          );
-                          const isSelected = formData.username.toLowerCase().trim() === user.toLowerCase().trim();
-                          return (
-                            <div
-                              key={user}
-                              onClick={() => {
-                                setFormData((prev) => ({ ...prev, username: user }));
-                                setUsernameSearch("");
-                                setIsDropdownOpen(false);
-                              }}
-                              className={`px-4 py-2.5 flex items-center justify-between text-xs font-semibold cursor-pointer transition-colors ${
-                                isSelected
-                                  ? "bg-emerald-50 text-emerald-800 font-bold"
-                                  : "text-slate-700 hover:bg-slate-50 hover:text-[#387f39]"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                <span>{user}</span>
-                              </div>
-                              {isLocked ? (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600 shrink-0">
-                                  Locked
-                                </span>
-                              ) : isSelected ? (
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                              ) : null}
-                            </div>
-                          );
-                        })
+                        filteredUsers.map((u) => (
+                          <button
+                            key={u}
+                            type="button"
+                            onClick={() => {
+                              setFormData((p) => ({ ...p, username: u }));
+                              setIsDropdownOpen(false);
+                            }}
+                            className="w-full text-left p-3 hover:bg-emerald-600/30 rounded-xl text-xs font-black text-white border-b border-purple-500/20 active:bg-emerald-500 transition-colors flex items-center justify-between"
+                          >
+                            <span>{u}</span>
+                            {formData.username === u && <span className="text-emerald-400 font-black">✓</span>}
+                          </button>
+                        ))
                       )}
                     </div>
+                  )}
+                </div>
+
+                {/* Password Input */}
+                <div>
+                  <label className="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider block mb-1.5">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={visible ? "text" : "password"}
+                      required
+                      placeholder="••••••••"
+                      value={formData.password}
+                      onChange={(e) => setFormData((p) => ({ ...p, password: e.target.value }))}
+                      className="w-full bg-[#110930] border-2 border-purple-500/40 focus:border-emerald-400 rounded-2xl px-4 py-3.5 text-xs font-bold text-white outline-none shadow-lg transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setVisible(!visible)}
+                      className="absolute right-3.5 top-3.5 text-pink-400 hover:text-emerald-400"
+                    >
+                      {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember Me & Captcha Row */}
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-200"
+                    />
+                    <span>Remember me</span>
+                  </label>
+
+                  <div className="flex items-center gap-2 bg-[#22104a] px-3 py-1.5 rounded-xl border border-purple-400/40 shadow-sm">
+                    <span className="font-black text-amber-300 text-xs">{captcha.num1} {captcha.op} {captcha.num2} =</span>
+                    <input
+                      type="number"
+                      required
+                      placeholder="?"
+                      value={captchaInput}
+                      onChange={(e) => setCaptchaInput(e.target.value)}
+                      className="w-10 bg-[#110930] border border-amber-400/60 rounded-lg p-1 text-center font-black text-xs text-white outline-none focus:border-emerald-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Main Action Button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isDataLoading}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-orange-500 via-pink-500 via-purple-600 to-blue-600 hover:from-orange-600 hover:to-blue-700 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-pink-500/30 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? "Verifying..." : "LOG IN →"}
+                </button>
+              </form>
+
+              {/* Or Divider */}
+              <div className="relative my-4 text-center">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-indigo-100" /></div>
+                <span className="relative px-3 bg-white text-[10px] font-black text-indigo-400 uppercase tracking-widest">or</span>
+              </div>
+
+              {/* Biometrics Fingerprint Auth Section */}
+              <div className="text-center">
+                <div className="text-[10px] font-extrabold text-slate-400 uppercase mb-2">or use biometrics</div>
+                <button
+                  type="button"
+                  onClick={handleBiometricAuth}
+                  className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center transition-all active:scale-90 border-2 ${
+                    biometricScanning
+                      ? "bg-gradient-to-r from-emerald-500 to-cyan-500 text-white border-emerald-300 animate-pulse shadow-xl shadow-emerald-500/50 scale-110"
+                      : "bg-gradient-to-r from-orange-100 via-pink-100 to-blue-100 hover:from-orange-200 hover:to-blue-200 text-purple-700 border-pink-300 shadow-md hover:scale-105"
+                  }`}
+                  title="Touch Fingerprint to Login"
+                >
+                  <Fingerprint className="w-8 h-8" />
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom Purple Wave Styling */}
+            
+          </div>
+        </div>
+      ) : (
+        /* 💻 EXACT WEB BROWSER LOGIN UI (Matching User's Screenshot 100%) */
+        <div className="w-full max-w-5xl bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col md:flex-row min-h-[560px] z-10">
+          
+          {/* Left Panel: Green Gradient with Official System Details */}
+          <div 
+            className="hidden md:flex md:w-1/2 p-8 flex-col justify-between text-white relative overflow-hidden"
+            style={{ background: "linear-gradient(to bottom, #f59e0b, #10b981, #15803d)" }}
+          >
+            <div className="flex items-center gap-2 z-10">
+              <div className="bg-black/15 p-2 rounded-xl backdrop-blur-md">
+                <ShieldCheck className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-[10px] uppercase tracking-widest font-black text-white">
+                OFFICIAL ADMINISTRATIVE SYSTEM
+              </span>
+            </div>
+
+            <div className="my-6 space-y-5 z-10">
+              <h2 className="text-3xl font-black leading-tight text-white">
+                SBH Operations & <br />
+                <span className="text-[#ffd54f]">Compliance Hub</span>
+              </h2>
+              <p className="text-white/90 text-xs font-medium leading-relaxed max-w-sm">
+                Real-time daily logins, streak monitoring, leaves logs, and task delegations managed inside one centralized administration shield.
+              </p>
+
+              <div className="space-y-3 pt-1">
+                <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5">
+                  <div className="bg-[#f59e0b] p-2.5 rounded-xl shadow-md shrink-0">
+                    <ClipboardList className="h-4.5 w-4.5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Checklist Verification</h4>
+                    <p className="text-[10px] text-white/85 mt-0.5">Automated morning logs generation at 12:00 PM</p>
+                  </div>
+                </div>
+
+                <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5">
+                  <div className="bg-[#10b981] p-2.5 rounded-xl shadow-md shrink-0">
+                    <Users className="h-4.5 w-4.5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Active Staff Directory</h4>
+                    <p className="text-[10px] text-white/85 mt-0.5">Synced dynamically with central database</p>
+                  </div>
+                </div>
+
+                <div className="bg-black/15 border border-white/10 rounded-2xl p-3.5 flex items-center gap-3.5">
+                  <div className="bg-[#15803d] p-2.5 rounded-xl shadow-md shrink-0">
+                    <Flame className="h-4.5 w-4.5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Auto Performance Penalties</h4>
+                    <p className="text-[10px] text-white/85 mt-0.5">Automatic point deductions on pending logins</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[9px] font-bold text-white/80 uppercase tracking-widest z-10">
+              © 2026 SBH Group of Hospitals. Administrative Portal.
+            </div>
+          </div>
+
+          {/* Right Panel: White Form */}
+          <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col justify-center bg-white">
+            <div className="mb-6">
+              <img src={sbhLogo} alt="SBH Logo" className="h-12 object-contain mb-4" />
+              <h3 className="text-2xl font-black text-slate-900 tracking-tight">Portal Authentication</h3>
+              <p className="text-xs font-medium text-slate-500 mt-1">
+                Enter your credentials below to log in to the CDMSBH dashboard
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="relative" ref={dropdownRef}>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  SELECT USERNAME / STAFF NAME *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-left flex items-center justify-between text-xs font-bold text-slate-800 shadow-sm"
+                >
+                  <span className="text-slate-500">{formData.username || "Click to select your Username from list..."}</span>
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                </button>
+
+                {isDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto p-2">
+                    <input
+                      type="text"
+                      placeholder="Search name..."
+                      value={usernameSearch}
+                      onChange={(e) => setUsernameSearch(e.target.value)}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 text-xs rounded-lg mb-2 outline-none font-semibold text-slate-800"
+                    />
+                    {filteredUsers.map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => {
+                          setFormData((p) => ({ ...p, username: u }));
+                          setIsDropdownOpen(false);
+                        }}
+                        className="w-full text-left p-2 hover:bg-emerald-50 rounded-lg text-xs font-bold text-slate-800"
+                      >
+                        {u}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Password Input */}
-            <div className="space-y-1">
-              <label htmlFor="password" className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
-                Access Password
-              </label>
-              <div className="relative">
-                <Key className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-                <input
-                  id="password"
-                  name="password"
-                  type={visible ? "text" : "password"}
-                  placeholder="••••••••"
-                  required
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="w-full pl-10 pr-10 py-3.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent transition-all text-xs font-semibold text-slate-800 bg-[#f4f6f9]"
-                />
-                <button
-                  type="button"
-                  onClick={togglePasswordVisibility}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-[#387f39]"
-                >
-                  {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Mathematical Captcha - Dark background for maximum contrast */}
-            <div className="bg-[#f8fafc] border border-slate-200 rounded-2xl p-4 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block">
-                  Security Captcha Verification
-                </span>
-                <button
-                  type="button"
-                  onClick={generateCaptcha}
-                  className="text-[#387f39] hover:text-emerald-700 p-0.5 rounded transition-colors"
-                  title="Reload Captcha"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <div className="bg-slate-100 text-slate-800 font-extrabold text-sm border border-slate-200 px-4 py-2.5 rounded-xl flex items-center justify-center tracking-wider select-none shrink-0 min-w-[100px] shadow-sm">
-                  {captcha.num1} {captcha.op || "+"} {captcha.num2} =
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  ACCESS PASSWORD *
+                </label>
+                <div className="relative">
+                  <input
+                    type={visible ? "text" : "password"}
+                    required
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={(e) => setFormData((p) => ({ ...p, password: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-[#15803d]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVisible(!visible)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                  >
+                    {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
-                <input
-                  type="number"
-                  placeholder="Answer"
-                  required
-                  value={captchaInput}
-                  onChange={(e) => setCaptchaInput(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#387f39] focus:border-transparent text-sm font-extrabold text-slate-800 text-center bg-white placeholder-slate-400 transition-all shadow-sm"
-                />
               </div>
-            </div>
 
-            {/* Submit Button - Solid Hospital Green */}
-            <div className="pt-2">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase">
+                  <span>SECURITY CAPTCHA VERIFICATION</span>
+                  <button type="button" onClick={generateCaptcha} className="text-[#15803d]">
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="bg-slate-100 px-4 py-2.5 rounded-xl border border-slate-200 font-black text-sm text-slate-800 shrink-0">
+                    {captcha.num1} {captcha.op} {captcha.num2} =
+                  </div>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Answer"
+                    value={captchaInput}
+                    onChange={(e) => setCaptchaInput(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-center text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-[#15803d]"
+                  />
+                </div>
+              </div>
+
               <button
                 type="submit"
-                className="w-full bg-[#387f39] hover:bg-[#2d662e] py-3.5 px-4 text-white font-extrabold rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-md hover:shadow-lg text-xs tracking-wider uppercase flex items-center justify-center gap-2 cursor-pointer"
                 disabled={isSubmitting || isDataLoading}
+                className="w-full py-3.5 rounded-xl bg-[#15803d] hover:bg-[#166534] text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2"
               >
-                {isSubmitting ? (
-                  <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
-                    <span>Verifying...</span>
-                  </div>
-                ) : isDataLoading ? (
-                  <span>Loading Database...</span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <span>Login</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </span>
-                )}
+                {isSubmitting ? "Verifying..." : "LOGIN →"}
               </button>
-            </div>
-
-          </form>
-
-        </div>
-
-      </div>
-
-      {/* Official Footer Component Layout - Sleeker & Thinner Padding */}
-      <footer 
-        className="fixed bottom-0 left-0 w-full py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
-        style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
-      >
-        <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
-        <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
-
-          {/* 📱 MOBILE VIEW */}
-          <div className="flex flex-col items-center justify-center md:hidden py-0.5">
-            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
-              <ShieldCheck size={10} className="text-white" />
-              <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
-                SBH Group Of Hospitals
-              </span>
-            </a>
-            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
-              <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
-                Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
-              </span>
-              <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
-            </a>
-          </div>
-
-          {/* 💻 DESKTOP VIEW */}
-          <div className="hidden md:flex items-center justify-between gap-6 h-6 text-white">
-            <div className="flex items-center gap-2.5">
-              <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
-                <Activity size={11} className="text-white" />
-              </div>
-              <div className="flex flex-col text-left">
-                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
-                <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
-              </div>
-            </div>
-
-            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
-              <ShieldCheck size={10} className="text-white" />
-              <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
-                SBH Group Of Hospitals
-              </span>
-            </a>
-
-            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
-              <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
-              <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none text-white">
-                Naman Mishra
-                <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
-              </span>
-            </a>
+            </form>
           </div>
         </div>
-      </footer>
+      )}
 
-      {/* Success Popup Modal */}
+      {/* Web Only Footer */}
+      {!isAPK && (
+        <footer 
+          className="fixed bottom-0 left-0 w-full py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
+          style={{ background: "linear-gradient(to right, #f59e0b, #10b981, #2e7d32)" }}
+        >
+          <div className="max-w-full mx-auto px-4 md:px-10 relative z-10 flex items-center justify-between h-6 text-white text-[9px] font-black">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={12} className="text-white" />
+              <span className="uppercase tracking-widest">SBH Group Of Hospitals</span>
+            </div>
+            <a href="#" target="_blank" rel="noopener noreferrer" className="no-underline text-white flex items-center gap-1">
+              <span>Architected by</span>
+              <span className="text-amber-200">SBH Operations</span>
+            </a>
+          </div>
+        </footer>
+      )}
+
+      {/* Success Modal */}
       {showSuccessPopup && (
-        <div className="fixed inset-0 flex items-center justify-center z-[10000]" style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(3px)' }}>
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center border border-emerald-100 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto mb-4 animate-bounce">
-              <CheckCircle2 size={36} className="text-[#387f39]" />
-            </div>
-            <h3 className="text-lg font-black text-slate-800 tracking-tight uppercase">Access Granted</h3>
-            <p className="text-xs text-slate-500 font-bold mt-2">
-              Welcome back, <span className="text-[#387f39] font-extrabold">{loggedInUsername}</span>! Redirecting to secure node...
+        <div className="fixed inset-0 flex items-center justify-center z-[30000] bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border border-indigo-200">
+            <CheckCircle2 size={40} className="text-indigo-600 mx-auto mb-3 animate-bounce" />
+            <h3 className="text-lg font-black text-slate-900 uppercase">Access Granted</h3>
+            <p className="text-xs text-slate-500 font-bold mt-1">
+              Welcome back, <span className="text-indigo-600 font-extrabold">{loggedInUsername}</span>! Redirecting...
             </p>
           </div>
         </div>
       )}
-      
     </div>
   );
 };

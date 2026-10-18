@@ -13,7 +13,7 @@ export default defineConfig({
       additionalLegacyPolyfills: ['regenerator-runtime/runtime']
     })
   ],
-  base: "/", // Changed from "./" to "/"
+  base: "./", // Changed from "./" to "/"
   build: {
     outDir: "dist",
     chunkSizeWarningLimit: 2000,

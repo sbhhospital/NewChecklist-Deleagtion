@@ -1,7 +1,10 @@
+import { Capacitor } from '@capacitor/core';
+import AndroidExitModal from "./components/common/AndroidExitModal";
+import SplashScreen from "./components/common/SplashScreen";
 "use client"
 
 import { useState, useEffect } from "react"
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import LoginPage from "./pages/LoginPage"
 import AdminDashboard from "./pages/admin/Dashboard"
 import AdminAssignTask from "./pages/admin/AssignTask"
@@ -20,8 +23,8 @@ import Calendar from "./pages/Calendar"
 import SessionTimeout from "./components/SessionTimeout"
 // Auth wrapper component to protect routes
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
-  const username = sessionStorage.getItem("username")
-  const userRole = sessionStorage.getItem("role")
+  const username = sessionStorage.getItem("username") || localStorage.getItem("username")
+  const userRole = sessionStorage.getItem("role") || localStorage.getItem("role") || "user"
 
   // If no user is logged in, redirect to login
   if (!username) {
@@ -37,6 +40,21 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 }
 
 function App() {
+  // Restore session from localStorage on APK startup/reopen
+  useEffect(() => {
+    const savedUser = localStorage.getItem("username");
+    const savedRole = localStorage.getItem("role");
+    if (savedUser && !sessionStorage.getItem("username")) {
+      sessionStorage.setItem("username", savedUser);
+      if (savedRole) sessionStorage.setItem("role", savedRole);
+      if (localStorage.getItem("email")) sessionStorage.setItem("email", localStorage.getItem("email"));
+      if (localStorage.getItem("department")) sessionStorage.setItem("department", localStorage.getItem("department"));
+      if (localStorage.getItem("isAdmin")) sessionStorage.setItem("isAdmin", localStorage.getItem("isAdmin"));
+    }
+  }, []);
+
+  const [showSplash, setShowSplash] = useState(() => Capacitor.isNativePlatform());
+  
   // const [darkMode, setDarkMode] = useState(false)
 
   // useEffect(() => {
@@ -64,12 +82,18 @@ function App() {
   //   }
   // }
 
+  
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+  
   return (
     <Router>
+      {Capacitor.isNativePlatform() && <AndroidExitModal />}
       <SessionTimeout />
       <Routes>
         {/* Root redirect */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<Navigate to="/dashboard/admin" replace />} />
 
         {/* Login route */}
         <Route path="/login" element={<LoginPage />} />

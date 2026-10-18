@@ -330,6 +330,7 @@ function AccountDataPage() {
   const [additionalData, setAdditionalData] = useState({})
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
+  const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
   const [funnyMsg, setFunnyMsg] = useState("⏳ Updating SBH Group of Hospitals analytics...")
 
   useEffect(() => {
@@ -1212,33 +1213,13 @@ function AccountDataPage() {
     [handleSelectItem],
   )
 
-  const handleSelectAllItems = useCallback(
-    (e) => {
-      e.stopPropagation();
-      const checked = e.target.checked;
+    const handleSelectAllItems = useCallback((e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (e && e.preventDefault) e.preventDefault();
+    setShowSelectAllWarning(true);
+    return false;
+  }, []);
 
-      if (checked) {
-        // Only select items that are not disabled (today's tasks only)
-        const enabledIds = filteredAccountData
-          .filter((item) => {
-            const taskStatus = getTaskStatus(item["col10"], item["col15"], item["col6"], item["col4"], item["col7"], item["col16"]);
-            return taskStatus !== "Admin Done" && taskStatus !== "Done" && taskStatus !== "Disabled" && taskStatus !== "Leave";
-          })
-          .map((item) => item._id);
-
-        setSelectedItems(new Set(enabledIds));
-        console.log(`Selected all enabled items: ${enabledIds}`);
-      } else {
-        setSelectedItems(new Set());
-        setAdditionalData({});
-        setRemarksData({});
-        console.log("Cleared all selections");
-      }
-    },
-    [filteredAccountData],
-  );
-
-  // Add these optimized handlers inside the component
   const handleAdditionalDataChange = useCallback((id, value) => {
     setAdditionalData((prev) => ({ ...prev, [id]: value }))
     if (value !== "No") {
@@ -2988,7 +2969,59 @@ function AccountDataPage() {
         </div>
       )}
 
-    </AdminLayout>
+{/* Funny Select-All Block Warning Modal */}
+        {showSelectAllWarning && (
+          <div 
+            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" 
+            style={{ zIndex: 99999 }}
+            onClick={() => setShowSelectAllWarning(false)}
+          >
+            <div 
+              className="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden border border-gray-200 text-center p-5 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setShowSelectAllWarning(false)}
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 w-8 h-8 flex items-center justify-center text-lg font-bold"
+              >
+                ✕
+              </button>
+
+              {/* Bada sa Hath aur Hasne ka Emoji */}
+              <div className="text-5xl my-2 flex items-center justify-center gap-2 select-none">
+                <span>✋</span>
+                <span>😂</span>
+              </div>
+
+              <div className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
+                रुको जरा... सब्र करो!
+              </div>
+
+              <h3 className="text-base font-extrabold text-gray-900 leading-snug">
+                देख भाई, मुझे भी घर जाना है! 🏃‍♂️💨
+              </h3>
+
+              <div className="text-xs text-gray-700 mt-3 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100 text-center font-medium">
+                एक ही Click में सारे Task Complete मत मारो! 😜<br />
+                कृपया <strong>एक-एक Task को Check करके</strong> उसका Status और Remark भरें, फिर Submit करें। Shortcut नहीं चलेगा! 📋✨
+              </div>
+
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowSelectAllWarning(false)}
+                  className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow transition-colors cursor-pointer"
+                >
+                  ठीक है, एक-एक करके करूँगा 🫡
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+            </AdminLayout>
   );
 }
 

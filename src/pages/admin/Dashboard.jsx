@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import MobileAppDashboard from "../../components/mobile/MobileAppDashboard";
 "use client"
 
 import { useState, useEffect } from "react"
@@ -17,7 +19,31 @@ import {
   Cell
 } from "recharts"
 
+
+// Global Safe access to Google Sheets cell value
+function getCellValue(row, index) {
+  if (!row || !row.c || !Array.isArray(row.c) || index >= row.c.length) return null;
+  const cell = row.c[index];
+  return cell && typeof cell === 'object' && 'v' in cell ? cell.v : null;
+}
+
+// Global Parse Google Sheets Date format
+function parseGoogleSheetsDate(dateStr) {
+  if (!dateStr) return '';
+  if (typeof dateStr === 'string' && dateStr.startsWith('Date(')) {
+    const parts = dateStr.substring(5, dateStr.length - 1).split(',');
+    if (parts.length >= 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) + 1; // Month is 0-indexed
+      const day = parseInt(parts[2], 10);
+      return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    }
+  }
+  return String(dateStr);
+}
+
 export default function AdminDashboard() {
+  const username = (sessionStorage.getItem('username') || localStorage.getItem('username') || 'User');
   const [dashboardType, setDashboardType] = useState("checklist")
   const [taskView, setTaskView] = useState("recent")
   const [filterStatus, setFilterStatus] = useState("all")
@@ -95,7 +121,7 @@ export default function AdminDashboard() {
   });
 
   const getUserRole = () => {
-    return sessionStorage.getItem('role') || 'user'; // Default to 'user' if not set
+    return (sessionStorage.getItem("role") || localStorage.getItem("role") || "user") || 'user'; // Default to 'user' if not set
   };
 
   const isAdminUser = () => {
@@ -125,7 +151,7 @@ export default function AdminDashboard() {
       const userRow = masterData.table.rows.find((row, index) => {
         if (index === 0) return false; // Skip header row
         const rowUsername = getCellValue(row, 2); // Column C (index 2) - Username
-        return rowUsername && rowUsername.toLowerCase() === username.toLowerCase();
+        return rowUsername && rowUsername.toLowerCase() === (username ? String(username).toLowerCase() : "");
       });
 
       if (userRow) {
@@ -163,7 +189,7 @@ export default function AdminDashboard() {
       const whatsappUserRow = whatsappData.table.rows.find((row, index) => {
         if (index === 0) return false; // Skip header row
         const rowUsername = getCellValue(row, 2); // Column C (index 2) - Username
-        return rowUsername && rowUsername.toLowerCase() === username.toLowerCase();
+        return rowUsername && rowUsername.toLowerCase() === (username ? String(username).toLowerCase() : "");
       });
 
       if (whatsappUserRow) {
@@ -218,7 +244,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const username = sessionStorage.getItem('username');
+    const username = (sessionStorage.getItem("username") || localStorage.getItem("username") || "");
     if (username) {
       fetchUserProfileFromSheets(username);
       fetchAllStaffProfiles(); // Fetch all staff images
@@ -249,13 +275,13 @@ export default function AdminDashboard() {
           const imageUrl = getCellValue(row, 7); // Column H
 
           if (username && role && (role.toLowerCase().trim() === "inactive" || role.toLowerCase().trim() === "in active")) {
-            inactiveUsersSet.add(username.toLowerCase().trim());
+            inactiveUsersSet.add((username ? String(username).toLowerCase() : "").trim());
           }
 
           if (username && imageUrl) {
             const displayableUrl = getDisplayableImageUrl(imageUrl);
             if (displayableUrl) {
-              imagesMap[username.toLowerCase()] = displayableUrl;
+              imagesMap[(username ? String(username).toLowerCase() : "")] = displayableUrl;
             }
           }
         });
@@ -281,10 +307,10 @@ export default function AdminDashboard() {
 
           // Only add if we don't already have an image from Master sheet (Master takes precedence usually, or maybe Whatsapp is newer?
           // Based on fetchUserProfileFromSheets logic, it tries Master first, then Whatsapp. So we prioritize Master.
-          if (username && imageUrl && !imagesMap[username.toLowerCase()]) {
+          if (username && imageUrl && !imagesMap[(username ? String(username).toLowerCase() : "")]) {
             const displayableUrl = getDisplayableImageUrl(imageUrl);
             if (displayableUrl) {
-              imagesMap[username.toLowerCase()] = displayableUrl;
+              imagesMap[(username ? String(username).toLowerCase() : "")] = displayableUrl;
             }
           }
         });
@@ -330,7 +356,7 @@ export default function AdminDashboard() {
 
     try {
       setUploadingImage(true);
-      const username = sessionStorage.getItem('username');
+      const username = (sessionStorage.getItem("username") || localStorage.getItem("username") || "");
 
       if (!username) {
         throw new Error('Username not found');
@@ -564,11 +590,7 @@ export default function AdminDashboard() {
   }
 
   // Safe access to cell value
-  const getCellValue = (row, index) => {
-    if (!row || !row.c || index >= row.c.length) return null;
-    const cell = row.c[index];
-    return cell && 'v' in cell ? cell.v : null;
-  };
+  // getCellValue moved to top
 
   // Parse Google Sheets Date format into a proper date string
   const parseGoogleSheetsDate = (dateStr) => {
@@ -632,7 +654,7 @@ export default function AdminDashboard() {
   const fetchDepartmentData = async (signal) => {
     const sheetName = dashboardType === "delegation" ? "DELEGATION" : "Checklist";
     const userRole = getUserRole();
-    const username = sessionStorage.getItem('username');
+    const username = (sessionStorage.getItem("username") || localStorage.getItem("username") || "");
 
     setPageLoading(true);
     try {
@@ -765,7 +787,7 @@ export default function AdminDashboard() {
 
           if (
             isRegularUser() &&
-            assignedTo.toLowerCase() !== username.toLowerCase()
+            assignedTo.toLowerCase() !== (username ? String(username).toLowerCase() : "")
           ) {
             return null; // Skip this task entirely for regular users
           }
@@ -776,7 +798,7 @@ export default function AdminDashboard() {
           }
           const isUserMatch =
             userRole === "admin" ||
-            assignedTo.toLowerCase() === username.toLowerCase();
+            assignedTo.toLowerCase() === (username ? String(username).toLowerCase() : "");
 
           // Debug: Log user matching for first few rows
           if (rowIndex <= 5) {
@@ -1048,7 +1070,7 @@ export default function AdminDashboard() {
               }
             }
           }
-          const hasAccess = isAdminUser() || assignedTo.toLowerCase() === username.toLowerCase();
+          const hasAccess = isAdminUser() || assignedTo.toLowerCase() === (username ? String(username).toLowerCase() : "");
 
           return taskObj;
         })
@@ -1088,7 +1110,7 @@ export default function AdminDashboard() {
       const filteredStaffMembers = isAdminUser()
         ? Array.from(staffTrackingMap.values()) // Admin sees all staff
         : Array.from(staffTrackingMap.values()).filter(staff =>
-          staff.name.toLowerCase() === username.toLowerCase()
+          staff.name.toLowerCase() === (username ? String(username).toLowerCase() : "")
         ); // Regular users see only themselves
 
       // Update the staff members processing:
@@ -1360,6 +1382,18 @@ export default function AdminDashboard() {
 
   return (
     <AdminLayout>
+      {/* 📱 Mobile Application Native Dashboard (Only on Mobile APK / Small Devices) */}
+      {Capacitor.isNativePlatform() && (
+        <div className="block lg:hidden mb-4">
+          <MobileAppDashboard
+            username={username}
+            totalTasks={departmentData.totalTasks || 0}
+            completedTasks={departmentData.completedTasks || 0}
+            pendingTasks={departmentData.pendingTasks || 0}
+            overdueTasks={departmentData.overdueTasks || 0}
+          />
+        </div>
+      )}
       <div className="space-y-6 relative min-h-[500px]">
         {pageLoading && (
           <div className="loading-overlay-blur">
@@ -1428,7 +1462,7 @@ export default function AdminDashboard() {
                     onClick={() => setShowImageUploadModal(true)}
                   >
                     {(() => {
-                      const name = sessionStorage.getItem("username") || "SBH";
+                      const name = (sessionStorage.getItem("username") || localStorage.getItem("username") || "") || "SBH";
                       return name.substring(0, 2).toUpperCase();
                     })()}
                   </div>
@@ -1633,7 +1667,7 @@ export default function AdminDashboard() {
                       (staff) =>
                         isAdminUser() ||
                         staff.name.toLowerCase() ===
-                        sessionStorage.getItem("username")?.toLowerCase()
+                        (sessionStorage.getItem("username") || localStorage.getItem("username") || "")?.toLowerCase()
                     )
                     .map((staff, idx) => (
                       <option key={`${staff.id}-${idx}`} value={staff.name}>

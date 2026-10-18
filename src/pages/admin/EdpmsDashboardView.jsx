@@ -399,7 +399,8 @@ export default function EdpmsDashboardView({
   tabLoading = false,
   inactiveUsers = [],
   leavesList = [],
-  holidaysList = []
+  holidaysList = [],
+  historyData = []
 }) {
   const [selectedStaffName, setSelectedStaffName] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
@@ -414,6 +415,7 @@ export default function EdpmsDashboardView({
   const [staffSearchText, setStaffSearchText] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [deptSearchText, setDeptSearchText] = useState("")
+  const [extensionModal, setExtensionModal] = useState({ isOpen: false, task: null, historyEntries: [] })
 
   const [funnyMsg, setFunnyMsg] = useState("🏥 Updating SBH Group of Hospitals analytics...")
   useEffect(() => {
@@ -1875,7 +1877,7 @@ export default function EdpmsDashboardView({
       <div className="flex border-b-2 border-slate-200 bg-white p-1 rounded-t-xl gap-2">
         <button
           onClick={() => setActiveSource("delegation")}
-          className={`py-3 px-6 font-extrabold text-sm border-b-4 rounded-t-lg transition-all cursor-pointer ${
+          className={`py-1.5 px-4 font-black text-xs border-b-2 rounded-t-lg transition-all cursor-pointer ${
             activeSource === "delegation"
               ? "border-purple-600 text-purple-600 bg-purple-50/40"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -1885,7 +1887,7 @@ export default function EdpmsDashboardView({
         </button>
         <button
           onClick={() => setActiveSource("checklist")}
-          className={`py-3 px-6 font-extrabold text-sm border-b-4 rounded-t-lg transition-all cursor-pointer ${
+          className={`py-1.5 px-4 font-black text-xs border-b-2 rounded-t-lg transition-all cursor-pointer ${
             activeSource === "checklist"
               ? "border-purple-600 text-purple-600 bg-purple-50/40"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -1951,52 +1953,51 @@ export default function EdpmsDashboardView({
           </div>
         )}
 
-        {/* Main Header Board - Light background with high contrast plain text */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
-        <div className="space-y-1 z-10">
-          <div className="flex items-center gap-2">
-            <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm w-fit">
-              <Sparkles className="h-3 w-3 text-purple-600 animate-pulse" />
-              v3.0 SBH Platform
-            </span>
+        {/* Compact Clean Top Header */}
+        <div className="bg-white p-3 rounded-xl border border-purple-100 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs w-fit">
+                <Sparkles className="h-2.5 w-2.5 text-purple-600" />
+                v3.0 SBH Platform
+              </span>
+              <h1 className="text-base font-black tracking-tight text-purple-900 leading-none">
+                SBH Performance Intelligence
+              </h1>
+            </div>
+            <p className="text-slate-500 text-[11px] font-medium leading-none">
+              Real-Time Workforce Accountability, Progressive Penalties & Checklist/Delegation Performance.
+            </p>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight mt-2 text-slate-900">
-            SBH Performance Intelligence
-          </h1>
-          <p className="text-slate-500 text-sm max-w-xl font-medium">
-            Real-Time Workforce Accountability, Progressive Penalties & Checklist/Delegation Performance.
-          </p>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => handleExport("xlsx")}
+              disabled={xlsxLoading || pdfLoading}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            >
+              {xlsxLoading ? (
+                <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              {xlsxLoading ? "Exporting..." : "Excel Export"}
+            </button>
+
+            <button
+              onClick={() => handleExport("pdf")}
+              disabled={xlsxLoading || pdfLoading}
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            >
+              {pdfLoading ? (
+                <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+              ) : (
+                <FileText className="h-3.5 w-3.5" />
+              )}
+              {pdfLoading ? "Generating..." : "PDF Report"}
+            </button>
+          </div>
         </div>
-
-        <div className="flex items-center gap-3 z-10">
-          <button
-            onClick={() => handleExport("xlsx")}
-            disabled={xlsxLoading || pdfLoading}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer"
-          >
-            {xlsxLoading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {xlsxLoading ? "Exporting..." : "Excel Export"}
-          </button>
-
-          <button
-            onClick={() => handleExport("pdf")}
-            disabled={xlsxLoading || pdfLoading}
-            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer"
-          >
-            {pdfLoading ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-            ) : (
-              <FileText className="h-4 w-4" />
-            )}
-            {pdfLoading ? "Generating..." : "PDF Report"}
-          </button>
-        </div>
-      </div>
-
       {/* Dynamic Filters Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
         <div className="flex flex-wrap gap-4 items-center justify-between">
@@ -2484,7 +2485,47 @@ export default function EdpmsDashboardView({
             </div>
           </div>
 
-          {/* Active Tasks List Table */}
+          
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-xs space-y-3">
+            <h4 className="font-extrabold text-slate-800 flex items-center gap-2 text-sm">
+              <AlertOctagon className="h-4 w-4 text-rose-600" />
+              SLA Auto-Escalation Status
+            </h4>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5 text-xs">
+                <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>
+                <span className="flex-1 font-medium text-slate-600">24 Hours Delay</span>
+                <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                  {Math.round(processedStats.activeDelegations * 0.3) || 0} Tasks
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5 text-xs">
+                <span className="h-2 w-2 rounded-full bg-orange-500 shrink-0"></span>
+                <span className="flex-1 font-medium text-slate-600">48 Hours Delay</span>
+                <span className="font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded">
+                  {Math.round(processedStats.activeDelegations * 0.1) || 0} Tasks
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5 text-xs">
+                <span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>
+                <span className="flex-1 font-medium text-slate-600">72 Hours Escalated</span>
+                <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded">
+                  {processedStats.escalatedTasks} Tasks
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 text-center leading-normal pt-1 border-t border-slate-50">
+              Reminders are dispatched via Email and WhatsApp at each threshold.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 100% Full Width Detailed Tasks Reference Map */}
+      {/* Active Tasks List Table */}
           {activeSource === "delegation" && (
             (selectedEmployee || filterDept) ? (
               <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -2511,54 +2552,77 @@ export default function EdpmsDashboardView({
                 <div className="overflow-x-auto w-full max-h-[400px] overflow-y-auto">
                   <table className="w-full text-left border-collapse min-w-max md:min-w-0">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400 text-[10px] font-bold uppercase tracking-wider border-b border-slate-100">
-                        <th className="px-3.5 py-2.5">Task ID</th>
-                        <th className="px-3.5 py-2.5">Description</th>
-                        <th className="px-3.5 py-2.5">Assigned To</th>
-                        <th className="px-3.5 py-2.5">Deadline</th>
-                        <th className="px-3.5 py-2.5">Status</th>
-                        <th className="px-3.5 py-2.5 text-center">Ext.</th>
-                        <th className="px-3.5 py-2.5 text-center">Delays</th>
-                        <th className="px-3.5 py-2.5 text-center">Score</th>
+                      <tr className="bg-slate-50/90 text-slate-700 text-[11px] font-black uppercase tracking-wider border-b border-slate-200">
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap">Task ID</th>
+                        <th className="px-3.5 py-2 whitespace-nowrap">Task Description</th>
+                        <th className="px-3.5 py-2 whitespace-nowrap">Assigned To</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap font-black text-purple-900 bg-purple-50/70">Task Start Date</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap">Deadline</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap">Status</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap min-w-[130px] font-black text-purple-900 bg-purple-50/70">Dates / Extensions</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap">Delays</th>
+                        <th className="px-3.5 py-2 text-center whitespace-nowrap">Score</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                      {displayTasksList.map((task, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-3.5 py-2.5 font-bold text-slate-700">{task.id}</td>
-                          <td className="px-3.5 py-2.5 max-w-xs truncate font-medium text-slate-800">{task.title}</td>
-                          <td className="px-3.5 py-2.5 font-semibold text-slate-600">{task.assignedTo}</td>
-                          <td className="px-3.5 py-2.5 font-medium text-slate-500">{task.dueDate}</td>
-                          <td className="px-3.5 py-2.5">
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                              task.status === "completed" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
-                              task.status === "overdue" ? "bg-rose-50 text-rose-700 border border-rose-100" :
-                              "bg-amber-50 text-amber-700 border border-amber-100"
+                      {displayTasksList.map((task, idx) => {
+                        const taskHistoryEntries = historyData ? historyData.filter(
+                          (h) => String(h["col1"]).trim() === String(task.id).trim()
+                        ) : [];
+                        const extCount = task.extensionCount ?? 0;
+
+                        return (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors text-xs border-b border-slate-100/80">
+                          <td className="px-3.5 py-2 text-center font-bold text-slate-900 whitespace-nowrap">{task.id}</td>
+                          <td className="px-3.5 py-2 font-bold text-slate-900 max-w-sm truncate" title={task.title}>{task.title}</td>
+                          <td className="px-3.5 py-2 font-semibold text-slate-700 whitespace-nowrap">{task.assignedTo}</td>
+                          <td className="px-3.5 py-2 text-center font-semibold text-slate-700 whitespace-nowrap bg-purple-50/20">{task.taskStartDate || "—"}</td>
+                          <td className="px-3.5 py-2 text-center font-medium text-slate-600 whitespace-nowrap">{task.dueDate || "—"}</td>
+                          <td className="px-3.5 py-2 text-center whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full capitalize ${
+                              task.status === "completed" ? "bg-emerald-100 text-emerald-800" :
+                              task.status === "overdue" ? "bg-rose-100 text-rose-800" :
+                              "bg-amber-100 text-amber-800"
                             }`}>
                               {task.status}
                             </span>
                           </td>
-                          <td className="px-3.5 py-2.5 text-center font-bold text-slate-600">{task.extensionCount ?? 0}</td>
-                          <td className="px-3.5 py-2.5 text-center font-bold text-rose-600">{task.delayDays ?? 0}d</td>
-                          <td className="px-3.5 py-2.5 text-center font-extrabold text-slate-800">
+                          <td className="px-3.5 py-2 text-center whitespace-nowrap bg-purple-50/20">
+                            <div className="inline-flex flex-col items-center gap-0.5">
+                              <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                extCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {extCount > 0 ? `Extended: ${extCount}x` : 'Extended: 0'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setExtensionModal({
+                                  isOpen: true,
+                                  task: task,
+                                  historyEntries: taskHistoryEntries
+                                })}
+                                className="text-[10px] text-purple-700 hover:text-purple-900 font-bold underline bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                                title="View all date changes and details"
+                              >
+                                📅 See More
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2 text-center font-bold text-rose-600 whitespace-nowrap">{task.delayDays ?? 0}d</td>
+                          <td className="px-3.5 py-2 text-center font-extrabold text-slate-800 whitespace-nowrap">
                             <div className="flex flex-col items-center justify-center">
                               <span>{task.score} Pts</span>
-                              <span className="text-[9px] text-gray-500 font-normal mt-0.5 whitespace-nowrap">
+                              <span className="text-[9px] text-gray-500 font-normal whitespace-nowrap">
                                 Base: {task.baseScore || 100}
                                 {task.completionReward > 0 && ` | +${task.completionReward}`}
                                 {task.extensionPenalty > 0 && ` | -${task.extensionPenalty}`}
                                 {task.delayPenalty > 0 && ` | -${task.delayPenalty}`}
-                                {task.mainScorePenalty > 0 && ` | Main Cut: -${task.mainScorePenalty}`}
                               </span>
-                              {task.mainScorePenalty > 0 && (
-                                <span className="text-[9px] text-rose-500 font-bold mt-0.5 whitespace-nowrap bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
-                                  Main Score Cut: -${task.mainScorePenalty} Pts
-                                </span>
-                              )}
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2573,70 +2637,6 @@ export default function EdpmsDashboardView({
               </div>
             )
           )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-800 flex items-center gap-2 text-base">
-              <Sparkles className="h-5 w-5 text-purple-600" />
-              Dynamic Performance Insights
-            </h4>
-            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-              {predictiveInsights.slice(0, 5).map((insight, idx) => (
-                <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-800 text-xs">{insight.name}</span>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                      insight.riskLevel === "Critical" ? "bg-rose-100 text-rose-800" :
-                      insight.riskLevel === "High" ? "bg-orange-100 text-orange-800" :
-                      insight.riskLevel === "Medium" ? "bg-amber-100 text-amber-800" :
-                      "bg-emerald-100 text-emerald-800"
-                    }`}>
-                      {insight.riskLevel} Risk
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 leading-normal">
-                    {insight.recommendation}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-            <h4 className="font-bold text-slate-800 flex items-center gap-2 text-base">
-              <AlertOctagon className="h-5 w-5 text-rose-600" />
-              SLA Auto-Escalation Status
-            </h4>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-                <span className="flex-1 font-semibold text-slate-700">24 Hours Delay</span>
-                <span className="font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                  {Math.round(processedStats.activeDelegations * 0.3) || 0} Tasks
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="h-2 w-2 rounded-full bg-orange-500"></span>
-                <span className="flex-1 font-semibold text-slate-700">48 Hours Delay</span>
-                <span className="font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
-                  {Math.round(processedStats.activeDelegations * 0.1) || 0} Tasks
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="h-2 w-2 rounded-full bg-rose-600"></span>
-                <span className="flex-1 font-semibold text-slate-700">72 Hours Escalated</span>
-                <span className="font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">
-                  {processedStats.escalatedTasks} Tasks
-                </span>
-              </div>
-            </div>
-            <p className="text-[10px] text-slate-400 text-center leading-normal">
-              Reminders are dispatched via Email and WhatsApp at each delay threshold.
-            </p>
-          </div>
-        </div>
-      </div>
       </>
       )}
       </div>
@@ -2888,6 +2888,148 @@ export default function EdpmsDashboardView({
           </div>
         </div>
       )}
+
+      {/* Task Extension & Date Change History Modal */}
+      {extensionModal.isOpen && extensionModal.task && (
+        <div 
+          className="fixed inset-0 bg-black/60 flex items-center justify-center p-4"
+          style={{ zIndex: 99999 }}
+          onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-purple-700 to-indigo-700 p-4 text-white flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
+                    #{extensionModal.task.id}
+                  </span>
+                  <h3 className="text-base font-bold">
+                    Task Dates & Extension History
+                  </h3>
+                </div>
+                <p className="text-xs text-purple-100 mt-1 line-clamp-1">
+                  {extensionModal.task.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Core Task Info Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 bg-purple-50/50 p-3 rounded-xl border border-purple-100">
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Assigned Staff</span>
+                  <p className="font-bold text-gray-900 mt-0.5">{extensionModal.task.assignedTo || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Current Status</span>
+                  <p className="font-bold text-purple-700 mt-0.5 capitalize">{extensionModal.task.status || "—"}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Total Extensions</span>
+                  <p className="font-bold text-amber-700 mt-0.5">{extensionModal.task.extensionCount || 0} times</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Task Start Date</span>
+                  <p className="font-bold text-blue-700 mt-0.5">
+                    {extensionModal.task.taskStartDate || "—"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Target / Deadline</span>
+                  <p className="font-bold text-emerald-700 mt-0.5">
+                    {extensionModal.task.dueDate || "—"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-semibold uppercase">Delay Days</span>
+                  <p className="font-bold text-rose-600 mt-0.5">
+                    {extensionModal.task.delayDays || 0} Days
+                  </p>
+                </div>
+              </div>
+
+              {/* Date Extension / Completion Timeline */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                    <span>Timeline of Date Changes & Completions</span>
+                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px]">
+                      {extensionModal.historyEntries.length} Records
+                    </span>
+                  </h4>
+                </div>
+
+                {extensionModal.historyEntries && extensionModal.historyEntries.length > 0 ? (
+                  <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 shadow-sm">
+                    {extensionModal.historyEntries.map((entry, idx) => {
+                      const actionStatus = entry["col2"] || "—";
+                      const isDone = actionStatus.toLowerCase() === "done" || actionStatus.toLowerCase().includes("done");
+                      const isExtend = actionStatus.toLowerCase().includes("extend");
+
+                      return (
+                        <div key={idx} className="p-3 bg-white hover:bg-gray-50 transition-colors flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isDone ? 'bg-emerald-100 text-emerald-800' :
+                              isExtend ? 'bg-amber-100 text-amber-800' :
+                              'bg-purple-100 text-purple-800'
+                            }`}>
+                              {isDone ? '✅ Completed' : isExtend ? '⏳ Date Extended' : actionStatus}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-medium">
+                              Logged: {entry["col0"] || "—"}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] mt-1 bg-gray-50 p-2 rounded-lg">
+                            <div>
+                              <span className="text-gray-500 text-[10px]">Target Date Set:</span>
+                              <p className="font-semibold text-gray-800">{entry["col3"] || "—"}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 text-[10px]">Action Remarks:</span>
+                              <p className="font-medium text-gray-700 italic">{entry["col4"] || "No remarks"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-500">
+                    <p className="font-medium">Koi extra extension ya date change record nahi mila.</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Task apne original target date par chal raha hai.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

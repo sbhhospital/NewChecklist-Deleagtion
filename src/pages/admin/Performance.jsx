@@ -956,6 +956,7 @@ export default function PerformanceDashboard() {
             doerOptions={data.doerOptions}
             activeSource={activeSource}
             setActiveSource={handleTabChange}
+            historyData={data.historyData}
             loginHistory={data.loginHistory}
             pointDeductions={data.pointDeductions}
             tabLoading={tabLoading}

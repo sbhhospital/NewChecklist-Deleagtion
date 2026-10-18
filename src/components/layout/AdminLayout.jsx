@@ -1,3 +1,7 @@
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import DailyPunchModal from "../common/DailyPunchModal";
+import { getPunchStatus } from "../../utils/punchService";
 "use client"
 
 import { useState, useEffect, useTransition } from "react"
@@ -9,9 +13,11 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [showExitModal, setShowExitModal] = useState(false)
   const [isDataSubmenuOpen, setIsDataSubmenuOpen] = useState(false)
   const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false)
   const [username, setUsername] = useState("")
+  const [isPunchModalOpen, setIsPunchModalOpen] = useState(false)
   const [userRole, setUserRole] = useState("")
   const [userEmail, setUserEmail] = useState("")
   const [isPending, startTransition] = useTransition()
@@ -27,8 +33,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   }
   // Check authentication on component mount
   useEffect(() => {
-    const storedUsername = sessionStorage.getItem('username')
-    const storedRole = sessionStorage.getItem('role')
+    const storedUsername = (sessionStorage.getItem("username") || localStorage.getItem("username") || "")
+    const storedRole = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user")
     const storedEmail = sessionStorage.getItem('email')
 
     if (!storedUsername) {
@@ -71,11 +77,13 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
   // Handle logout
   const handleLogout = () => {
-    sessionStorage.removeItem('username')
-    sessionStorage.removeItem('role')
-    sessionStorage.removeItem('department')
-    sessionStorage.removeItem('email')
-    navigate("/login")
+    sessionStorage.clear();
+    localStorage.removeItem('username');
+    localStorage.removeItem('role');
+    localStorage.removeItem('email');
+    localStorage.removeItem('department');
+    localStorage.removeItem('isAdmin');
+    navigate("/login");
   }
 
 
@@ -179,7 +187,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   ]
 
   const getAccessibleDepartments = () => {
-    const userRole = sessionStorage.getItem('role') || 'user'
+    const userRole = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user") || 'user'
     return dataCategories.filter(cat =>
       !cat.showFor || cat.showFor.includes(userRole)
     )
@@ -187,7 +195,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
   // Filter routes based on user role
   const getAccessibleRoutes = () => {
-    const userRole = sessionStorage.getItem('role') || 'user'
+    const userRole = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user") || 'user'
     return routes.filter(route =>
       route.showFor.includes(userRole)
     )
@@ -217,7 +225,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
   // Background pre-fetch of performance data for admins
   useEffect(() => {
-    const role = sessionStorage.getItem('role')
+    const role = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user")
     if (role !== 'admin') return
 
     // If already cached and fresh (less than 5 minutes old), don't prefetch
@@ -275,7 +283,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         console.warn("Background prefetch failed", err)
       }
     }
-    
+
     // Defer the fetch slightly (1.5 seconds) so it doesn't slow down the main layout load
     const timer = setTimeout(prefetch, 1500)
     return () => clearTimeout(timer)
@@ -483,7 +491,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       {/* Mobile menu button */}
       <button
         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="md:hidden fixed left-4 top-3 z-[100002] text-blue-700 p-2 rounded-md hover:bg-blue-100 bg-white shadow-md"
+        className="md:hidden fixed left-4 top-4 z-[100002] bg-[#064e3b] text-white p-2.5 rounded-xl border border-emerald-500/50 shadow-xl hover:bg-[#065f46] active:scale-95 transition-all"
       >
         <Menu className="h-5 w-5" />
         <span className="sr-only">Toggle menu</span>
@@ -682,7 +690,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden relative">
-        <header className="flex h-14 items-center justify-center md:justify-between border-b border-blue-200 bg-white px-4 md:px-6 relative md:static">
+        {!location.pathname.toLowerCase().includes("delegation") && (
+        <header className="flex h-14 items-center hidden md:flex justify-between border-b border-blue-200 bg-white px-4 md:px-6 relative md:static">
           <div className="flex md:hidden w-8 absolute left-4"></div>
           <h1 className="text-sm md:text-xl font-bold flex items-center justify-center md:justify-start gap-2 w-full md:w-auto px-12 md:px-0">
             <span className="footer-gradient-text">
@@ -707,62 +716,167 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           </button>
           */}
         </header>
+      )}
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50 relative pb-14 md:pb-16">
+          <DailyPunchModal isOpen={isPunchModalOpen} onClose={() => setIsPunchModalOpen(false)} userName={username} />
           {children}
         </main>
-      </div>
-      <footer 
-        className="fixed left-0 right-0 bottom-0 py-0.5 md:py-1 overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10 text-white z-[2000]"
-        style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
-      >
-        <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
-        <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
 
-          {/* 📱 MOBILE VIEW */}
-          <div className="flex flex-col items-center justify-center md:hidden py-0.5">
-            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
-              <ShieldCheck size={10} className="text-white" />
-              <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
-                SBH Group Of Hospitals
-              </span>
-            </a>
-            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90">
-              <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
-                Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
-              </span>
-              <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
-            </a>
-          </div>
+        
+        {/* 📱 5-Button Brand Styled Mobile Bottom Dock */}
+        {Capacitor.isNativePlatform() && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0f172a]/95 backdrop-blur-xl border-t border-emerald-500/40 px-2 pt-1.5 pb-1 z-[2500] shadow-[0_-10px_30px_rgba(0,0,0,0.6)]">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <Link
+              to="/dashboard/admin"
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1 rounded-xl transition-all ${
+                location.pathname === '/dashboard/admin' ? 'bg-[#387f39] text-white font-black shadow-md shadow-emerald-700/40' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Home className="h-4 w-4" />
+              <span className="text-[9px] font-bold tracking-tight">Home</span>
+            </Link>
 
-          {/* 💻 DESKTOP VIEW */}
-          <div className="hidden md:flex items-center justify-between gap-6 h-6">
-            <div className="flex items-center gap-2.5">
-              <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
-                <Activity size={11} className="text-white" />
-              </div>
-              <div className="flex flex-col text-left">
-                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
-                <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
-              </div>
-            </div>
+            <Link
+              to="/dashboard/assign-task"
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1 rounded-xl transition-all ${
+                location.pathname === '/dashboard/assign-task' ? 'bg-[#387f39] text-white font-black shadow-md shadow-emerald-700/40' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <CheckSquare className="h-4 w-4" />
+              <span className="text-[9px] font-bold tracking-tight">Assign</span>
+            </Link>
 
-            <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
-              <ShieldCheck size={10} className="text-white" />
-              <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
-                SBH Group Of Hospitals
-              </span>
-            </a>
+            <Link
+              to="/dashboard/data/sales"
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1 rounded-xl transition-all ${
+                location.pathname === '/dashboard/data/sales' ? 'bg-[#387f39] text-white font-black shadow-md shadow-emerald-700/40' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <ClipboardList className="h-4 w-4" />
+              <span className="text-[9px] font-bold tracking-tight">Checklist</span>
+            </Link>
 
-            <a href="https://www.linkedin.com/in/ignamanmishra" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline">
-              <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
-              <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none">
-                Naman Mishra
-                <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
-              </span>
-            </a>
+            <Link
+              to="/dashboard/delegation"
+              className={`flex-1 flex flex-col items-center gap-0.5 py-1 rounded-xl transition-all ${
+                location.pathname === '/dashboard/delegation' ? 'bg-[#387f39] text-white font-black shadow-md shadow-emerald-700/40' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span className="text-[9px] font-bold tracking-tight">Delegation</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setShowExitModal(true)}
+              className="flex-1 flex flex-col items-center gap-0.5 text-rose-400 hover:text-rose-300 py-1 rounded-xl hover:bg-rose-500/10 transition-all"
+              title="Exit App"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="text-[9px] font-bold tracking-tight">Exit</span>
+            </button>
           </div>
         </div>
-      </footer>
+      )}
+
+      {!Capacitor.isNativePlatform() && (
+        <footer 
+          className="fixed bottom-0 left-0 right-0 w-full py-0.5 md:py-1 z-[2000] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
+          style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
+        >
+          <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
+          <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
+
+            {/* 📱 MOBILE WEB VIEW */}
+            <div className="flex flex-col items-center justify-center md:hidden py-0.5">
+              <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
+                <ShieldCheck size={10} className="text-white" />
+                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
+                  SBH Group Of Hospitals
+                </span>
+              </a>
+              <a href="https://www.linkedin.com/in/naman-mishra/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90 hover:opacity-100">
+                <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
+                  Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
+                </span>
+                <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
+              </a>
+            </div>
+
+            {/* 💻 DESKTOP WEB VIEW */}
+            <div className="hidden md:flex items-center justify-between gap-6 h-6 text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
+                  <Activity size={11} className="text-white" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
+                  <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
+                </div>
+              </div>
+
+              <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
+                <ShieldCheck size={10} className="text-white" />
+                <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
+                  SBH Group Of Hospitals
+                </span>
+              </a>
+
+              <a href="https://www.linkedin.com/in/naman-mishra/" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline hover:opacity-90">
+                <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
+                <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none text-white">
+                  Naman Mishra
+                  <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
+                </span>
+              </a>
+            </div>
+          </div>
+        </footer>
+      )}
+
+      {/* 📱 Sleek Exit Confirmation Popup Modal for Mobile APK */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-rose-500/40 p-6 text-white text-center shadow-2xl space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-rose-500 via-pink-600 to-rose-700 text-white flex items-center justify-center mx-auto shadow-xl shadow-rose-500/40 scale-105 border border-rose-300/30">
+              <LogOut className="w-8 h-8 stroke-[2.5]" />
+            </div>
+            
+            <div>
+              <h3 className="text-xl font-black text-white tracking-tight">Exit SBH App?</h3>
+              <p className="text-xs text-slate-300 font-semibold mt-1.5 leading-relaxed">
+                Aap logged in hi rahenge. Agli baar App kholne par re-login nahi karna padega.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExitModal(false)}
+                className="py-3.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs border border-slate-700 transition-all active:scale-95 shadow-md"
+              >
+                Cancel
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    App.exitApp();
+                  } catch (e) {
+                    window.close();
+                  }
+                }}
+                className="py-3.5 px-4 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-600 to-rose-700 hover:from-rose-600 hover:to-pink-800 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-rose-500/40 transition-all active:scale-95 border border-rose-300/30"
+              >
+                Exit App
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
     </div>
   );
 }

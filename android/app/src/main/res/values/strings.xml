@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SBHCD</string>
+    <string name="title_activity_main">SBHCD</string>
+    <string name="package_name">com.sbh.cdmsbh</string>
+    <string name="custom_url_scheme">com.sbh.cdmsbh</string>
+</resources>

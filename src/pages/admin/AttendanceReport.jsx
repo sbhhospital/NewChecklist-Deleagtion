@@ -1035,34 +1035,34 @@ export default function AttendanceReport() {
       <div className="space-y-6 pb-16">
         
         {/* Top Header Card */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
-          <div className="space-y-1 z-10">
+        <div className="bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 relative overflow-hidden">
+          <div className="space-y-0.5 z-10">
             <div className="flex items-center gap-2">
-              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm w-fit">
-                <Sparkles className="h-3 w-3 text-purple-600 animate-pulse" />
+              <span className="bg-purple-50 text-purple-700 border border-purple-100 text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs w-fit">
+                <Sparkles className="h-2.5 w-2.5 text-purple-600 animate-pulse" />
                 SBH Group of Hospitals
               </span>
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 leading-none">
+                User Login & Attendance Report
+              </h1>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight mt-2 text-slate-900">
-              User Login & Attendance Report
-            </h1>
-            <p className="text-slate-500 text-sm max-w-xl font-medium">
+            <p className="text-slate-500 text-[11px] font-medium leading-none">
               Real-time attendance matrices, daily logs tracking, streaks calculations, and custom time range downloads.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 z-10">
+          <div className="flex items-center gap-2 z-10 shrink-0">
             <button
               onClick={handleDownloadExcel}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-lg shadow-emerald-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer text-sm"
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-xs cursor-pointer"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
               Download Excel
             </button>
             <button
               onClick={handleDownloadPDF}
-              className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold px-5 py-2.5 rounded-xl shadow-lg shadow-purple-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer text-sm"
+              className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-xs cursor-pointer"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
               Download PDF
             </button>
           </div>

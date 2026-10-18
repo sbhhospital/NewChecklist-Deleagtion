@@ -899,7 +899,7 @@ export default function UserManagement() {
                       required
                       value={userForm.username}
                       onChange={(e) => setUserForm(prev => ({ ...prev, username: e.target.value }))}
-                      placeholder="e.g. NAMAN MISHRA"
+                      placeholder="e.g. SBH OPERATIONS"
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20 outline-none text-sm font-semibold transition-all"
                     />
                   </div>

@@ -1,12 +1,17 @@
+import { Capacitor } from "@capacitor/core";
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 const SessionTimeout = () => {
+    const isNative = Capacitor.isNativePlatform();
     const navigate = useNavigate();
     // Use a ref to track the session start time
     const sessionStartRef = useRef(Date.now());
 
     useEffect(() => {
+        // Native APK never times out - keep session active
+        if (isNative) return;
+
         // 30 minutes in milliseconds
         const TIMEOUT_MS = 30 * 60 * 1000;
         // Check every second (to update checks)
@@ -27,7 +32,7 @@ const SessionTimeout = () => {
                 if (now - startTime > TIMEOUT_MS) {
                     console.log("Session expired (on load)");
                     sessionStorage.clear();
-                    window.location.href = "/login";
+                    navigate("/login");
                     return;
                 }
 
@@ -83,7 +88,7 @@ const SessionTimeout = () => {
                 if (now - startTime > TIMEOUT_MS) {
                     console.log("Session expired due to time limit");
                     sessionStorage.clear();
-                    window.location.href = "/login";
+                    navigate("/login");
                 }
             }
         };
@@ -99,7 +104,7 @@ const SessionTimeout = () => {
             window.removeEventListener('click', handleActivity);
             window.removeEventListener('scroll', handleActivity);
         };
-    }, [navigate]);
+    }, [isNative, navigate]);
 
     return null;
 };
