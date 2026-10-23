@@ -918,10 +918,10 @@ function AccountDataPage() {
   }, [])
 
   const getFilteredMembersList = useCallback(() => {
-    if (userRole === "admin") {
+    if ((userRole || "").toLowerCase() === "admin") {
       return membersList
     } else {
-      return membersList.filter((member) => member.toLowerCase() === username.toLowerCase())
+      return membersList.filter((member) => String(member || "").toLowerCase() === String(username || "").toLowerCase())
     }
   }, [membersList, userRole, username])
 
@@ -951,8 +951,8 @@ function AccountDataPage() {
         }
       }
 
-      const currentUsername = sessionStorage.getItem("username")
-      const currentUserRole = sessionStorage.getItem("role")
+      const currentUsername = (sessionStorage.getItem("username") || localStorage.getItem("username") || "").trim()
+      const currentUserRole = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user").trim()
       const today = new Date()
       const tomorrow = new Date(today)
       tomorrow.setDate(today.getDate() + 1)
@@ -1048,13 +1048,16 @@ function AccountDataPage() {
           return
         }
 
-        const assignedTo = rowValues[4] || "Unassigned"
+        const assignedToStr = String(rowValues[4] || "Unassigned").trim()
+        const assignedTo = assignedToStr
         // Only add to dropdown if user is active (or if master fetch failed)
-        if (!activeUsersSet || activeUsersSet.has(assignedTo.trim().toLowerCase())) {
-          membersSet.add(assignedTo)
+        if (!activeUsersSet || activeUsersSet.has(assignedToStr.toLowerCase())) {
+          membersSet.add(assignedToStr)
         }
-        const isUserMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
-        if (!isUserMatch && currentUserRole !== "admin") return
+        const safeCurrentUsername = String(currentUsername || "").toLowerCase()
+        const safeUserRole = String(currentUserRole || "").toLowerCase()
+        const isUserMatch = safeUserRole === "admin" || (assignedToStr && safeCurrentUsername && assignedToStr.toLowerCase() === safeCurrentUsername)
+        if (!isUserMatch && safeUserRole !== "admin") return
 
         const columnGValue = rowValues[6] // Task Start Date
         const columnKValue = rowValues[10] // Actual Date
@@ -1139,7 +1142,7 @@ function AccountDataPage() {
         // HISTORY LOGIC: For history, collect ALL tasks that have Column K filled (completed tasks) OR are marked as Leave using Column Q
         // Note: Leave tasks usually have Column K filled with the date they were marked as Leave, but checking Q is safer.
         if ((hasColumnG && hasColumnK) || (hasColumnG && isLeave)) {
-          const isUserHistoryMatch = currentUserRole === "admin" || assignedTo.toLowerCase() === currentUsername.toLowerCase()
+          const isUserHistoryMatch = safeUserRole === "admin" || (assignedToStr && safeCurrentUsername && assignedToStr.toLowerCase() === safeCurrentUsername)
           if (isUserHistoryMatch) {
             historyRows.push(rowData)
           }
@@ -1356,10 +1359,14 @@ function AccountDataPage() {
                 method: "POST",
                 body: formData,
               });
-              return response.json();
-            })
-            .then((result) => {
-              if (result.success) {
+              const resText = await response.text();
+              let result = {};
+              try {
+                result = JSON.parse(resText);
+              } catch (e) {
+                result = { success: false, error: resText };
+              }
+              if (result && result.success) {
                 return { id, imageUrl: result.fileUrl };
               }
               return { id, imageUrl: "" };
@@ -1424,8 +1431,19 @@ function AccountDataPage() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
-      if (!result.success) {
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes("Google Apps Script is running") || responseText.includes("success") || responseText.toLowerCase().includes("ok")) {
+          result = { success: true };
+        } else {
+          throw new Error(responseText.slice(0, 100));
+        }
+      }
+
+      if (result && result.success === false) {
         throw new Error(result.error || "Failed to update sheet");
       }
 
@@ -2419,7 +2437,7 @@ function AccountDataPage() {
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden sm:block h-[calc(100vh-250px)] overflow-auto">
+              <div className="hidden sm:block h-[calc(100vh-250px)] overflow-auto table-scrollbar">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0 z-10">
                     <tr>

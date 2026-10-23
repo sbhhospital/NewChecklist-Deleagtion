@@ -77,6 +77,19 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
   // Handle logout
   const handleLogout = () => {
+    const user = sessionStorage.getItem('username');
+    if (user) {
+      try {
+        const payload = new FormData();
+        payload.append("action", "recordLogout");
+        payload.append("username", user);
+        fetch("https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec", {
+          method: "POST",
+          mode: "no-cors",
+          body: payload
+        }).catch(() => {});
+      } catch (e) {}
+    }
     sessionStorage.clear();
     localStorage.removeItem('username');
     localStorage.removeItem('role');
@@ -322,7 +335,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             onClick={(e) => handleNavClick(e, "/dashboard/admin")}
             className="flex items-center gap-2 font-semibold text-[#387f39]"
           >
-            <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8 animate-pulse" />
+            <img src={sbhLogo} alt="Checklist & Delegation" className="ml-5 h-8 object-contain" />
           </Link>
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
@@ -488,32 +501,31 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         </div>
       </aside>
 
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        className="md:hidden fixed left-4 top-4 z-[100002] bg-[#064e3b] text-white p-2.5 rounded-xl border border-emerald-500/50 shadow-xl hover:bg-[#065f46] active:scale-95 transition-all"
-      >
-        <Menu className="h-5 w-5" />
-        <span className="sr-only">Toggle menu</span>
-      </button>
-
       {/* Mobile sidebar */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-[100001] md:hidden">
           <div
-            className="fixed inset-0 bg-black/20"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setIsMobileMenuOpen(false)}
           ></div>
-          <div className="fixed inset-y-0 left-0 w-64 menu-container-bg shadow-lg flex flex-col justify-between">
+          <div className="fixed inset-y-0 left-0 w-64 menu-container-bg shadow-2xl flex flex-col justify-between">
             <div>
-              <div className="flex h-14 items-center border-b border-slate-200 px-4 menu-header-gradient">
+              <div className="flex h-14 items-center justify-between border-b border-slate-200 px-4 menu-header-gradient">
                 <Link
                   to="/dashboard/admin"
                   onClick={(e) => handleNavClick(e, "/dashboard/admin")}
                   className="flex items-center gap-2 font-semibold text-[#387f39]"
                 >
-                  <img src={sbhLogo} alt="Checklist & Delegation" className="ml-12 h-6 object-contain" />
+                  <img src={sbhLogo} alt="Checklist & Delegation" className="h-7 object-contain" />
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg active:scale-95 transition-all cursor-pointer"
+                  title="Close Menu"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
               <nav className="flex-1 overflow-y-auto p-2 menu-container-bg">
                 <ul className="space-y-1">
@@ -690,9 +702,36 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden relative">
-        {!location.pathname.toLowerCase().includes("delegation") && (
-        <header className="flex h-14 items-center hidden md:flex justify-between border-b border-blue-200 bg-white px-4 md:px-6 relative md:static">
-          <div className="flex md:hidden w-8 absolute left-4"></div>
+        {/* 📱 Sleek Dedicated Mobile Top Bar (No overlap with content!) */}
+        <header className="md:hidden flex h-14 items-center justify-between border-b border-emerald-500/20 bg-white px-3 z-40 shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="bg-[#064e3b] text-white p-2 rounded-xl border border-emerald-500/50 shadow-md hover:bg-[#065f46] active:scale-95 transition-all cursor-pointer"
+              title="Open Navigation Menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <img src={sbhLogo} alt="SBH Logo" className="h-7 w-auto object-contain" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-black text-slate-700 max-w-[120px] truncate uppercase tracking-tight">
+              {username || "STAFF"}
+            </span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg active:scale-95 transition-all cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* 💻 Desktop Header */}
+        <header className="hidden md:flex h-14 items-center justify-between border-b border-blue-200 bg-white px-4 md:px-6 relative md:static flex-shrink-0">
           <h1 className="text-sm md:text-xl font-bold flex items-center justify-center md:justify-start gap-2 w-full md:w-auto px-12 md:px-0">
             <span className="footer-gradient-text">
               {(() => {
@@ -706,17 +745,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             </span>
             <span className="animate-bounce inline-block text-2xl md:text-xl3">👋</span>
           </h1>
-          {/*<button
-            onClick={() => setIsLicenseModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
-            title="License & Help"
-          >
-            <FileText className="h-4 w-4" />
-            <span className="text-sm font-medium">License</span>
-          </button>
-          */}
         </header>
-      )}
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-gradient-to-br from-blue-50 to-purple-50 relative pb-14 md:pb-16">
           <DailyPunchModal isOpen={isPunchModalOpen} onClose={() => setIsPunchModalOpen(false)} userName={username} />
           {children}
@@ -846,7 +875,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
             <div>
               <h3 className="text-xl font-black text-white tracking-tight">Exit SBH App?</h3>
               <p className="text-xs text-slate-300 font-semibold mt-1.5 leading-relaxed">
-                Aap logged in hi rahenge. Agli baar App kholne par re-login nahi karna padega.
+                You will stay logged in on this device for fast access next time.
               </p>
             </div>
 

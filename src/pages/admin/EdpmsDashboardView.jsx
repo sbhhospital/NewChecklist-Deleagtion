@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useRef, useEffect, useDeferredValue } from "react"
+import { createPortal } from "react-dom"
 import {
   TrendingUp,
   AlertTriangle,
@@ -2567,7 +2568,7 @@ export default function EdpmsDashboardView({
                     <tbody className="divide-y divide-slate-100 text-xs">
                       {displayTasksList.map((task, idx) => {
                         const taskHistoryEntries = historyData ? historyData.filter(
-                          (h) => String(h["col1"]).trim() === String(task.id).trim()
+                          (h) => String(h["col1"] || h.taskId || "").trim() === String(task.id).trim()
                         ) : [];
                         const extCount = task.extensionCount ?? 0;
 
@@ -2890,37 +2891,41 @@ export default function EdpmsDashboardView({
       )}
 
       {/* Task Extension & Date Change History Modal */}
-      {extensionModal.isOpen && extensionModal.task && (
+      {extensionModal.isOpen && extensionModal.task && typeof document !== "undefined" && createPortal(
         <div 
           className="fixed inset-0 bg-black/60 flex items-center justify-center p-4"
-          style={{ zIndex: 99999 }}
+          style={{ zIndex: 999999 }}
           onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
         >
           <div 
             className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-purple-700 to-indigo-700 p-4 text-white flex items-center justify-between">
+            {/* Modal Header with vibrant linear gradient and crisp typography */}
+            <div 
+              style={{ background: "linear-gradient(135deg, #6b21a8 0%, #4338ca 100%)", backgroundColor: "#6b21a8" }}
+              className="p-4 text-white flex items-center justify-between shadow-md"
+            >
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
+                  <span className="text-xs bg-white/25 text-white px-2.5 py-0.5 rounded-full font-extrabold tracking-wide border border-white/20">
                     #{extensionModal.task.id}
                   </span>
-                  <h3 className="text-base font-bold">
+                  <h3 className="text-base font-bold text-white tracking-wide">
                     Task Dates & Extension History
                   </h3>
                 </div>
-                <p className="text-xs text-purple-100 mt-1 line-clamp-1">
+                <p className="text-xs text-purple-100 font-medium mt-1 line-clamp-1">
                   {extensionModal.task.title}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
-                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                className="text-white hover:text-white/80 p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                title="Close"
               >
-                <X className="h-5 w-5" />
+                <X className="h-5 w-5 text-white" />
               </button>
             </div>
 
@@ -2965,7 +2970,7 @@ export default function EdpmsDashboardView({
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
                     <span>Timeline of Date Changes & Completions</span>
-                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px]">
+                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
                       {extensionModal.historyEntries.length} Records
                     </span>
                   </h4>
@@ -2974,7 +2979,7 @@ export default function EdpmsDashboardView({
                 {extensionModal.historyEntries && extensionModal.historyEntries.length > 0 ? (
                   <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 shadow-sm">
                     {extensionModal.historyEntries.map((entry, idx) => {
-                      const actionStatus = entry["col2"] || "—";
+                      const actionStatus = entry["col2"] || entry.action || "—";
                       const isDone = actionStatus.toLowerCase() === "done" || actionStatus.toLowerCase().includes("done");
                       const isExtend = actionStatus.toLowerCase().includes("extend");
 
@@ -2989,28 +2994,34 @@ export default function EdpmsDashboardView({
                               {isDone ? '✅ Completed' : isExtend ? '⏳ Date Extended' : actionStatus}
                             </span>
                             <span className="text-[10px] text-gray-500 font-medium">
-                              Logged: {entry["col0"] || "—"}
+                              Logged: <strong className="text-gray-700">{entry["col0"] || "—"}</strong>
                             </span>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 text-[11px] mt-1 bg-gray-50 p-2 rounded-lg">
                             <div>
-                              <span className="text-gray-500 text-[10px]">Target Date Set:</span>
-                              <p className="font-semibold text-gray-800">{entry["col3"] || "—"}</p>
+                              <span className="text-gray-500 text-[10px] font-semibold">Target Date Set:</span>
+                              <p className="font-bold text-purple-700">{entry["col3"] || entry["col10"] || "—"}</p>
                             </div>
                             <div>
-                              <span className="text-gray-500 text-[10px]">Action Remarks:</span>
+                              <span className="text-gray-500 text-[10px] font-semibold">Action Remarks:</span>
                               <p className="font-medium text-gray-700 italic">{entry["col4"] || "No remarks"}</p>
                             </div>
                           </div>
+
+                          {entry["col7"] && (
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              Submitted by: <span className="font-semibold text-gray-600">{entry["col7"]}</span>
+                            </p>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="text-center py-6 bg-gray-50 rounded-xl border border-gray-100 text-gray-500">
-                    <p className="font-medium">Koi extra extension ya date change record nahi mila.</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Task apne original target date par chal raha hai.</p>
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-500">
+                    <p className="font-semibold text-slate-700 text-xs">No past extension or completion records found for this task.</p>
+                    <p className="text-[11px] text-slate-400 mt-1">This task is progressing on its original schedule.</p>
                   </div>
                 )}
               </div>
@@ -3021,13 +3032,14 @@ export default function EdpmsDashboardView({
               <button
                 type="button"
                 onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
-                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer shadow-sm"
               >
                 Close
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

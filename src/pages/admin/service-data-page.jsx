@@ -337,9 +337,19 @@ const confirmMarkDone = async () => {
       body: formData
     });
 
-    const result = await response.json();
+    const responseText = await response.text();
+    let result = null;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      if (responseText && (responseText.toLowerCase().includes("google") || responseText.toLowerCase().includes("success"))) {
+        result = { success: true };
+      } else {
+        result = { success: false, error: responseText };
+      }
+    }
     
-    if (result.success) {
+    if (result && (result.success || response.ok)) {
       // Remove the marked tasks from history data
       setHistoryData(prev => prev.filter(item => 
         !selectedHistoryItems.some(selectedItem => selectedItem._id === item._id)
@@ -616,9 +626,19 @@ const confirmMarkDone = async () => {
         body: formData
       })
 
-      const result = await response.json()
+      const responseText = await response.text();
+      let result = null;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText && (responseText.toLowerCase().includes("google") || responseText.toLowerCase().includes("success"))) {
+          result = { success: true };
+        } else {
+          result = { success: false, error: responseText };
+        }
+      }
       
-      if (result.success) {
+      if (result && (result.success || response.ok)) {
         setAccountData(prev => prev.map(item =>
           selectedItems.includes(item._id)
             ? {...item, status: "completed", image: null}

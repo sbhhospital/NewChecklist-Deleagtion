@@ -33,6 +33,19 @@ const UserLayout = ({ children }) => {
 
   // Logout handler
   const handleLogout = () => {
+    const user = sessionStorage.getItem('username');
+    if (user) {
+      try {
+        const payload = new FormData();
+        payload.append("action", "recordLogout");
+        payload.append("username", user);
+        fetch("https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec", {
+          method: "POST",
+          mode: "no-cors",
+          body: payload
+        }).catch(() => {});
+      } catch (e) {}
+    }
     sessionStorage.clear();
     localStorage.removeItem('username');
     localStorage.removeItem('role');

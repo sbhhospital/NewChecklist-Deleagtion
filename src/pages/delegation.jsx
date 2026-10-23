@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import {
   CheckCircle2,
@@ -103,6 +104,21 @@ const parseDateFromDDMMYYYY = (dateStr) => {
     return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
   }
   return null;
+};
+
+const toInputDateFormat = (dateStr) => {
+  if (!dateStr) return "";
+  const s = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.includes("/")) {
+    const parts = s.split("/");
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      const cleanYear = year.length === 4 ? year : (year.length === 2 ? `20${year}` : year);
+      return `${cleanYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+  }
+  return "";
 };
 
 const parseDateValue = (cell) => {
@@ -1593,8 +1609,19 @@ function DelegationDataPage() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
-      if (!result.success) {
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes("Google Apps Script is running") || responseText.includes("success") || responseText.toLowerCase().includes("ok")) {
+          result = { success: true };
+        } else {
+          throw new Error(responseText.slice(0, 100));
+        }
+      }
+
+      if (result && result.success === false) {
         throw new Error(result.error || "Failed to update Verify Pending tasks");
       }
 
@@ -1717,8 +1744,14 @@ function DelegationDataPage() {
               redirect: "follow",
             });
 
-            const uploadResult = await uploadResponse.json();
-            if (uploadResult.success) {
+            const uploadText = await uploadResponse.text();
+            let uploadResult = {};
+            try {
+              uploadResult = JSON.parse(uploadText);
+            } catch (e) {
+              uploadResult = { success: false, error: uploadText };
+            }
+            if (uploadResult && uploadResult.success) {
               imageUrl = uploadResult.fileUrl;
             }
           } catch (uploadError) {
@@ -1786,8 +1819,19 @@ function DelegationDataPage() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
-      if (!result.success) {
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes("Google Apps Script is running") || responseText.includes("success") || responseText.toLowerCase().includes("ok")) {
+          result = { success: true };
+        } else {
+          throw new Error(responseText.slice(0, 100));
+        }
+      }
+
+      if (result && result.success === false) {
         throw new Error(result.error || "Failed to batch insert regular tasks");
       }
 
@@ -1818,9 +1862,19 @@ function DelegationDataPage() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes("Google Apps Script is running") || responseText.includes("success") || responseText.toLowerCase().includes("ok")) {
+          result = { success: true };
+        } else {
+          throw new Error(responseText.slice(0, 100));
+        }
+      }
 
-      if (result.success) {
+      if (result && result.success) {
         // Update local state
         setHistoryData((prev) =>
           prev.map((item) =>
@@ -1865,13 +1919,20 @@ function DelegationDataPage() {
 
   // NEW: Confirmation modal component
   const ConfirmationModal = ({ isOpen, itemCount, onConfirm, onCancel }) => {
-    if (!isOpen) return null;
+    if (!isOpen || typeof document === "undefined") return null;
 
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(4px)' }}>
-        <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+    return createPortal(
+      <div 
+        className="fixed inset-0 flex items-center justify-center p-4 bg-black/60" 
+        style={{ zIndex: 999999 }}
+        onClick={onCancel}
+      >
+        <div 
+          className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-purple-100 animate-fade-in"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-center mb-4">
-            <div className="bg-yellow-100 text-yellow-600 rounded-full p-3 mr-4">
+            <div className="bg-amber-100 text-amber-600 rounded-full p-3 mr-3">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-6 w-6"
@@ -1892,27 +1953,28 @@ function DelegationDataPage() {
             </h2>
           </div>
 
-          <p className="text-gray-600 text-center mb-6">
+          <p className="text-gray-600 text-center mb-6 text-sm font-medium">
             Are you sure you want to mark {itemCount}{" "}
             {itemCount === 1 ? "item" : "items"} as Admin Done?
           </p>
 
-          <div className="flex justify-center space-x-4">
+          <div className="flex justify-center space-x-3">
             <button
               onClick={onCancel}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+              className="px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+              className="px-5 py-2 bg-green-600 text-white font-bold text-xs rounded-xl hover:bg-green-700 shadow-md transition-colors cursor-pointer"
             >
               Confirm
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   };
 
@@ -1941,8 +2003,19 @@ function DelegationDataPage() {
       if (!response.ok)
         throw new Error(`HTTP error! status: ${response.status}`);
 
-      const result = await response.json();
-      if (result.success) {
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText.includes("Google Apps Script is running") || responseText.includes("success") || responseText.toLowerCase().includes("ok")) {
+          result = { success: true };
+        } else {
+          throw new Error(responseText.slice(0, 100));
+        }
+      }
+
+      if (result && result.success) {
         // Update local state to reflect the changes without refetching
         setHistoryData((prev) =>
           prev.map((item) => {
@@ -2144,14 +2217,14 @@ function DelegationDataPage() {
                 <span className="font-semibold text-gray-500">From:</span>
                 <input
                   type="date"
-                  value={dateRange.start}
+                  value={toInputDateFormat(dateRange.start)}
                   onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
                   className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none"
                 />
                 <span className="font-semibold text-gray-500">To:</span>
                 <input
                   type="date"
-                  value={dateRange.end}
+                  value={toInputDateFormat(dateRange.end)}
                   onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
                   className="border border-purple-200 rounded-md px-2 py-1 text-xs focus:outline-none"
                 />
@@ -2245,7 +2318,7 @@ function DelegationDataPage() {
                         <input
                           id="start-date"
                           type="date"
-                          value={startDate}
+                          value={toInputDateFormat(startDate)}
                           onChange={(e) => setStartDate(e.target.value)}
                           className="text-sm border border-gray-200 rounded-md p-1"
                         />
@@ -2260,7 +2333,7 @@ function DelegationDataPage() {
                         <input
                           id="end-date"
                           type="date"
-                          value={endDate}
+                          value={toInputDateFormat(endDate)}
                           onChange={(e) => setEndDate(e.target.value)}
                           className="text-sm border border-gray-200 rounded-md p-1"
                         />
@@ -2767,7 +2840,7 @@ function DelegationDataPage() {
                                   <input
                                     type="date"
                                     disabled={isTaskDisabled(account["col20"], userRole)}
-                                    value={nextTargetDate[account._id] || ""}
+                                    value={toInputDateFormat(nextTargetDate[account._id])}
                                     onChange={(e) => handleNextTargetDateChange(account._id, e.target.value)}
                                     className="mt-1 block w-full border rounded-md px-2 py-1 text-sm border-gray-300 disabled:bg-gray-100"
                                   />
@@ -2803,10 +2876,10 @@ function DelegationDataPage() {
               </div>
 
               {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto sticky top-0 max-h-[calc(100vh-170px)] overflow-y-auto">
+              <div className="hidden md:block overflow-x-auto overflow-y-auto h-[calc(100vh-270px)] max-h-[calc(100vh-270px)] table-scrollbar">
                 <div className="min-w-full">
                   <table className="min-w-full divide-y divide-gray-200 text-[11px] leading-tight border-collapse">
-                    <thead className="bg-gray-100/90 backdrop-blur-sm sticky top-0 z-10 border-b border-gray-300 shadow-sm">
+                    <thead className="bg-slate-100 sticky top-0 z-10 border-b border-gray-300 shadow-sm">
                       <tr>
                         {/* 1. Checkbox */}
                         <th className="px-2 py-2 text-center font-bold text-gray-700 uppercase tracking-wider w-8 whitespace-nowrap">
@@ -3113,23 +3186,7 @@ function DelegationDataPage() {
                                     statusData[account._id] !== "Extend date" ||
                                     isTaskDisabled(account["col20"], userRole)
                                   }
-                                  value={
-                                    nextTargetDate[account._id]
-                                      ? (() => {
-                                        const dateStr =
-                                          nextTargetDate[account._id];
-                                        if (dateStr && dateStr.includes("/")) {
-                                          const [day, month, year] =
-                                            dateStr.split("/");
-                                          return `${year}-${month.padStart(
-                                            2,
-                                            "0"
-                                          )}-${day.padStart(2, "0")}`;
-                                        }
-                                        return dateStr;
-                                      })()
-                                      : ""
-                                  }
+                                  value={toInputDateFormat(nextTargetDate[account._id])}
                                   onChange={(e) => {
                                     const inputDate = e.target.value;
                                     if (inputDate) {
@@ -3229,30 +3286,38 @@ function DelegationDataPage() {
           )}
         </div>
         {/* Task Extension & Date Change History Modal */}
-        {extensionModal.isOpen && extensionModal.task && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+        {extensionModal.isOpen && extensionModal.task && typeof document !== "undefined" && createPortal(
+          <div 
+            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 animate-fade-in"
+            style={{ zIndex: 999999 }}
+            onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
+          >
             <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-200">
               {/* Modal Header */}
-              <div className="bg-gradient-to-r from-purple-700 to-indigo-700 p-4 text-white flex items-center justify-between">
+              <div 
+                style={{ background: "linear-gradient(135deg, #6b21a8 0%, #4338ca 100%)", backgroundColor: "#6b21a8" }}
+                className="p-4 text-white flex items-center justify-between shadow-md"
+              >
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
+                    <span className="text-xs bg-white/25 text-white px-2.5 py-0.5 rounded-full font-extrabold tracking-wide border border-white/20">
                       #{extensionModal.task["col1"]}
                     </span>
-                    <h3 className="text-base font-bold">
+                    <h3 className="text-base font-bold text-white tracking-wide">
                       Task Dates & Extension History
                     </h3>
                   </div>
-                  <p className="text-xs text-purple-100 mt-1 line-clamp-1">
+                  <p className="text-xs text-purple-100 font-medium mt-1 line-clamp-1">
                     {extensionModal.task["col5"]}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
-                  className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors"
+                  className="text-white hover:text-white/80 p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Close"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-5 w-5 text-white" />
                 </button>
               </div>
 
@@ -3297,7 +3362,7 @@ function DelegationDataPage() {
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
                       <span>Timeline of Date Changes & Completions</span>
-                      <span className="bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded text-[10px]">
+                      <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
                         {extensionModal.historyEntries.length} Records
                       </span>
                     </h4>
@@ -3311,7 +3376,7 @@ function DelegationDataPage() {
                         const isExtend = actionStatus.toLowerCase().includes("extend");
 
                         return (
-                          <div key={idx} className="p-3 bg-white hover:bg-gray-50 flex items-start gap-3">
+                          <div key={idx} className="p-3 bg-white hover:bg-gray-50 transition-colors flex items-start gap-3">
                             <span className="text-base mt-0.5">
                               {isDone ? "✅" : isExtend ? "🔄" : "📌"}
                             </span>
@@ -3323,7 +3388,7 @@ function DelegationDataPage() {
                                   Action: {actionStatus}
                                 </span>
                                 <span className="text-[10px] text-gray-400">
-                                  Submitted on: <strong className="text-gray-600">{formatDateForDisplay(entry["col0"]) || "—"}</strong>
+                                  Submitted on: <strong className="text-gray-700">{formatDateForDisplay(entry["col0"]) || "—"}</strong>
                                 </span>
                               </div>
 
@@ -3341,7 +3406,7 @@ function DelegationDataPage() {
 
                               {entry["col7"] && (
                                 <p className="text-[10px] text-gray-400 mt-1">
-                                  Submitted by: {entry["col7"]}
+                                  Submitted by: <strong className="text-gray-600">{entry["col7"]}</strong>
                                 </p>
                               )}
                             </div>
@@ -3350,8 +3415,9 @@ function DelegationDataPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="p-4 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-center text-gray-500">
-                      No past extension or completion records for this task yet.
+                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
+                      <p className="font-semibold text-slate-700 text-xs">No past extension or completion records for this task yet.</p>
+                      <p className="text-[11px] text-slate-400 mt-1">This task is progressing on its original schedule.</p>
                     </div>
                   )}
                 </div>
@@ -3362,65 +3428,65 @@ function DelegationDataPage() {
                 <button
                   type="button"
                   onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
-                  className="px-4 py-1.5 bg-purple-700 text-white rounded-lg text-xs font-bold hover:bg-purple-800 transition-colors shadow-sm"
+                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer"
                 >
                   Close
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
-        {/* Funny Select-All Block Warning Modal */}
-        {showSelectAllWarning && (
+        {/* Select-All Block Warning Modal */}
+        {showSelectAllWarning && typeof document !== "undefined" && createPortal(
           <div 
-            className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" 
-            style={{ zIndex: 99999 }}
+            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 animate-fade-in" 
+            style={{ zIndex: 999999 }}
             onClick={() => setShowSelectAllWarning(false)}
           >
             <div 
-              className="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden border border-gray-200 text-center p-5 relative"
+              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-gray-100 text-center p-6 relative"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Close Button */}
               <button
                 type="button"
                 onClick={() => setShowSelectAllWarning(false)}
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 w-8 h-8 flex items-center justify-center text-lg font-bold"
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 w-8 h-8 flex items-center justify-center text-lg font-bold cursor-pointer"
               >
                 ✕
               </button>
 
-              {/* Bada sa Hath aur Hasne ka Emoji */}
-              <div className="text-5xl my-2 flex items-center justify-center gap-2 select-none">
+              <div className="text-4xl my-2 flex items-center justify-center gap-2 select-none">
                 <span>✋</span>
-                <span>😂</span>
+                <span>📋</span>
               </div>
 
               <div className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
-                रुको जरा... सब्र करो!
+                Attention Required
               </div>
 
               <h3 className="text-base font-extrabold text-gray-900 leading-snug">
-                देख भाई, मुझे भी घर जाना है! 🏃‍♂️💨
+                Batch Complete Disabled
               </h3>
 
               <div className="text-xs text-gray-700 mt-3 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100 text-center font-medium">
-                एक ही Click में सारे Task Complete मत मारो! 😜<br />
-                कृपया <strong>एक-एक Task को Check करके</strong> उसका Status और Remark भरें, फिर Submit करें। Shortcut नहीं चलेगा! 📋✨
+                Please inspect each task individually and enter the appropriate status and remarks before submission. Bulk completion is disabled to maintain accurate reporting.
               </div>
 
               <div className="mt-4 flex justify-center">
                 <button
                   type="button"
                   onClick={() => setShowSelectAllWarning(false)}
-                  className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold shadow transition-colors cursor-pointer"
+                  className="w-full py-2.5 px-4 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-sm font-bold shadow transition-colors cursor-pointer"
                 >
-                  ठीक है, एक-एक करके करूँगा 🫡
+                  Understood, I will check individually
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         <ConfirmationModal

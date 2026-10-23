@@ -23,8 +23,8 @@ import Calendar from "./pages/Calendar"
 import SessionTimeout from "./components/SessionTimeout"
 // Auth wrapper component to protect routes
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
-  const username = sessionStorage.getItem("username") || localStorage.getItem("username")
-  const userRole = sessionStorage.getItem("role") || localStorage.getItem("role") || "user"
+  const username = sessionStorage.getItem("username")
+  const userRole = sessionStorage.getItem("role") || "user"
 
   // If no user is logged in, redirect to login
   if (!username) {
@@ -40,16 +40,24 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 }
 
 function App() {
-  // Restore session from localStorage on APK startup/reopen
+  // Clear stale active session from localStorage on Web so browser close requires re-login; restore only on native APK
   useEffect(() => {
-    const savedUser = localStorage.getItem("username");
-    const savedRole = localStorage.getItem("role");
-    if (savedUser && !sessionStorage.getItem("username")) {
-      sessionStorage.setItem("username", savedUser);
-      if (savedRole) sessionStorage.setItem("role", savedRole);
-      if (localStorage.getItem("email")) sessionStorage.setItem("email", localStorage.getItem("email"));
-      if (localStorage.getItem("department")) sessionStorage.setItem("department", localStorage.getItem("department"));
-      if (localStorage.getItem("isAdmin")) sessionStorage.setItem("isAdmin", localStorage.getItem("isAdmin"));
+    if (Capacitor.isNativePlatform()) {
+      const savedUser = localStorage.getItem("username");
+      const savedRole = localStorage.getItem("role");
+      if (savedUser && !sessionStorage.getItem("username")) {
+        sessionStorage.setItem("username", savedUser);
+        if (savedRole) sessionStorage.setItem("role", savedRole);
+        if (localStorage.getItem("email")) sessionStorage.setItem("email", localStorage.getItem("email"));
+        if (localStorage.getItem("department")) sessionStorage.setItem("department", localStorage.getItem("department"));
+        if (localStorage.getItem("isAdmin")) sessionStorage.setItem("isAdmin", localStorage.getItem("isAdmin"));
+      }
+    } else {
+      localStorage.removeItem("username");
+      localStorage.removeItem("role");
+      localStorage.removeItem("department");
+      localStorage.removeItem("isAdmin");
+      localStorage.removeItem("email");
     }
   }, []);
 

@@ -385,9 +385,19 @@ const AllTasks = () => {
             body: formData
           })
           
-          const result = await response.json()
+          const responseText = await response.text()
+          let result = null
+          try {
+            result = JSON.parse(responseText)
+          } catch (e) {
+            if (responseText && (responseText.toLowerCase().includes("google") || responseText.toLowerCase().includes("success"))) {
+              result = { success: true }
+            } else {
+              result = { success: false, error: responseText }
+            }
+          }
           
-          if (result.success) {
+          if (result && (result.success || response.ok)) {
             showToast(`File uploaded successfully: ${file.name}`, "success")
           } else {
             throw new Error(result.error || "Failed to upload file")
@@ -455,9 +465,19 @@ const AllTasks = () => {
         body: formData
       })
 
-      const result = await response.json()
+      const responseText = await response.text()
+      let result = null
+      try {
+        result = JSON.parse(responseText)
+      } catch (e) {
+        if (responseText && (responseText.toLowerCase().includes("google") || responseText.toLowerCase().includes("success"))) {
+          result = { success: true }
+        } else {
+          result = { success: false, error: responseText }
+        }
+      }
 
-      if (result.success) {
+      if (result && (result.success || response.ok)) {
         // Update local state
         setTasks(prevTasks => 
           prevTasks.map(task => 

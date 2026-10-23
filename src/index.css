@@ -218,3 +218,29 @@
     color: transparent !important;
     display: inline-block;
   }
+
+  /* 🌟 High-Visibility Table Horizontal & Vertical Scrollbar */
+  .table-scrollbar {
+    scrollbar-width: auto;
+    scrollbar-color: #9333ea #f1f5f9;
+  }
+
+  .table-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 12px;
+  }
+
+  .table-scrollbar::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 6px;
+  }
+
+  .table-scrollbar::-webkit-scrollbar-thumb {
+    background: #a855f7;
+    border-radius: 6px;
+    border: 2px solid #f1f5f9;
+  }
+
+  .table-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #7e22ce;
+  }

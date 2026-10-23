@@ -571,9 +571,29 @@ export default function PerformanceDashboard() {
           const taskId = getCellValue(row, 1) // col1
           const action = getCellValue(row, 2) // col2
           if (taskId) {
+            const rawCol0 = getCellValue(row, 0)
+            const parsedD0 = parseDateValue(row.c && row.c[0])
+            const formattedD0 = parsedD0 ? formatDateToDDMMYYYY(parsedD0) : (parseGoogleSheetsDate(rawCol0) || "")
+
+            const rawCol3 = getCellValue(row, 3)
+            const parsedD3 = parseDateValue(row.c && row.c[3])
+            const formattedD3 = parsedD3 ? formatDateToDDMMYYYY(parsedD3) : (parseGoogleSheetsDate(rawCol3) || "")
+
+            const rawCol10 = getCellValue(row, 10)
+            const parsedD10 = parseDateValue(row.c && row.c[10])
+            const formattedD10 = parsedD10 ? formatDateToDDMMYYYY(parsedD10) : (parseGoogleSheetsDate(rawCol10) || "")
+
             historyList.push({
               taskId: String(taskId).trim(),
-              action: action ? String(action).trim() : ""
+              action: action ? String(action).trim() : "",
+              col0: formattedD0,
+              col1: String(taskId).trim(),
+              col2: action ? String(action).trim() : "",
+              col3: formattedD3,
+              col4: getCellValue(row, 4) ? String(getCellValue(row, 4)).trim() : "",
+              col6: getCellValue(row, 6) ? String(getCellValue(row, 6)).trim() : "",
+              col7: getCellValue(row, 7) ? String(getCellValue(row, 7)).trim() : "",
+              col10: formattedD10
             })
           }
         })

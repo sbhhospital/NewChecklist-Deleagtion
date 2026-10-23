@@ -14,13 +14,32 @@ import sbhLogo from "../assets/logo.png";
 const LoginPage = () => {
   const navigate = useNavigate();
 
-  // Check if already logged in on mount
+  // Check if already logged in in current browser session
   useEffect(() => {
-    const existingUser = sessionStorage.getItem("username") || localStorage.getItem("username");
+    const existingUser = sessionStorage.getItem("username");
     if (existingUser) {
       navigate("/dashboard/admin", { replace: true });
+    } else {
+      // Clear persistent session credentials on Web so closing page requires re-login
+      if (!Capacitor.isNativePlatform()) {
+        localStorage.removeItem("username");
+        localStorage.removeItem("role");
+        localStorage.removeItem("department");
+        localStorage.removeItem("isAdmin");
+        localStorage.removeItem("email");
+      }
     }
   }, [navigate]);
+
+  // Check if redirected due to inactivity timeout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
+    const reason = params.get("reason") || sessionStorage.getItem("logoutReason");
+    if (reason === "timeout") {
+      showToast("⚠️ Your session has expired due to inactivity. Please log in again.", "info");
+      sessionStorage.removeItem("logoutReason");
+    }
+  }, []);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -36,6 +55,7 @@ const LoginPage = () => {
   // Username dropdown search state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [usernameSearch, setUsernameSearch] = useState("");
+  const [isUserSelectedFromList, setIsUserSelectedFromList] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -57,10 +77,10 @@ const LoginPage = () => {
   }, [masterData.userCredentials]);
 
   const filteredUsers = useMemo(() => {
-    if (!usernameSearch.trim()) return availableUsers;
-    const q = usernameSearch.toLowerCase().trim();
+    const q = (usernameSearch !== "" ? usernameSearch : formData.username || "").toLowerCase().trim();
+    if (!q) return availableUsers;
     return availableUsers.filter((name) => name.toLowerCase().includes(q));
-  }, [availableUsers, usernameSearch]);
+  }, [availableUsers, usernameSearch, formData.username]);
 
   // Captcha and Lockout States
   const [captcha, setCaptcha] = useState({ num1: 0, num2: 0, answer: 0 });
@@ -177,18 +197,31 @@ const LoginPage = () => {
   const executeSuccessfulLogin = (userRecord) => {
     const isAdmin = userRecord.role === "admin";
     
+    // Set active session in sessionStorage (cleared when browser tab/window is closed)
     sessionStorage.setItem("username", userRecord.username);
-    localStorage.setItem("username", userRecord.username);
+    sessionStorage.setItem("email", userRecord.email || "");
+    sessionStorage.setItem("role", isAdmin ? "admin" : "user");
+    sessionStorage.setItem("department", isAdmin ? "all" : userRecord.username);
+    sessionStorage.setItem("isAdmin", isAdmin ? "true" : "false");
+    sessionStorage.setItem("lastActivity", Date.now().toString());
+
+    // Save user for biometric autofill
     localStorage.setItem("saved_biometric_user", userRecord.username);
     if (userRecord.password) localStorage.setItem("saved_biometric_pass", userRecord.password);
-    sessionStorage.setItem("email", userRecord.email || "");
-    localStorage.setItem("email", userRecord.email || "");
-    sessionStorage.setItem("role", isAdmin ? "admin" : "user");
-    localStorage.setItem("role", isAdmin ? "admin" : "user");
-    sessionStorage.setItem("department", isAdmin ? "all" : userRecord.username);
-    localStorage.setItem("department", isAdmin ? "all" : userRecord.username);
-    sessionStorage.setItem("isAdmin", isAdmin ? "true" : "false");
-    localStorage.setItem("isAdmin", isAdmin ? "true" : "false");
+
+    if (Capacitor.isNativePlatform()) {
+      localStorage.setItem("username", userRecord.username);
+      localStorage.setItem("email", userRecord.email || "");
+      localStorage.setItem("role", isAdmin ? "admin" : "user");
+      localStorage.setItem("department", isAdmin ? "all" : userRecord.username);
+      localStorage.setItem("isAdmin", isAdmin ? "true" : "false");
+    } else {
+      localStorage.removeItem("username");
+      localStorage.removeItem("role");
+      localStorage.removeItem("department");
+      localStorage.removeItem("isAdmin");
+      localStorage.removeItem("email");
+    }
 
     logAttendance(userRecord.username, userRecord.role);
     setLoggedInUsername(userRecord.username);
@@ -208,7 +241,14 @@ const LoginPage = () => {
     const lowercaseUsername = trimmedUsername.toLowerCase();
 
     if (!trimmedUsername) {
-      showToast("⚠️ Select your Username from the dropdown!", "error");
+      showToast("⚠️ Please select your Username from the dropdown!", "error");
+      setIsDropdownOpen(true);
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!isUserSelectedFromList) {
+      showToast("⚠️ Please click and select your name from the dropdown list!", "error");
       setIsDropdownOpen(true);
       setIsSubmitting(false);
       return;
@@ -238,7 +278,7 @@ const LoginPage = () => {
   const handleBiometricAuth = () => {
     const savedUser = localStorage.getItem("saved_biometric_user") || localStorage.getItem("username");
     if (!savedUser) {
-      showToast("👈 Pehle ek baar Username & Password se Login karein to save Fingerprint ID!", "error");
+      showToast("👈 Please log in with Username & Password first to save Fingerprint ID!", "info");
       return;
     }
 
@@ -312,32 +352,51 @@ const LoginPage = () => {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Username Dropdown */}
+                {/* Username Searchable Input */}
                 <div className="relative" ref={dropdownRef}>
-                  <label className="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider block mb-1.5">
-                    Select Username / Staff Name
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => { setIsDropdownOpen(!isDropdownOpen); setUsernameSearch(''); }}
-                    className="w-full bg-[#110930] border-2 border-purple-500/40 hover:border-emerald-400 focus:border-emerald-400 rounded-2xl px-4 py-3.5 text-left flex items-center justify-between text-xs font-black text-white shadow-lg transition-all"
-                  >
-                    <span className={formData.username ? "text-emerald-300 font-black text-sm" : "text-purple-200/60 font-bold"}>
-                      {formData.username || "Click to select Username..."}
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-indigo-600" />
-                  </button>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider block">
+                      Select Username / Staff Name
+                    </label>
+                    {isUserSelectedFromList ? (
+                      <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1">✓ Selected</span>
+                    ) : formData.username ? (
+                      <span className="text-[10px] font-bold text-amber-300 animate-pulse">Select from list below</span>
+                    ) : null}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Type or select staff name..."
+                      value={formData.username}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((p) => ({ ...p, username: val }));
+                        setUsernameSearch(val);
+                        setIsUserSelectedFromList(false);
+                        setIsDropdownOpen(true);
+                      }}
+                      onFocus={() => {
+                        setUsernameSearch(formData.username || "");
+                        setIsDropdownOpen(true);
+                      }}
+                      className={`w-full bg-[#110930] border-2 ${isUserSelectedFromList ? "border-emerald-400" : "border-purple-500/40 focus:border-amber-400"} rounded-2xl px-4 py-3.5 pr-10 text-xs font-bold text-white outline-none shadow-lg transition-all placeholder-purple-300/40`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDropdownOpen(!isDropdownOpen);
+                        if (!isDropdownOpen) setUsernameSearch("");
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-300 hover:text-emerald-400 p-1 cursor-pointer"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
 
                   {isDropdownOpen && (
-                    <div className="absolute bottom-full mb-2 left-0 right-0 z-[99999] bg-[#1a0e44] border-2 border-emerald-400/80 rounded-2xl shadow-2xl max-h-56 overflow-y-auto p-3 backdrop-blur-xl animate-fade-in">
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Type to search staff name..."
-                        value={usernameSearch}
-                        onChange={(e) => setUsernameSearch(e.target.value)}
-                        className="w-full p-3 bg-[#0d0626] border border-emerald-400 text-xs font-bold text-white placeholder-emerald-200/50 rounded-xl mb-2 outline-none focus:ring-2 focus:ring-emerald-400 shadow-inner"
-                      />
+                    <div className="absolute bottom-full mb-2 left-0 right-0 z-[99999] bg-[#1a0e44] border-2 border-emerald-400/80 rounded-2xl shadow-2xl max-h-56 overflow-y-auto p-2 backdrop-blur-xl animate-fade-in divide-y divide-purple-500/20">
                       {filteredUsers.length === 0 ? (
                         <div className="p-3 text-center text-xs text-rose-300 font-bold">No staff found</div>
                       ) : (
@@ -345,14 +404,17 @@ const LoginPage = () => {
                           <button
                             key={u}
                             type="button"
-                            onClick={() => {
+                            onMouseDown={(e) => {
+                              e.preventDefault();
                               setFormData((p) => ({ ...p, username: u }));
+                              setUsernameSearch(u);
+                              setIsUserSelectedFromList(true);
                               setIsDropdownOpen(false);
                             }}
-                            className="w-full text-left p-3 hover:bg-emerald-600/30 rounded-xl text-xs font-black text-white border-b border-purple-500/20 active:bg-emerald-500 transition-colors flex items-center justify-between"
+                            className={`w-full text-left p-2.5 hover:bg-emerald-600/30 rounded-xl text-xs font-black transition-colors flex items-center justify-between cursor-pointer ${formData.username === u && isUserSelectedFromList ? "bg-emerald-600/40 text-emerald-300" : "text-white"}`}
                           >
                             <span>{u}</span>
-                            {formData.username === u && <span className="text-emerald-400 font-black">✓</span>}
+                            {formData.username === u && isUserSelectedFromList && <span className="text-emerald-400 font-black">✓ Selected</span>}
                           </button>
                         ))
                       )}
@@ -524,40 +586,70 @@ const LoginPage = () => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative" ref={dropdownRef}>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
-                  SELECT USERNAME / STAFF NAME *
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-left flex items-center justify-between text-xs font-bold text-slate-800 shadow-sm"
-                >
-                  <span className="text-slate-500">{formData.username || "Click to select your Username from list..."}</span>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
-                </button>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                    SELECT USERNAME / STAFF NAME *
+                  </label>
+                  {isUserSelectedFromList ? (
+                    <span className="text-[10px] font-black text-emerald-600 flex items-center gap-1">✓ Selected</span>
+                  ) : formData.username ? (
+                    <span className="text-[10px] font-bold text-amber-600 animate-pulse">Click your name from list below</span>
+                  ) : null}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Type or select your Username..."
+                    value={formData.username}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData((p) => ({ ...p, username: val }));
+                      setUsernameSearch(val);
+                      setIsUserSelectedFromList(false);
+                      setIsDropdownOpen(true);
+                    }}
+                    onFocus={() => {
+                      setUsernameSearch(formData.username || "");
+                      setIsDropdownOpen(true);
+                    }}
+                    className={`w-full ${isUserSelectedFromList ? "bg-emerald-50/30 border-emerald-500" : "bg-slate-50 border-slate-200"} border rounded-xl p-3 pr-10 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-[#15803d] transition-all`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDropdownOpen(!isDropdownOpen);
+                      if (!isDropdownOpen) setUsernameSearch("");
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
 
                 {isDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto p-2">
-                    <input
-                      type="text"
-                      placeholder="Search name..."
-                      value={usernameSearch}
-                      onChange={(e) => setUsernameSearch(e.target.value)}
-                      className="w-full p-2 bg-slate-50 border border-slate-200 text-xs rounded-lg mb-2 outline-none font-semibold text-slate-800"
-                    />
-                    {filteredUsers.map((u) => (
-                      <button
-                        key={u}
-                        type="button"
-                        onClick={() => {
-                          setFormData((p) => ({ ...p, username: u }));
-                          setIsDropdownOpen(false);
-                        }}
-                        className="w-full text-left p-2 hover:bg-emerald-50 rounded-lg text-xs font-bold text-slate-800"
-                      >
-                        {u}
-                      </button>
-                    ))}
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto p-1 divide-y divide-slate-100">
+                    {filteredUsers.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-rose-500 font-semibold">No matching user found</div>
+                    ) : (
+                      filteredUsers.map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setFormData((p) => ({ ...p, username: u }));
+                            setUsernameSearch(u);
+                            setIsUserSelectedFromList(true);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full text-left p-2.5 hover:bg-emerald-50 rounded-lg text-xs font-bold transition-colors flex items-center justify-between cursor-pointer ${formData.username === u && isUserSelectedFromList ? "bg-emerald-50 text-emerald-800 font-extrabold" : "text-slate-800"}`}
+                        >
+                          <span>{u}</span>
+                          {formData.username === u && isUserSelectedFromList && <span className="text-emerald-600 font-bold">✓ Selected</span>}
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -619,21 +711,58 @@ const LoginPage = () => {
         </div>
       )}
 
-      {/* Web Only Footer */}
+      {/* Web Only Footer (Matches Dashboard Layout Footer 100%) */}
       {!isAPK && (
         <footer 
-          className="fixed bottom-0 left-0 w-full py-0.5 md:py-1 z-[150] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
-          style={{ background: "linear-gradient(to right, #f59e0b, #10b981, #2e7d32)" }}
+          className="fixed bottom-0 left-0 right-0 w-full py-0.5 md:py-1 z-[2000] overflow-hidden shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.3)] select-none border-t border-white/10"
+          style={{ background: 'linear-gradient(to right, #f59e0b, #10b981, #2e7d32)' }}
         >
-          <div className="max-w-full mx-auto px-4 md:px-10 relative z-10 flex items-center justify-between h-6 text-white text-[9px] font-black">
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={12} className="text-white" />
-              <span className="uppercase tracking-widest">SBH Group Of Hospitals</span>
+          <div className="absolute inset-0 opacity-10 pointer-events-none bg-white/5"></div>
+          <div className="max-w-full mx-auto px-4 md:px-10 relative z-10">
+
+            {/* 📱 MOBILE WEB VIEW */}
+            <div className="flex flex-col items-center justify-center md:hidden py-0.5">
+              <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 no-underline">
+                <ShieldCheck size={10} className="text-white" />
+                <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">
+                  SBH Group Of Hospitals
+                </span>
+              </a>
+              <a href="https://www.linkedin.com/in/naman-mishra/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90 hover:opacity-100">
+                <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
+                  Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
+                </span>
+                <Linkedin size={7.5} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px]" />
+              </a>
             </div>
-            <a href="#" target="_blank" rel="noopener noreferrer" className="no-underline text-white flex items-center gap-1">
-              <span>Architected by</span>
-              <span className="text-amber-200">SBH Operations</span>
-            </a>
+
+            {/* 💻 DESKTOP WEB VIEW */}
+            <div className="hidden md:flex items-center justify-between gap-6 h-6 text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-5.5 h-5.5 rounded-md bg-white/20 flex items-center justify-center border border-white/30 backdrop-blur-md shadow-sm">
+                  <Activity size={11} className="text-white" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[9px] font-black text-white uppercase tracking-widest leading-none">SBH INTEL</span>
+                  <span className="text-[7px] font-extrabold text-white/80 tracking-wider mt-0.5">SYSTEM OPERATIONAL</span>
+                </div>
+              </div>
+
+              <a href="https://www.sbhhospital.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 py-0.5 px-3 bg-white/10 hover:bg-white/20 rounded-full border border-white/20 backdrop-blur-lg transition-all transform hover:scale-105 group no-underline shadow-sm">
+                <ShieldCheck size={10} className="text-white" />
+                <span className="text-[9px] font-black text-white uppercase tracking-[0.2em] flex items-center gap-1 leading-none">
+                  SBH Group Of Hospitals
+                </span>
+              </a>
+
+              <a href="https://www.linkedin.com/in/naman-mishra/" target="_blank" rel="noopener noreferrer" className="flex flex-col text-right group no-underline hover:opacity-90">
+                <span className="text-[7px] font-bold text-white/80 uppercase tracking-widest italic leading-none mb-0.5">Architected by</span>
+                <span className="text-[9px] font-black text-white uppercase tracking-widest flex items-center justify-end gap-1 leading-none text-white">
+                  Naman Mishra
+                  <Linkedin size={8} className="text-[#0077b5] bg-white rounded-[1px] p-[0.5px] opacity-100" />
+                </span>
+              </a>
+            </div>
           </div>
         </footer>
       )}
