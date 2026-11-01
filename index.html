@@ -2,9 +2,66 @@
 <html lang="en">
   <head>
     <script>
+      // 1. Domain redirection
       if (window.location.hostname === "new-checklist-deleagtion.vercel.app") {
         window.location.replace("https://cdmsbh.vercel.app" + window.location.pathname + window.location.search + window.location.hash);
       }
+
+      // 2. Normalize nested paths into HashRouter path (e.g. /dashboard/admin -> /#/dashboard/admin)
+      (function() {
+        var pathname = window.location.pathname;
+        if (pathname && pathname !== "/" && !pathname.startsWith("/assets") && !pathname.includes(".")) {
+          window.location.replace(window.location.origin + "/#" + pathname + window.location.search + window.location.hash);
+        }
+      })();
+
+      // 3. Early Session Inactivity Check (Executes before React bundles to prevent white screen on timeout)
+      (function() {
+        try {
+          var isCapacitor = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+          if (!isCapacitor) {
+            var username = sessionStorage.getItem("username");
+            var lastActivity = sessionStorage.getItem("lastActivity");
+            var TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+            if (username && lastActivity) {
+              var elapsed = Date.now() - parseInt(lastActivity, 10);
+              if (elapsed > TIMEOUT_MS) {
+                sessionStorage.clear();
+                localStorage.removeItem("username");
+                localStorage.removeItem("role");
+                localStorage.removeItem("email");
+                localStorage.removeItem("department");
+                localStorage.removeItem("isAdmin");
+                sessionStorage.setItem("logoutReason", "timeout");
+                if (!window.location.hash.includes("/login")) {
+                  window.location.replace(window.location.origin + "/#/login?reason=timeout");
+                }
+              }
+            }
+          }
+        } catch(e) {}
+      })();
+
+      // 4. Stale Module Script / Deployment Mismatch Auto-Recovery
+      // If a browser tab was left open and a new deployment occurred, this automatically reloads fresh assets
+      window.addEventListener("error", function(event) {
+        var msg = (event && event.message) ? String(event.message).toLowerCase() : "";
+        var target = event && event.target;
+        var isScript = target && target.tagName === "SCRIPT";
+        if (
+          isScript ||
+          msg.includes("failed to fetch dynamically imported module") ||
+          msg.includes("failed to load module script") ||
+          msg.includes("mime type")
+        ) {
+          var lastReload = sessionStorage.getItem("app_chunk_reload_ts");
+          var now = Date.now();
+          if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
+            sessionStorage.setItem("app_chunk_reload_ts", now.toString());
+            window.location.reload(true);
+          }
+        }
+      }, true);
     </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/tablogo.png" />

@@ -31,6 +31,22 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return <Navigate to="/login" replace />
   }
 
+  // If session expired during inactivity on Web, clear and redirect to login
+  if (!Capacitor.isNativePlatform()) {
+    const lastActivity = sessionStorage.getItem("lastActivity")
+    const TIMEOUT_MS = 15 * 60 * 1000
+    if (lastActivity && Date.now() - parseInt(lastActivity, 10) > TIMEOUT_MS) {
+      sessionStorage.clear()
+      localStorage.removeItem("username")
+      localStorage.removeItem("role")
+      localStorage.removeItem("email")
+      localStorage.removeItem("department")
+      localStorage.removeItem("isAdmin")
+      sessionStorage.setItem("logoutReason", "timeout")
+      return <Navigate to="/login?reason=timeout" replace />
+    }
+  }
+
   // If this is an admin-only route and user is not admin, redirect to tasks
   if (allowedRoles.length > 0 && !allowedRoles.includes(userRole)) {
     return <Navigate to="/dashboard/admin" replace />
