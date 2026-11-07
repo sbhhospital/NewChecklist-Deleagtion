@@ -825,7 +825,7 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
                   SBH Group Of Hospitals
                 </span>
               </a>
-              <a href="https://www.linkedin.com/in/naman-mishra/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90 hover:opacity-100">
+              <a href="https://www.linkedin.com/in/ignamanmishra/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 no-underline mt-0.5 opacity-90 hover:opacity-100">
                 <span className="text-[7.5px] font-bold text-white uppercase tracking-widest italic leading-none">
                   Architected by <span className="ml-1 text-[8.5px] font-black text-white uppercase tracking-widest not-italic">Naman Mishra</span>
                 </span>
