@@ -77,9 +77,14 @@ export default function SplashScreen({ onFinish }) {
           </div>
           <div className="flex items-center gap-1 text-[9.5px] font-bold text-slate-300 uppercase tracking-widest">
             <span>Architected by</span>
-            <span className="text-amber-400 font-black flex items-center gap-1">
+            <a
+              href="https://www.linkedin.com/in/ignamanmishra"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-400 font-black flex items-center gap-1 hover:underline no-underline"
+            >
               Naman Mishra <Linkedin className="h-3 w-3 text-[#0077b5] inline bg-white rounded-xs p-[0.5px]" />
-            </span>
+            </a>
           </div>
         </div>
       </div>
