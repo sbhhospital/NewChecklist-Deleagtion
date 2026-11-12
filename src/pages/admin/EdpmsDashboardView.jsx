@@ -180,8 +180,37 @@ const getGroupDueDate = (group) => {
   return s;
 };
 
+const calculateBusinessDelayDays = (effectiveDeadline, actualOrTodayDate, holidaySet = null) => {
+  if (!effectiveDeadline || !actualOrTodayDate) return 0;
+  const start = new Date(effectiveDeadline);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(actualOrTodayDate);
+  end.setHours(0, 0, 0, 0);
+
+  if (end <= start) return 0;
+
+  let delay = 0;
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() + 1);
+
+  while (cur <= end) {
+    if (cur.getDay() === 0) {
+      cur.setDate(cur.getDate() + 1);
+      continue;
+    }
+    const curStr = formatDateToDDMMYYYY(cur);
+    if (holidaySet && (holidaySet.has?.(curStr) || (Array.isArray(holidaySet) && holidaySet.includes(curStr)))) {
+      cur.setDate(cur.getDate() + 1);
+      continue;
+    }
+    delay++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return delay;
+};
+
 // Check if a task is currently in the 1-3 day grace/margin window (for blink effect)
-const isTaskInMarginPeriod = (task) => {
+const isTaskInMarginPeriod = (task, holidaySet = null) => {
   if (!task || !task.dueDate) return false;
   const f = String(task.frequency || "daily").toLowerCase();
   if (f === "daily") return false; // no margin for daily
@@ -190,11 +219,11 @@ const isTaskInMarginPeriod = (task) => {
   if (!due) return false;
   due.setHours(0,0,0,0);
   const tod = new Date(); tod.setHours(0,0,0,0);
-  const days = Math.floor((tod.getTime() - due.getTime()) / 86400000);
+  const days = calculateBusinessDelayDays(due, tod, holidaySet);
   return days >= 1 && days <= 3;
 };
 
-const getChecklistTaskStatus = (t) => {
+const getChecklistTaskStatus = (t, holidaySet = null) => {
   if (!t) return "pending";
   if (t.status === "completed") return "completed";
   
@@ -203,7 +232,7 @@ const getChecklistTaskStatus = (t) => {
   if (!due) return "pending";
   due.setHours(0,0,0,0);
   const tod = new Date(); tod.setHours(0,0,0,0);
-  const daysAfterDue = Math.floor((tod.getTime() - due.getTime()) / 86400000);
+  const daysAfterDue = calculateBusinessDelayDays(due, tod, holidaySet);
   
   if (daysAfterDue <= 0) {
     return "pending"; // still within period -> Pending (P)
@@ -218,12 +247,11 @@ const getChecklistTaskStatus = (t) => {
 };
 
 // Score a single period group — returns { penalty, status, delayDays }
-const scoreChecklistGroup = (group, today) => {
+const scoreChecklistGroup = (group, today, holidaySet = null) => {
   const config = getChecklistFrequencyConfig(group.frequency);
   const dueDate = getGroupDueDate(group);
   if (!dueDate) return { penalty: 0, status: "unknown", delayDays: 0, config };
 
-  const msPerDay = 86400000;
   const allCompleted = group.tasks.every(t => t.status === "completed");
   const allOverdue   = group.tasks.every(t => t.status === "overdue");
 
@@ -236,7 +264,7 @@ const scoreChecklistGroup = (group, today) => {
     return { penalty: 0, status: "excused", delayDays: 0, config };
   }
 
-  const daysAfterDue = Math.max(0, Math.floor((today.getTime() - effectiveDueDate.getTime()) / msPerDay));
+  const daysAfterDue = calculateBusinessDelayDays(effectiveDueDate, today, holidaySet);
 
   if (allCompleted) {
     // Use max delayDays recorded on the tasks at time of completion
@@ -317,7 +345,7 @@ const buildChecklistGroups = (tasks, userKey) => {
   return groups;
 };
 
-const calculateChecklistPenalties = (tasks) => {
+const calculateChecklistPenalties = (tasks, holidaySet = null) => {
   const groups = buildChecklistGroups(tasks);
   let totalPenalties = 0;
   let missedDays = 0;
@@ -331,7 +359,7 @@ const calculateChecklistPenalties = (tasks) => {
     if (!dueDate) return;
     // Skip groups whose period hasn't started yet (dueDate strictly in future)
     if (dueDate > today && !(group.tasks.some(t => t.status === "overdue"))) return;
-    const scored = scoreChecklistGroup(group, today);
+    const scored = scoreChecklistGroup(group, today, holidaySet);
     totalPenalties += scored.penalty;
     const s = scored.status;
     if (s === "completed_ontime") {
@@ -352,7 +380,7 @@ const calculateChecklistPenalties = (tasks) => {
   return { totalPenalties, totalBonuses: 0, missedDays, completedDays, delayedDays, missedDates };
 };
 
-const calculateAllUsersChecklistStats = (tasks) => {
+const calculateAllUsersChecklistStats = (tasks, holidaySet = null) => {
   const today = new Date(); today.setHours(0,0,0,0);
   const userResults = {};
   // Build all groups across all users
@@ -366,7 +394,7 @@ const calculateAllUsersChecklistStats = (tasks) => {
     if (!userResults[user]) {
       userResults[user] = { totalPenalties: 0, totalBonuses: 0, missedDays: 0, completedDays: 0, delayedDays: 0, missedDates: [] };
     }
-    const scored = scoreChecklistGroup(group, today);
+    const scored = scoreChecklistGroup(group, today, holidaySet);
     userResults[user].totalPenalties += scored.penalty;
     const s = scored.status;
     if (s === "completed_ontime") {
@@ -403,6 +431,7 @@ export default function EdpmsDashboardView({
   holidaysList = [],
   historyData = []
 }) {
+  const holidayDatesSet = useMemo(() => new Set((holidaysList || []).map(h => h.date)), [holidaysList]);
   const [selectedStaffName, setSelectedStaffName] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [xlsxLoading, setXlsxLoading] = useState(false)
@@ -651,7 +680,7 @@ export default function EdpmsDashboardView({
     })
 
     // Pre-calculate checklist stats for all users once
-    const allChecklistStats = activeSource === "checklist" ? calculateAllUsersChecklistStats(filteredTasks) : {}
+    const allChecklistStats = activeSource === "checklist" ? calculateAllUsersChecklistStats(filteredTasks, holidayDatesSet) : {}
 
     // Dynamic 1000-Point Performance Score calculation for active filtered tasks
     let overallChecklistPenalties = 0
@@ -679,7 +708,7 @@ export default function EdpmsDashboardView({
       const name = staff.name
       const dept = getDepartment(name)
       const nameKey = name.toLowerCase().trim()
-      const holidayDates = new Set((holidaysList || []).map(h => h.date));
+      const holidayDates = holidayDatesSet;
       const tasks = (tasksByUser[nameKey] || []).map(t => {
         const tDate = t.taskStartDate;
         const taskDateObj = parseDateFromDDMMYYYY(tDate);
@@ -701,10 +730,10 @@ export default function EdpmsDashboardView({
         return t;
       });
       
-      const completed = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "completed" : t.status === "completed")
-      const pending = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "pending" : t.status === "pending")
-      const overdue = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) === "overdue" : t.status === "overdue")
-      const active = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t) !== "completed" : (t.status === "pending" || t.status === "overdue"))
+      const completed = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t, holidayDatesSet) === "completed" : t.status === "completed")
+      const pending = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t, holidayDatesSet) === "pending" : t.status === "pending")
+      const overdue = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t, holidayDatesSet) === "overdue" : t.status === "overdue")
+      const active = tasks.filter(t => activeSource === "checklist" ? getChecklistTaskStatus(t, holidayDatesSet) !== "completed" : (t.status === "pending" || t.status === "overdue"))
 
       // Frequency breakdowns
       const freqBreakdown = {
@@ -725,7 +754,7 @@ export default function EdpmsDashboardView({
 
         freqBreakdown[cat].total++
         if (activeSource === "checklist") {
-          const computedStatus = getChecklistTaskStatus(t);
+          const computedStatus = getChecklistTaskStatus(t, holidayDatesSet);
           if (computedStatus === "completed") {
             freqBreakdown[cat].completed++
           } else if (computedStatus === "pending") {
@@ -741,7 +770,7 @@ export default function EdpmsDashboardView({
             }
           } else if (t.status === "pending") {
             freqBreakdown[cat].pending++
-            if (isTaskInMarginPeriod(t)) {
+            if (isTaskInMarginPeriod(t, holidayDatesSet)) {
               freqBreakdown[cat].delay++
             }
           } else if (t.status === "overdue") {
@@ -1190,7 +1219,7 @@ export default function EdpmsDashboardView({
 
       totalFreqBreakdown[cat].total++
       if (activeSource === "checklist") {
-        const computedStatus = getChecklistTaskStatus(t);
+        const computedStatus = getChecklistTaskStatus(t, holidayDatesSet);
         if (computedStatus === "completed") {
           totalFreqBreakdown[cat].completed++
         } else if (computedStatus === "pending") {
@@ -1206,7 +1235,7 @@ export default function EdpmsDashboardView({
           }
         } else if (t.status === "pending") {
           totalFreqBreakdown[cat].pending++
-          if (isTaskInMarginPeriod(t)) {
+          if (isTaskInMarginPeriod(t, holidayDatesSet)) {
             totalFreqBreakdown[cat].delay++
           }
         } else if (t.status === "overdue") {
@@ -2824,16 +2853,16 @@ export default function EdpmsDashboardView({
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {displayTasksList.filter(t => t.assignedTo.toLowerCase() === activeStaffProfile.name.toLowerCase()).map((t, idx) => {
-                        const inMargin = isTaskInMarginPeriod(t);
+                        const inMargin = isTaskInMarginPeriod(t, holidayDatesSet);
                         const freqCfg = getChecklistFrequencyConfig(t.frequency);
                         // Compute delay days for margin tasks
                         let marginDelay = 0;
                         if (inMargin && t.dueDate) {
                           const due = parseDateFromDDMMYYYY(t.dueDate);
-                          if (due) { due.setHours(0,0,0,0); const tod = new Date(); tod.setHours(0,0,0,0); marginDelay = Math.max(0, Math.floor((tod-due)/86400000)); }
+                          if (due) { due.setHours(0,0,0,0); const tod = new Date(); tod.setHours(0,0,0,0); marginDelay = calculateBusinessDelayDays(due, tod, holidayDatesSet); }
                         }
                         const penaltyNow = inMargin ? freqCfg.delayPenalties[Math.min(marginDelay-1,2)] : 0;
-                        const computedStatus = activeSource === "checklist" ? getChecklistTaskStatus(t) : t.status;
+                        const computedStatus = activeSource === "checklist" ? getChecklistTaskStatus(t, holidayDatesSet) : t.status;
                         const displayStatus = activeSource === "checklist"
                           ? (t.status === "completed" ? "completed" : inMargin ? `⚠️ Pending (${marginDelay}d)` : computedStatus)
                           : (inMargin ? `⚠️ Grace (${marginDelay}d)` : t.status);

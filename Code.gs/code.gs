@@ -1768,7 +1768,54 @@ function getFormattedDate(date) {
   return day + "/" + month + "/" + year;
 }
 
-function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
+// Helper to check if a date is a declared Holiday in the "Holidays" sheet
+function isHolidayDate(ss, dateObjOrStr, holidaysCached) {
+  try {
+    if (!dateObjOrStr) return false;
+    var targetDateStr;
+    if (dateObjOrStr instanceof Date) {
+      targetDateStr = getFormattedDate(dateObjOrStr);
+    } else {
+      targetDateStr = String(dateObjOrStr).trim();
+    }
+    
+    var data = holidaysCached;
+    if (!data) {
+      var hSheet = ss.getSheetByName("Holidays");
+      if (!hSheet) return false;
+      data = hSheet.getDataRange().getValues();
+    }
+    
+    for (var i = 1; i < data.length; i++) {
+      var hDateVal = data[i][0];
+      if (hDateVal) {
+        var hFormatted;
+        if (hDateVal instanceof Date) {
+          hFormatted = getFormattedDate(hDateVal);
+        } else {
+          try {
+            var pDate = new Date(hDateVal);
+            if (!isNaN(pDate.getTime())) {
+              hFormatted = getFormattedDate(pDate);
+            } else {
+              hFormatted = String(hDateVal).trim();
+            }
+          } catch (e) {
+            hFormatted = String(hDateVal).trim();
+          }
+        }
+        if (hFormatted === targetDateStr) {
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("Error in isHolidayDate: " + err.toString());
+  }
+  return false;
+}
+
+function getConsecutiveMissedDays(username, asOfDate, attendanceData, holidaysCached) {
   var userKey = username.toLowerCase();
   var consecutiveMissed = 0;
   
@@ -1788,6 +1835,18 @@ function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
       }
     }
   }
+
+  // Cache holiday dates set if available
+  var holidaySet = {};
+  if (holidaysCached && holidaysCached.length) {
+    for (var hi = 1; hi < holidaysCached.length; hi++) {
+      var hd = holidaysCached[hi][0];
+      if (hd) {
+        var hdStr = (hd instanceof Date) ? getFormattedDate(hd) : String(hd).trim();
+        holidaySet[hdStr] = true;
+      }
+    }
+  }
   
   while (true) {
     if (checkDate < limitDate) {
@@ -1799,8 +1858,14 @@ function getConsecutiveMissedDays(username, asOfDate, attendanceData) {
       checkDate.setDate(checkDate.getDate() - 1);
       continue;
     }
-    
+
     var checkDateStr = getFormattedDate(checkDate);
+
+    // Skip Holidays
+    if (holidaySet[checkDateStr]) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
     
     if (presenceMap[checkDateStr]) {
       break;
@@ -1948,6 +2013,14 @@ function runDailyLoginCheck() {
     }
     
     var dateStr = getFormattedDate(targetDate);
+
+    // Skip if yesterday was a declared Holiday in the Holidays sheet
+    var holidaysSheet = ss.getSheetByName("Holidays");
+    var holidaysCached = holidaysSheet ? holidaysSheet.getDataRange().getValues() : [];
+    if (isHolidayDate(ss, targetDate, holidaysCached)) {
+      Logger.log("Skipped checking compliance because yesterday (" + dateStr + ") was a declared Holiday.");
+      return { success: true, message: "Skipped checking compliance because yesterday was a declared Holiday." };
+    }
     
     var masterData = masterSheet.getDataRange().getValues();
     var masterHeaders = masterData[0];
@@ -2031,7 +2104,7 @@ function runDailyLoginCheck() {
         // Calculate consecutive missed days prior to yesterday (excluding Sundays)
         var checkDate = new Date(targetDate);
         checkDate.setDate(checkDate.getDate() - 1);
-        var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+        var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData, holidaysCached);
 
         // Mark as Absent in Attendance sheet if not already recorded
         if (existingRowIndex === -1) {
@@ -2157,6 +2230,14 @@ function sendSameDayLoginReminder() {
     }
     
     var dateStr = getFormattedDate(today);
+
+    // Skip if today is a declared Holiday in the Holidays sheet
+    var holidaysSheet = ss.getSheetByName("Holidays");
+    var holidaysCached = holidaysSheet ? holidaysSheet.getDataRange().getValues() : [];
+    if (isHolidayDate(ss, today, holidaysCached)) {
+      Logger.log("Today (" + dateStr + ") is a declared Holiday. Skipping same-day WhatsApp login reminders.");
+      return { success: true, message: "Skipped same day reminder because today is a declared Holiday." };
+    }
     
     var masterData = masterSheet.getDataRange().getValues();
     var headers = masterData[0];
@@ -2203,7 +2284,7 @@ function sendSameDayLoginReminder() {
           // Calculate consecutive missed days prior to today (excluding Sundays)
           var checkDate = new Date(today);
           checkDate.setDate(checkDate.getDate() - 1);
-          var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData);
+          var consecutiveMissed = 1 + getConsecutiveMissedDays(user, checkDate, attendanceData, holidaysCached);
           
           var reminderMessage = "⏰ *OFFICIAL LOGIN REMINDER*\n" +
                                 "Dear *" + user + "*,\n\n" +

@@ -59,6 +59,7 @@ export default function AttendanceReport() {
   const [staffList, setStaffList] = useState([])
   const [deductions, setDeductions] = useState([])
   const [leavesList, setLeavesList] = useState([])
+  const [holidaysList, setHolidaysList] = useState([])
   
   // Filters
   const [selectedEmployee, setSelectedEmployee] = useState("")
@@ -200,10 +201,37 @@ export default function AttendanceReport() {
         }
       }
 
+      // Fetch Holidays
+      const holidaysRes = await fetch(
+        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`
+      ).catch(() => null);
+      let parsedHolidays = [];
+      if (holidaysRes && holidaysRes.ok) {
+        const hText = await holidaysRes.text();
+        const hJson = JSON.parse(hText.substring(hText.indexOf("{"), hText.lastIndexOf("}") + 1));
+        if (hJson && hJson.table && hJson.table.rows) {
+          hJson.table.rows.slice(1).forEach(row => {
+            if (row && row.c && row.c[0]) {
+              const hCell = row.c[0];
+              const parsedD = parseGVizDateValue(hCell);
+              if (parsedD) {
+                const day = String(parsedD.getDate()).padStart(2, "0");
+                const month = String(parsedD.getMonth() + 1).padStart(2, "0");
+                const year = parsedD.getFullYear();
+                parsedHolidays.push(`${day}/${month}/${year}`);
+              } else if (hCell.f || hCell.v) {
+                parsedHolidays.push(String(hCell.f || hCell.v).trim());
+              }
+            }
+          });
+        }
+      }
+
       setAttendanceLogs(parsedLogs)
       setStaffList(parsedStaff)
       setDeductions(parsedDeductions)
       setLeavesList(parsedLeaves)
+      setHolidaysList(parsedHolidays)
     } catch (err) {
       console.error(err)
       setError(err.message || "Something went wrong loading attendance records.")
@@ -273,6 +301,15 @@ export default function AttendanceReport() {
     });
   };
 
+  // Helper to check if a date is a declared Holiday
+  const isHolidayLocal = (dateStr) => {
+    if (!dateStr) return false;
+    const d = parseDateStr(dateStr);
+    if (!d) return false;
+    const formatted = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+    return holidaysList.includes(formatted);
+  };
+
   // Filter logs by selection
   const filteredLogs = useMemo(() => {
     if (!selectedEmployee) return []
@@ -336,12 +373,13 @@ export default function AttendanceReport() {
       return true // Overall
     })
 
-    // Map logs to override status to Leave if they were on leave
+    // Map logs to override status to Leave if they were on leave or holiday
     const mapped = result.map(l => {
       const onLeave = isUserOnLeaveLocal(l.username, l.date)
+      const isHoliday = isHolidayLocal(l.date)
       return {
         ...l,
-        status: onLeave ? "Leave" : l.status
+        status: (onLeave || isHoliday) ? "Leave" : l.status
       }
     })
 
@@ -352,7 +390,7 @@ export default function AttendanceReport() {
       if (!dA || !dB) return 0
       return dB.getTime() - dA.getTime()
     })
-  }, [attendanceLogs, selectedEmployee, searchQuery, timeRange, customStartDate, customEndDate, selectedMonth, selectedYear, leavesList])
+  }, [attendanceLogs, selectedEmployee, searchQuery, timeRange, customStartDate, customEndDate, selectedMonth, selectedYear, leavesList, holidaysList])
 
   // Aggregate Stats
   const stats = useMemo(() => {
@@ -432,7 +470,7 @@ export default function AttendanceReport() {
       if (reason.includes("Login Missed")) {
         const dDate = d.date ? String(d.date).trim() : ""
         if (dDate) {
-          if (!isUserOnLeaveLocal(d.username, dDate)) {
+          if (!isUserOnLeaveLocal(d.username, dDate) && !isHolidayLocal(dDate)) {
             totalMissedDates.add(dDate)
             if (reason.includes("Checklist")) {
               checklistMissedDates.add(dDate)
@@ -495,7 +533,7 @@ export default function AttendanceReport() {
     const rangeDays = getRangeDays();
 
     return { total, present, absent: totalMissedDates.size, rate, currentStreak, totalDeductions: totalPenalty, checklistPenalty, delegationPenalty, leaveDays, rangeDays }
-  }, [filteredLogs, selectedEmployee, deductions, leavesList, timeRange, selectedMonth, selectedYear, customStartDate, customEndDate, attendanceLogs])
+  }, [filteredLogs, selectedEmployee, deductions, leavesList, holidaysList, timeRange, selectedMonth, selectedYear, customStartDate, customEndDate, attendanceLogs])
 
   // Dynamic user suggestions (Only active users in the WhatsApp/staff list)
   const employeeNames = useMemo(() => {

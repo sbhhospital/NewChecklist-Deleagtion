@@ -248,6 +248,8 @@ function DelegationDataPage() {
     "Verify Pending": 0,
   });
 
+  const [holidayDates, setHolidayDates] = useState(new Set());
+
   const [editingRemarks, setEditingRemarks] = useState({});
   const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
   const [extensionModal, setExtensionModal] = useState({ isOpen: false, task: null, historyEntries: [] });
@@ -261,6 +263,37 @@ function DelegationDataPage() {
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   }, []);
+
+  const calculateBusinessDelayDays = useCallback((effectiveDeadline, actualOrTodayDate, holidaySet) => {
+    if (!effectiveDeadline || !actualOrTodayDate) return 0;
+    const start = new Date(effectiveDeadline);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(actualOrTodayDate);
+    end.setHours(0, 0, 0, 0);
+
+    if (end <= start) return 0;
+
+    let delay = 0;
+    const cur = new Date(start);
+    cur.setDate(cur.getDate() + 1);
+
+    while (cur <= end) {
+      // Skip Sunday
+      if (cur.getDay() === 0) {
+        cur.setDate(cur.getDate() + 1);
+        continue;
+      }
+      // Skip declared Holidays
+      const curStr = formatDateToDDMMYYYY(cur);
+      if (holidaySet && holidaySet.has(curStr)) {
+        cur.setDate(cur.getDate() + 1);
+        continue;
+      }
+      delay++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return delay;
+  }, [formatDateToDDMMYYYY]);
 
   const isTaskDisabled = useCallback((status, userRole) => {
     if (userRole === "admin") {
@@ -483,8 +516,7 @@ function DelegationDataPage() {
       } else {
         if (isDone || isVerifyPending) {
           if (actualDate && actualDate > effectiveDeadline) {
-            const diffTime = actualDate - effectiveDeadline;
-            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, actualDate, holidayDates);
           } else if (actualDate && actualDate <= effectiveDeadline) {
             delayDays = 0;
           } else {
@@ -501,8 +533,7 @@ function DelegationDataPage() {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           if (today > effectiveDeadline) {
-            const diffTime = today - effectiveDeadline;
-            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, today, holidayDates);
           }
         }
       }
@@ -574,7 +605,7 @@ function DelegationDataPage() {
       delayPenalty: delayPenaltyOnTask,
       mainScorePenalty
     };
-  }, [parseDateFromDDMMYYYY]);
+  }, [parseDateFromDDMMYYYY, holidayDates, calculateBusinessDelayDays]);
 
   const scoringSummary = useMemo(() => {
     let tasksToScore = unfilteredDelegationData;
@@ -1143,6 +1174,7 @@ function DelegationDataPage() {
       } catch (hErr) {
         console.warn("Failed to fetch holidays in delegation.jsx", hErr);
       }
+      setHolidayDates(holidayDates);
 
       // Process main delegation data - ADD USER FILTERING LOGIC
       const allDelegationData = [];
@@ -1674,8 +1706,7 @@ function DelegationDataPage() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         if (today > deadlineDate) {
-          const diffTime = today - deadlineDate;
-          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          delayDays = calculateBusinessDelayDays(deadlineDate, today, holidayDates);
         }
       }
     }

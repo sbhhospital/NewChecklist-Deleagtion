@@ -140,7 +140,36 @@ const getCellValue = (row, index) => {
   return cell && "v" in cell ? cell.v : null
 }
 
-const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
+const calculateBusinessDelayDays = (effectiveDeadline, actualOrTodayDate, holidayDatesSet) => {
+  if (!effectiveDeadline || !actualOrTodayDate) return 0;
+  const start = new Date(effectiveDeadline);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(actualOrTodayDate);
+  end.setHours(0, 0, 0, 0);
+
+  if (end <= start) return 0;
+
+  let delay = 0;
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() + 1);
+
+  while (cur <= end) {
+    if (cur.getDay() === 0) {
+      cur.setDate(cur.getDate() + 1);
+      continue;
+    }
+    const curStr = formatDateToDDMMYYYY(cur);
+    if (holidayDatesSet && holidayDatesSet.has(curStr)) {
+      cur.setDate(cur.getDate() + 1);
+      continue;
+    }
+    delay++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return delay;
+};
+
+const calculateTaskScore = (taskObj, historyList, isChecklist = false, holidayDatesSet = null) => {
   const taskId = taskObj.id;
 
     // Global cutoff handled per module.
@@ -176,15 +205,13 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
       } else {
         if (isDone || isVerifyPending) {
           if (actualDate > effectiveDeadline) {
-            const diffTime = actualDate - effectiveDeadline;
-            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, actualDate, holidayDatesSet);
           }
         } else {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           if (today > effectiveDeadline) {
-            const diffTime = today - effectiveDeadline;
-            delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, today, holidayDatesSet);
           }
         }
       }
@@ -289,8 +316,7 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
 
       if (isDone || isVerifyPending) {
         if (actualDate && actualDate > effectiveDeadline) {
-          const diffTime = actualDate - effectiveDeadline;
-          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          delayDays = calculateBusinessDelayDays(effectiveDeadline, actualDate, holidayDatesSet);
         } else if (actualDate && actualDate <= effectiveDeadline) {
           delayDays = 0;
         }
@@ -298,8 +324,7 @@ const calculateTaskScore = (taskObj, historyList, isChecklist = false) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         if (today > effectiveDeadline) {
-          const diffTime = today - effectiveDeadline;
-          delayDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          delayDays = calculateBusinessDelayDays(effectiveDeadline, today, holidayDatesSet);
         }
       }
     }
@@ -737,7 +762,7 @@ export default function PerformanceDashboard() {
           // Compute penalty and score matching calculateTaskScore
           let scoreDetails = { score: 0, baseScore: 3, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0, mainScorePenalty: 0 }
           try {
-            scoreDetails = calculateTaskScore(rawTask, historyList, false)
+            scoreDetails = calculateTaskScore(rawTask, historyList, false, holidayDates)
           } catch (scoreErr) {
             console.error("Error calculating delegation task score:", scoreErr, rawTask)
           }
@@ -862,7 +887,7 @@ export default function PerformanceDashboard() {
 
           let scoreDetails = { score: 100, baseScore: 100, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0 }
           try {
-            scoreDetails = calculateTaskScore(rawTask, [], true)
+            scoreDetails = calculateTaskScore(rawTask, [], true, holidayDates2)
           } catch (scoreErr) {
             console.error("Error calculating checklist task score:", scoreErr, rawTask)
           }
