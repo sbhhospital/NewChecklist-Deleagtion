@@ -272,30 +272,43 @@ function DelegationDataPage() {
     const end = new Date(actualOrTodayDate);
     end.setHours(0, 0, 0, 0);
 
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return 0;
+    const startTime = start.getTime();
+    const endTime = end.getTime();
+    if (isNaN(startTime) || isNaN(endTime) || endTime <= startTime) return 0;
 
-    let delay = 0;
-    const cur = new Date(start);
-    cur.setDate(cur.getDate() + 1);
+    const oneDay = 86400000;
+    const totalDays = Math.round((endTime - startTime) / oneDay);
+    if (totalDays <= 0) return 0;
 
-    let maxIters = 500;
-    while (cur <= end && maxIters-- > 0) {
-      // Skip Sunday
-      if (cur.getDay() === 0) {
-        cur.setDate(cur.getDate() + 1);
-        continue;
+    // Full weeks count
+    const fullWeeks = Math.floor(totalDays / 7);
+    let sundays = fullWeeks;
+    const remainder = totalDays % 7;
+    const startDayOfWeek = start.getDay(); // 0 is Sunday
+    for (let i = 1; i <= remainder; i++) {
+      if ((startDayOfWeek + i) % 7 === 0) {
+        sundays++;
       }
-      // Skip declared Holidays
-      const curStr = formatDateToDDMMYYYY(cur);
-      if (holidaySet && holidaySet.has(curStr)) {
-        cur.setDate(cur.getDate() + 1);
-        continue;
-      }
-      delay++;
-      cur.setDate(cur.getDate() + 1);
     }
-    return delay;
-  }, [formatDateToDDMMYYYY]);
+
+    let delay = totalDays - sundays;
+
+    // Subtract holidays that fall strictly within (start, end] and are not on Sunday
+    if (holidaySet && holidaySet.size > 0) {
+      holidaySet.forEach((hDateStr) => {
+        const hDate = parseDateFromDDMMYYYY(hDateStr);
+        if (hDate) {
+          hDate.setHours(0, 0, 0, 0);
+          const hTime = hDate.getTime();
+          if (hTime > startTime && hTime <= endTime && hDate.getDay() !== 0) {
+            delay = Math.max(0, delay - 1);
+          }
+        }
+      });
+    }
+
+    return Math.max(0, delay);
+  }, []);
 
   const isTaskDisabled = useCallback((status, userRole) => {
     if (userRole === "admin") {
@@ -483,14 +496,56 @@ function DelegationDataPage() {
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }, []);
 
+  const historyMapByTaskId = useMemo(() => {
+    const map = new Map();
+    if (!historyData || !Array.isArray(historyData)) return map;
+
+    for (let i = 0; i < historyData.length; i++) {
+      const h = historyData[i];
+      if (!h) continue;
+      const tId = String(h["col1"] || "").trim();
+      if (!tId) continue;
+
+      let record = map.get(tId);
+      if (!record) {
+        record = { entries: [], extensionCount: 0 };
+        map.set(tId, record);
+      }
+      record.entries.push(h);
+      const action = String(h["col2"] || "").toLowerCase().trim();
+      if (action === "extend date" || action === "extended") {
+        record.extensionCount++;
+      }
+    }
+    return map;
+  }, [historyData]);
+
+  const delegationTasksMap = useMemo(() => {
+    const map = new Map();
+    if (!unfilteredDelegationData || !Array.isArray(unfilteredDelegationData)) return map;
+    for (let i = 0; i < unfilteredDelegationData.length; i++) {
+      const item = unfilteredDelegationData[i];
+      if (item && item["col1"]) {
+        map.set(String(item["col1"]).trim(), item);
+      }
+    }
+    return map;
+  }, [unfilteredDelegationData]);
+
   const calculateTaskScore = useCallback((task, history) => {
-    const taskId = task["col1"];
+    if (!task) {
+      return { score: 0, baseScore: 3, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0, mainScorePenalty: 0 };
+    }
+    const taskId = String(task["col1"] || "").trim();
     
-    // Count extensions from history
+    // Count extensions from history (O(1) Map lookup)
     let extensionCount = 0;
-    if (history && Array.isArray(history)) {
+    const histRecord = historyMapByTaskId.get(taskId);
+    if (histRecord) {
+      extensionCount = histRecord.extensionCount;
+    } else if (history && Array.isArray(history)) {
       extensionCount = history.filter(
-        (h) => h["col1"] === taskId && h["col2"] === "Extend date"
+        (h) => String(h["col1"] || "").trim() === taskId && (String(h["col2"]).toLowerCase() === "extend date" || String(h["col2"]).toLowerCase() === "extended")
       ).length;
     } else if (task["col10"] && task["col6"] && task["col10"] !== task["col6"]) {
       extensionCount = 1;
@@ -607,7 +662,7 @@ function DelegationDataPage() {
       delayPenalty: delayPenaltyOnTask,
       mainScorePenalty
     };
-  }, [parseDateFromDDMMYYYY, holidayDates, calculateBusinessDelayDays]);
+  }, [parseDateFromDDMMYYYY, holidayDates, calculateBusinessDelayDays, historyMapByTaskId]);
 
   const scoringSummary = useMemo(() => {
     let tasksToScore = unfilteredDelegationData;
@@ -705,6 +760,7 @@ function DelegationDataPage() {
 
       if (isPendingA && !isPendingB) return -1; // A (pending) comes first
       if (!isPendingA && isPendingB) return 1;  // B (pending) comes first
+      if (!dateA && !dateB) return 0;
       if (!dateA) return 1;
       if (!dateB) return -1;
 
@@ -758,9 +814,7 @@ function DelegationDataPage() {
           textColor: "text-gray-800",
         };
 
-      const delegationItem = unfilteredDelegationData.find(
-        (item) => item["col1"] === taskId
-      );
+      const delegationItem = delegationTasksMap.get(String(taskId).trim());
       if (!delegationItem)
         return {
           status: "—",
@@ -799,7 +853,7 @@ function DelegationDataPage() {
 
       return { status: "—", color: "bg-gray-100", textColor: "text-gray-800" };
     },
-    [delegationData, isEmpty]
+    [delegationTasksMap, isEmpty]
   );
 
   const LoadingBuffer = () => (
@@ -992,8 +1046,8 @@ function DelegationDataPage() {
       }
       setError(null);
 
-      // Parallel fetch sheets with automatic proxy fallback for Restricted sheet
-      const [mainJson, historyJson, masterJson] = await Promise.all([
+      // Parallel fetch all 5 sheets at once with automatic proxy fallback for Restricted sheet
+      const [mainJson, historyJson, masterJson, leavesJson, holidaysJson] = await Promise.all([
         fetchSheetDataUtil(CONFIG.SOURCE_SHEET_NAME, {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
@@ -1003,6 +1057,14 @@ function DelegationDataPage() {
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         }).catch(() => null),
         fetchSheetDataUtil("Whatsapp", {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        }).catch(() => null),
+        fetchSheetDataUtil("Leaves", {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        }).catch(() => null),
+        fetchSheetDataUtil("Holidays", {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         }).catch(() => null),
@@ -1086,15 +1148,11 @@ function DelegationDataPage() {
 
       setHistoryData(processedHistoryData);
 
-      // Fetch Leaves list from Leaves sheet
+      // Process Leaves list from Leaves sheet
       const leavesList = [];
-      try {
-        const lData = await fetchSheetDataUtil("Leaves", {
-          spreadsheetId: CONFIG.SPREADSHEET_ID,
-          scriptUrl: CONFIG.APPS_SCRIPT_URL
-        });
-        if (lData && lData.table && lData.table.rows) {
-          lData.table.rows.forEach((r) => {
+      if (leavesJson && leavesJson.table && leavesJson.table.rows) {
+        try {
+          leavesJson.table.rows.forEach((r) => {
             if (r.c) {
               const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
               const startDateObj = parseDateValue(r.c[2]);
@@ -1106,29 +1164,25 @@ function DelegationDataPage() {
               }
             }
           });
+        } catch (e) {
+          console.error("Failed to parse leaves data", e);
         }
-      } catch (e) {
-        console.error("Failed to fetch leaves data", e);
       }
 
-      // Fetch holidays sheet
+      // Process Holidays sheet
       const holidayDates = new Set();
-      try {
-        const hData = await fetchSheetDataUtil("Holidays", {
-          spreadsheetId: CONFIG.SPREADSHEET_ID,
-          scriptUrl: CONFIG.APPS_SCRIPT_URL
-        });
-        if (hData && hData.table && hData.table.rows) {
-          hData.table.rows.slice(1).forEach(row => {
+      if (holidaysJson && holidaysJson.table && holidaysJson.table.rows) {
+        try {
+          holidaysJson.table.rows.slice(1).forEach(row => {
             const parsedHolidayD = parseDateValue(row.c && row.c[0]);
             const formattedHolidayD = parsedHolidayD ? formatDateToDDMMYYYY(parsedHolidayD) : (row.c && row.c[0] ? String(row.c[0].v || "").trim() : "");
             if (formattedHolidayD) {
               holidayDates.add(formattedHolidayD);
             }
           });
+        } catch (hErr) {
+          console.warn("Failed to parse holidays in delegation.jsx", hErr);
         }
-      } catch (hErr) {
-        console.warn("Failed to fetch holidays in delegation.jsx", hErr);
       }
       setHolidayDates(holidayDates);
 
@@ -1298,11 +1352,6 @@ function DelegationDataPage() {
     userRole,
     username,
   ]);
-
-  // Clear cache and force fresh fetch on every navigation to this page
-  useEffect(() => {
-    clearDelegationCache(CONFIG.SOURCE_SHEET_NAME);
-  }, [location.key]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2449,8 +2498,8 @@ function DelegationDataPage() {
                           const submissionStatus = getSubmissionStatus(
                             history["col1"]
                           ); // NEW: Get submission status
-                          const matchingTask = unfilteredDelegationData.find(
-                            (task) => task["col1"] === history["col1"]
+                          const matchingTask = delegationTasksMap.get(
+                            String(history["col1"] || "").trim()
                           );
 
                           return (
@@ -2972,15 +3021,10 @@ function DelegationDataPage() {
                           const rowColorClass = getRowColor(account["col17"]);
                           const taskId = account["col1"];
                           
-                          // Find all extension & completion history records for this task
-                          const taskHistoryEntries = historyData ? historyData.filter(
-                            (h) => String(h["col1"]).trim() === String(taskId).trim()
-                          ) : [];
-                          
-                          const extensionEntries = taskHistoryEntries.filter(
-                            (h) => String(h["col2"]).toLowerCase() === "extend date" || String(h["col2"]).toLowerCase() === "extended"
-                          );
-                          const extensionCount = extensionEntries.length;
+                          // Find all extension & completion history records for this task (O(1) Map lookup)
+                          const histRecord = historyMapByTaskId.get(String(taskId || "").trim());
+                          const taskHistoryEntries = histRecord ? histRecord.entries : [];
+                          const extensionCount = histRecord ? histRecord.extensionCount : 0;
 
                           return (
                             <tr
