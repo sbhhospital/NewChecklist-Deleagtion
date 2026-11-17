@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import EdpmsDashboardView from "./admin/EdpmsDashboardView";
-import { fetchSheetData } from "../utils/sheetApi";
+import { fetchSheetData as fetchSheetDataUtil } from "../utils/sheetApi";
 
 const CONFIG = {
   APPS_SCRIPT_URL:
@@ -272,13 +272,14 @@ function DelegationDataPage() {
     const end = new Date(actualOrTodayDate);
     end.setHours(0, 0, 0, 0);
 
-    if (end <= start) return 0;
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return 0;
 
     let delay = 0;
     const cur = new Date(start);
     cur.setDate(cur.getDate() + 1);
 
-    while (cur <= end) {
+    let maxIters = 500;
+    while (cur <= end && maxIters-- > 0) {
       // Skip Sunday
       if (cur.getDay() === 0) {
         cur.setDate(cur.getDate() + 1);
@@ -993,15 +994,15 @@ function DelegationDataPage() {
 
       // Parallel fetch sheets with automatic proxy fallback for Restricted sheet
       const [mainJson, historyJson, masterJson] = await Promise.all([
-        fetchSheetData(CONFIG.SOURCE_SHEET_NAME, {
+        fetchSheetDataUtil(CONFIG.SOURCE_SHEET_NAME, {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         }),
-        fetchSheetData(CONFIG.TARGET_SHEET_NAME, {
+        fetchSheetDataUtil(CONFIG.TARGET_SHEET_NAME, {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         }).catch(() => null),
-        fetchSheetData("Whatsapp", {
+        fetchSheetDataUtil("Whatsapp", {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         }).catch(() => null),
@@ -1088,7 +1089,7 @@ function DelegationDataPage() {
       // Fetch Leaves list from Leaves sheet
       const leavesList = [];
       try {
-        const lData = await fetchSheetData("Leaves", {
+        const lData = await fetchSheetDataUtil("Leaves", {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         });
@@ -1113,7 +1114,7 @@ function DelegationDataPage() {
       // Fetch holidays sheet
       const holidayDates = new Set();
       try {
-        const hData = await fetchSheetData("Holidays", {
+        const hData = await fetchSheetDataUtil("Holidays", {
           spreadsheetId: CONFIG.SPREADSHEET_ID,
           scriptUrl: CONFIG.APPS_SCRIPT_URL
         });

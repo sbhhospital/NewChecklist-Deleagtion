@@ -148,13 +148,14 @@ const calculateBusinessDelayDays = (effectiveDeadline, actualOrTodayDate, holida
   const end = new Date(actualOrTodayDate);
   end.setHours(0, 0, 0, 0);
 
-  if (end <= start) return 0;
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return 0;
 
   let delay = 0;
   const cur = new Date(start);
   cur.setDate(cur.getDate() + 1);
 
-  while (cur <= end) {
+  let maxIters = 500;
+  while (cur <= end && maxIters-- > 0) {
     if (cur.getDay() === 0) {
       cur.setDate(cur.getDate() + 1);
       continue;
