@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, memo } from "react"
 import { CheckCircle2, Upload, X, Search, History, ArrowLeft, Filter, Edit, Calendar } from "lucide-react"
 import AdminLayout from "../../components/layout/AdminLayout"
+import { fetchSheetData as fetchSheetDataUtil } from "../../utils/sheetApi"
 
 // Configuration object - Move all configurations here
 const CONFIG = {
@@ -931,25 +932,10 @@ function AccountDataPage() {
       const pendingAccounts = []
       const historyRows = []
       const spreadsheetId = CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
-      const sheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}&t=${Date.now()}`
-      const response = await fetch(sheetUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data: ${response.status}`)
-      }
-      const text = await response.text()
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (parseError) {
-        const jsonStart = text.indexOf("{")
-        const jsonEnd = text.lastIndexOf("}")
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          const jsonString = text.substring(jsonStart, jsonEnd + 1)
-          data = JSON.parse(jsonString)
-        } else {
-          throw new Error("Invalid JSON response from server")
-        }
-      }
+      const data = await fetchSheetDataUtil(CONFIG.SHEET_NAME, {
+        spreadsheetId,
+        scriptUrl: CONFIG.APPS_SCRIPT_URL
+      })
 
       const currentUsername = (sessionStorage.getItem("username") || localStorage.getItem("username") || "").trim()
       const currentUserRole = (sessionStorage.getItem("role") || localStorage.getItem("role") || "user").trim()
@@ -969,27 +955,21 @@ function AccountDataPage() {
       // Fetch active users from master sheet
       let activeUsersSet = null;
       try {
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
-        const masterRes = await fetch(masterUrl);
-        if (masterRes.ok) {
-          const mText = await masterRes.text();
-          const mJsonStart = mText.indexOf("{");
-          const mJsonEnd = mText.lastIndexOf("}");
-          if (mJsonStart !== -1 && mJsonEnd !== -1) {
-            const mData = JSON.parse(mText.substring(mJsonStart, mJsonEnd + 1));
-            activeUsersSet = new Set();
-            if (mData.table && mData.table.rows) {
-              mData.table.rows.forEach(r => {
-                if (r.c && r.c[2] && r.c[2].v) {
-                  const name = r.c[2].v.toString().trim();
-                  const role = r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
-                  if (name && role !== "inactive" && role !== "in active") {
-                    activeUsersSet.add(name.toLowerCase());
-                  }
-                }
-              });
+        const mData = await fetchSheetDataUtil("Whatsapp", {
+          spreadsheetId,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        });
+        activeUsersSet = new Set();
+        if (mData && mData.table && mData.table.rows) {
+          mData.table.rows.forEach(r => {
+            if (r.c && r.c[2] && r.c[2].v) {
+              const name = r.c[2].v.toString().trim();
+              const role = r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
+              if (name && role !== "inactive" && role !== "in active") {
+                activeUsersSet.add(name.toLowerCase());
+              }
             }
-          }
+          });
         }
       } catch (e) {
         console.error("Failed to fetch master data for active users", e);
@@ -998,29 +978,23 @@ function AccountDataPage() {
       // Fetch Leaves list from Leaves sheet
       const leavesList = [];
       try {
-        const leavesUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID || "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
-        const leavesRes = await fetch(leavesUrl);
-        if (leavesRes.ok) {
-          const lText = await leavesRes.text();
-          const lJsonStart = lText.indexOf("{");
-          const lJsonEnd = lText.lastIndexOf("}");
-          if (lJsonStart !== -1 && lJsonEnd !== -1) {
-            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
-            if (lData.table && lData.table.rows) {
-              lData.table.rows.forEach((r) => {
-                if (r.c) {
-                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
-                  const startDateObj = parseDateValue(r.c[2]);
-                  const endDateObj = parseDateValue(r.c[3]);
-                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
-                  
-                  if (uName && startDateObj && endDateObj) {
-                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
-                  }
-                }
-              });
+        const lData = await fetchSheetDataUtil("Leaves", {
+          spreadsheetId,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        });
+        if (lData && lData.table && lData.table.rows) {
+          lData.table.rows.forEach((r) => {
+            if (r.c) {
+              const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+              const startDateObj = parseDateValue(r.c[2]);
+              const endDateObj = parseDateValue(r.c[3]);
+              const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+              
+              if (uName && startDateObj && endDateObj) {
+                leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+              }
             }
-          }
+          });
         }
       } catch (e) {
         console.error("Failed to fetch leaves data", e);

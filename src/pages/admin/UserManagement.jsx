@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { Users, Plus, Edit2, Trash2, CheckCircle2, XCircle, Search, Upload, Mail, Phone, Shield, Eye, EyeOff, Clipboard, AlertCircle } from "lucide-react"
 import AdminLayout from "../../components/layout/AdminLayout"
+import { fetchSheetData } from "../../utils/sheetApi"
 
 const CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
@@ -129,13 +130,10 @@ export default function UserManagement() {
 
       const processSheet = async (sheetName) => {
         try {
-          const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheetName}`
-          const resp = await fetch(url)
-          if (!resp.ok) return
-          const text = await resp.text()
-          const start = text.indexOf('{')
-          const end = text.lastIndexOf('}')
-          const data = JSON.parse(text.substring(start, end + 1))
+          const data = await fetchSheetData(sheetName, {
+            spreadsheetId: CONFIG.SPREADSHEET_ID,
+            scriptUrl: CONFIG.APPS_SCRIPT_URL
+          })
           
           if (data && data.table && data.table.rows && data.table.rows.length > 0) {
             const headers = data.table.cols 
@@ -177,20 +175,13 @@ export default function UserManagement() {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`
-      const response = await fetch(url)
-      if (!response.ok) throw new Error("Failed to fetch users from Whatsapp sheet")
-      const text = await response.text()
-      const jsonStart = text.indexOf('{')
-      const jsonEnd = text.lastIndexOf('}')
-      if (jsonStart === -1 || jsonEnd === -1) {
-        throw new Error("Invalid master sheet response format")
-      }
-      const jsonString = text.substring(jsonStart, jsonEnd + 1)
-      const data = JSON.parse(jsonString)
+      const data = await fetchSheetData("Whatsapp", {
+        spreadsheetId: CONFIG.SPREADSHEET_ID,
+        scriptUrl: CONFIG.APPS_SCRIPT_URL
+      })
       console.log("DEBUG - raw table rows from sheet:", data?.table?.rows)
       
-      if (!data.table || !data.table.rows || data.table.rows.length === 0) {
+      if (!data || !data.table || !data.table.rows || data.table.rows.length === 0) {
         setUsers([])
         return
       }
@@ -239,15 +230,12 @@ export default function UserManagement() {
   const fetchChecklists = async (silent = false) => {
     if (!silent) setChecklistLoading(true)
     try {
-      // Fetch directly from spreadsheet viz for high performance
-      const response = await fetch(`https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Unique&t=${Date.now()}`)
-      if (!response.ok) throw new Error("Failed to fetch checklists")
-      const text = await response.text()
-      const jsonStart = text.indexOf('{')
-      const jsonEnd = text.lastIndexOf('}')
-      const data = JSON.parse(text.substring(jsonStart, jsonEnd + 1))
+      const data = await fetchSheetData("Unique", {
+        spreadsheetId: CONFIG.SPREADSHEET_ID,
+        scriptUrl: CONFIG.APPS_SCRIPT_URL
+      })
 
-      if (!data.table || !data.table.rows) throw new Error("Invalid data format")
+      if (!data || !data.table || !data.table.rows) throw new Error("Invalid data format")
 
       const headers = data.table.cols
         ? data.table.cols.map(c => c.label ? c.label.toLowerCase().trim() : "")

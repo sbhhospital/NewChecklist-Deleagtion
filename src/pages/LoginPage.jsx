@@ -10,6 +10,7 @@ import {
   Smartphone, Crown, Fingerprint, Sparkles, Check, Flame
 } from "lucide-react";
 import sbhLogo from "../assets/logo.png";
+import { fetchSheetData } from "../utils/sheetApi";
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -124,13 +125,12 @@ const LoginPage = () => {
       }
 
       try {
-        const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`;
-        const res = await fetch(sheetUrl);
-        const text = await res.text();
-        const jsonString = text.substring(47).slice(0, -2);
-        const data = JSON.parse(jsonString);
+        const data = await fetchSheetData("Whatsapp", {
+          spreadsheetId: SPREADSHEET_ID,
+          scriptUrl: SCRIPT_URL
+        });
 
-        if (data.table && data.table.rows) {
+        if (data && data.table && data.table.rows) {
           const credentials = {};
           data.table.rows.forEach((row) => {
             if (row.c && row.c[2] && row.c[3]) {

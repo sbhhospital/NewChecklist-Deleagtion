@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { BellRing, FileCheck, Calendar, Clock, Mic, MicOff, X } from "lucide-react";
 import AdminLayout from "../../components/layout/AdminLayout";
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import { fetchSheetData } from "../../utils/sheetApi";
 
 const TaskTypePopup = ({ isOpen, onClose, onSelect }) => {
   if (!isOpen) return null;
@@ -293,25 +294,9 @@ export default function AssignTask() {
   // Function to fetch options from master sheet
   const fetchMasterSheetOptions = async () => {
     try {
-      const masterSheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-      const masterSheetName = "master";
+      const data = await fetchSheetData("master");
 
-      const url = `https://docs.google.com/spreadsheets/d/${masterSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-        masterSheetName
-      )}`;
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch master data: ${response.status}`);
-      }
-
-      const text = await response.text();
-      const jsonStart = text.indexOf("{");
-      const jsonEnd = text.lastIndexOf("}");
-      const jsonString = text.substring(jsonStart, jsonEnd + 1);
-      const data = JSON.parse(jsonString);
-
-      if (!data.table || !data.table.rows) {
+      if (!data || !data.table || !data.table.rows) {
         console.log("No master data found");
         return;
       }
@@ -471,23 +456,9 @@ export default function AssignTask() {
         console.log("Current user details:", { userRole, username });
 
         // Fetch all doers first
-        const masterSheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-        const masterSheetName = "master";
-        const url = `https://docs.google.com/spreadsheets/d/${masterSheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-          masterSheetName
-        )}`;
+        const data = await fetchSheetData("master");
 
-        const response = await fetch(url);
-        if (!response.ok)
-          throw new Error(`Failed to fetch master data: ${response.status}`);
-
-        const text = await response.text();
-        const jsonStart = text.indexOf("{");
-        const jsonEnd = text.lastIndexOf("}");
-        const jsonString = text.substring(jsonStart, jsonEnd + 1);
-        const data = JSON.parse(jsonString);
-
-        if (!data.table || !data.table.rows) {
+        if (!data || !data.table || !data.table.rows) {
           console.log("No master data found");
           return;
         }
@@ -593,22 +564,9 @@ export default function AssignTask() {
   // Add a function to get the last task ID from the specified sheet
   const getLastTaskId = async (sheetName) => {
     try {
-      const url = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-        sheetName
-      )}`;
+      const data = await fetchSheetData(sheetName);
 
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sheet data: ${response.status}`);
-      }
-
-      const text = await response.text();
-      const jsonStart = text.indexOf("{");
-      const jsonEnd = text.lastIndexOf("}");
-      const jsonString = text.substring(jsonStart, jsonEnd + 1);
-      const data = JSON.parse(jsonString);
-
-      if (!data.table || !data.table.rows || data.table.rows.length === 0) {
+      if (!data || !data.table || !data.table.rows || data.table.rows.length === 0) {
         return 0; // Start from 1 if no tasks exist
       }
 
@@ -642,25 +600,9 @@ export default function AssignTask() {
   // Function to fetch working days from the Working Day Calendar sheet
   const fetchWorkingDays = async () => {
     try {
-      const sheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0";
-      const sheetName = "Working Day Calendar";
+      const data = await fetchSheetData("Working Day Calendar");
 
-      const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-        sheetName
-      )}`;
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch working days: ${response.status}`);
-      }
-
-      const text = await response.text();
-      const jsonStart = text.indexOf("{");
-      const jsonEnd = text.lastIndexOf("}");
-      const jsonString = text.substring(jsonStart, jsonEnd + 1);
-      const data = JSON.parse(jsonString);
-
-      if (!data.table || !data.table.rows) {
+      if (!data || !data.table || !data.table.rows) {
         console.log("No working day data found");
         return [];
       }

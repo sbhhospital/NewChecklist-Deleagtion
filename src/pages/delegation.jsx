@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import EdpmsDashboardView from "./admin/EdpmsDashboardView";
+import { fetchSheetData } from "../utils/sheetApi";
 
 const CONFIG = {
   APPS_SCRIPT_URL:
@@ -990,52 +991,45 @@ function DelegationDataPage() {
       }
       setError(null);
 
-      // Parallel fetch sheets for better performance
-      const [mainResponse, historyResponse, masterResponse] = await Promise.all([
-        fetch(
-          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.SOURCE_SHEET_NAME}&t=${Date.now()}`,
-          { signal }
-        ),
-        fetch(
-          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.TARGET_SHEET_NAME}&t=${Date.now()}`,
-          { signal }
-        ).catch(() => null),
-        fetch(
-          `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`,
-          { signal }
-        ).catch(() => null),
+      // Parallel fetch sheets with automatic proxy fallback for Restricted sheet
+      const [mainJson, historyJson, masterJson] = await Promise.all([
+        fetchSheetData(CONFIG.SOURCE_SHEET_NAME, {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        }),
+        fetchSheetData(CONFIG.TARGET_SHEET_NAME, {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        }).catch(() => null),
+        fetchSheetData("Whatsapp", {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        }).catch(() => null),
       ]);
 
-      if (!mainResponse.ok) {
-        throw new Error(`Failed to fetch data: ${mainResponse.status}`);
+      if (!mainJson || !mainJson.table) {
+        throw new Error(`Failed to fetch data for ${CONFIG.SOURCE_SHEET_NAME}`);
       }
 
       // Process Whatsapp sheet to get active and inactive users
       const inactiveUsers = new Set();
       const activeUsersList = [];
       const activeUsersLowerSet = new Set();
-      if (masterResponse && masterResponse.ok) {
+      if (masterJson && masterJson.table && masterJson.table.rows) {
         try {
-          const masterText = await masterResponse.text();
-          const start = masterText.indexOf("{");
-          const end = masterText.lastIndexOf("}");
-          const jsonStr = masterText.substring(start, end + 1);
-          const masterJson = JSON.parse(jsonStr);
-          if (masterJson.table && masterJson.table.rows) {
-            masterJson.table.rows.slice(1).forEach(row => {
-              const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : "";
-              const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
-              if (username) {
-                const usernameLower = username.toLowerCase();
-                if (role === "inactive" || role === "in active") {
-                  inactiveUsers.add(usernameLower);
-                } else {
-                  activeUsersList.push(username);
-                  activeUsersLowerSet.add(usernameLower);
-                }
+          masterJson.table.rows.slice(1).forEach(row => {
+            const username = row.c && row.c[2] && row.c[2].v ? row.c[2].v.toString().trim() : "";
+            const role = row.c && row.c[4] && row.c[4].v ? row.c[4].v.toString().trim().toLowerCase() : "";
+            if (username) {
+              const usernameLower = username.toLowerCase();
+              if (role === "inactive" || role === "in active") {
+                inactiveUsers.add(usernameLower);
+              } else {
+                activeUsersList.push(username);
+                activeUsersLowerSet.add(usernameLower);
               }
-            });
-          }
+            }
+          });
         } catch (e) {
           console.error("Error parsing Whatsapp sheet for inactive users:", e);
         }
@@ -1044,72 +1038,44 @@ function DelegationDataPage() {
       setActiveUsers(activeUsersList);
 
       // Process main data
-      const mainText = await mainResponse.text();
-      let data;
-      try {
-        data = JSON.parse(mainText);
-      } catch (parseError) {
-        const jsonStart = mainText.indexOf("{");
-        const jsonEnd = mainText.lastIndexOf("}");
-        if (jsonStart !== -1 && jsonEnd !== -1) {
-          const jsonString = mainText.substring(jsonStart, jsonEnd + 1);
-          data = JSON.parse(jsonString);
-        } else {
-          throw new Error("Invalid JSON response from server");
-        }
-      }
+      const data = mainJson;
 
       // Process history data if available
       let processedHistoryData = [];
-      if (historyResponse && historyResponse.ok) {
+      if (historyJson && historyJson.table && historyJson.table.rows) {
         try {
-          const historyText = await historyResponse.text();
-          let historyData;
-          try {
-            historyData = JSON.parse(historyText);
-          } catch (parseError) {
-            const jsonStart = historyText.indexOf("{");
-            const jsonEnd = historyText.lastIndexOf("}");
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-              const jsonString = historyText.substring(jsonStart, jsonEnd + 1);
-              historyData = JSON.parse(jsonString);
-            }
-          }
+          processedHistoryData = historyJson.table.rows
+            .map((row, rowIndex) => {
+              if (rowIndex === 0) return null;
 
-          if (historyData && historyData.table && historyData.table.rows) {
-            processedHistoryData = historyData.table.rows
-              .map((row, rowIndex) => {
-                if (rowIndex === 0) return null;
+              const rowData = {
+                _id: Math.random().toString(36).substring(2, 15),
+                _rowIndex: rowIndex + 1,
+              };
 
-                const rowData = {
-                  _id: Math.random().toString(36).substring(2, 15),
-                  _rowIndex: rowIndex + 1,
-                };
+              const rowValues = row.c
+                ? row.c.map((cell) =>
+                  cell && cell.v !== undefined ? cell.v : ""
+                )
+                : [];
 
-                const rowValues = row.c
-                  ? row.c.map((cell) =>
-                    cell && cell.v !== undefined ? cell.v : ""
-                  )
-                  : [];
+              const assignedTo = rowValues[7] ? String(rowValues[7]).trim().toLowerCase() : "";
+              if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return null;
 
-                const assignedTo = rowValues[7] ? String(rowValues[7]).trim().toLowerCase() : "";
-                if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return null;
-
-                // Map all columns — use module-level parser to avoid closure issues
-                for (let i = 0; i < 16; i++) {
-                  if (i === 0 || i === 6 || i === 10) {
-                    rowData[`col${i}`] = rowValues[i]
-                      ? parseGoogleSheetsDateStr(String(rowValues[i]))
-                      : "";
-                  } else {
-                    rowData[`col${i}`] = rowValues[i] || "";
-                  }
+              // Map all columns — use module-level parser to avoid closure issues
+              for (let i = 0; i < 16; i++) {
+                if (i === 0 || i === 6 || i === 10) {
+                  rowData[`col${i}`] = rowValues[i]
+                    ? parseGoogleSheetsDateStr(String(rowValues[i]))
+                    : "";
+                } else {
+                  rowData[`col${i}`] = rowValues[i] || "";
                 }
+              }
 
-                return rowData;
-              })
-              .filter((row) => row !== null);
-          }
+              return rowData;
+            })
+            .filter((row) => row !== null);
         } catch (historyError) {
           console.error("Error processing history data:", historyError);
         }
@@ -1122,54 +1088,43 @@ function DelegationDataPage() {
       // Fetch Leaves list from Leaves sheet
       const leavesList = [];
       try {
-        const leavesUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
-        const leavesRes = await fetch(leavesUrl);
-        if (leavesRes.ok) {
-          const lText = await leavesRes.text();
-          const lJsonStart = lText.indexOf("{");
-          const lJsonEnd = lText.lastIndexOf("}");
-          if (lJsonStart !== -1 && lJsonEnd !== -1) {
-            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
-            if (lData.table && lData.table.rows) {
-              lData.table.rows.forEach((r) => {
-                if (r.c) {
-                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
-                  const startDateObj = parseDateValue(r.c[2]);
-                  const endDateObj = parseDateValue(r.c[3]);
-                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
-                  
-                  if (uName && startDateObj && endDateObj) {
-                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
-                  }
-                }
-              });
+        const lData = await fetchSheetData("Leaves", {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        });
+        if (lData && lData.table && lData.table.rows) {
+          lData.table.rows.forEach((r) => {
+            if (r.c) {
+              const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+              const startDateObj = parseDateValue(r.c[2]);
+              const endDateObj = parseDateValue(r.c[3]);
+              const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+              
+              if (uName && startDateObj && endDateObj) {
+                leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+              }
             }
-          }
+          });
         }
       } catch (e) {
         console.error("Failed to fetch leaves data", e);
       }
 
       // Fetch holidays sheet
-      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`;
       const holidayDates = new Set();
       try {
-        const holidaysRes = await fetch(holidaysUrl, { signal });
-        if (holidaysRes.ok) {
-          const hText = await holidaysRes.ok ? await holidaysRes.text() : "";
-          if (hText) {
-            const hJsonString = hText.substring(47).slice(0, -2);
-            const hData = JSON.parse(hJsonString);
-            if (hData.table && hData.table.rows) {
-              hData.table.rows.slice(1).forEach(row => {
-                const parsedHolidayD = parseDateValue(row.c && row.c[0]);
-                const formattedHolidayD = parsedHolidayD ? formatDateToDDMMYYYY(parsedHolidayD) : (row.c && row.c[0] ? String(row.c[0].v || "").trim() : "");
-                if (formattedHolidayD) {
-                  holidayDates.add(formattedHolidayD);
-                }
-              });
+        const hData = await fetchSheetData("Holidays", {
+          spreadsheetId: CONFIG.SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        });
+        if (hData && hData.table && hData.table.rows) {
+          hData.table.rows.slice(1).forEach(row => {
+            const parsedHolidayD = parseDateValue(row.c && row.c[0]);
+            const formattedHolidayD = parsedHolidayD ? formatDateToDDMMYYYY(parsedHolidayD) : (row.c && row.c[0] ? String(row.c[0].v || "").trim() : "");
+            if (formattedHolidayD) {
+              holidayDates.add(formattedHolidayD);
             }
-          }
+          });
         }
       } catch (hErr) {
         console.warn("Failed to fetch holidays in delegation.jsx", hErr);

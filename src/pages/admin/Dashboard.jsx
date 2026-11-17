@@ -5,6 +5,7 @@ import MobileAppDashboard from "../../components/mobile/MobileAppDashboard";
 import { useState, useEffect } from "react"
 import { BarChart3, CheckCircle2, Clock, ListTodo, Users, AlertTriangle, Filter, User, Edit3, Upload, X } from 'lucide-react'
 import AdminLayout from "../../components/layout/AdminLayout.jsx"
+import { fetchSheetData } from "../../utils/sheetApi.js"
 import {
   BarChart,
   Bar,
@@ -134,18 +135,8 @@ export default function AdminDashboard() {
 
   const fetchUserProfileFromSheets = async (username) => {
     try {
-      // Fetch from master sheet for email
-      const masterResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp`);
-
-      if (!masterResponse.ok) {
-        throw new Error(`Failed to fetch master sheet data: ${masterResponse.status}`);
-      }
-
-      const masterText = await masterResponse.text();
-      const masterJsonStart = masterText.indexOf('{');
-      const masterJsonEnd = masterText.lastIndexOf('}');
-      const masterJsonString = masterText.substring(masterJsonStart, masterJsonEnd + 1);
-      const masterData = JSON.parse(masterJsonString);
+      const masterData = await fetchSheetData("Whatsapp");
+      if (!masterData || !masterData.table || !masterData.table.rows) return;
 
       // Find user in master sheet (Column C = Username, Column F = Email)
       const userRow = masterData.table.rows.find((row, index) => {
@@ -160,45 +151,9 @@ export default function AdminDashboard() {
           setUserEmail(email);
         }
 
-        // Try to get profile image from master sheet Column H (index 7) first
         const masterImageUrl = getCellValue(userRow, 7); // Column H (index 7) - Image URL in master sheet
-        console.log("Profile Image URL from Master Sheet Column H:", masterImageUrl);
-
         if (masterImageUrl) {
           const displayableUrl = getDisplayableImageUrl(masterImageUrl);
-          console.log("Converted Thumbnail URL from Master Sheet:", displayableUrl);
-          setUserProfileImage(displayableUrl);
-          return; // Exit early since we found image in master sheet
-        }
-      }
-
-      // If no image found in master sheet, try WhatsApp sheet
-      const whatsappResponse = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp`);
-
-      if (!whatsappResponse.ok) {
-        throw new Error(`Failed to fetch Whatsapp sheet data: ${whatsappResponse.status}`);
-      }
-
-      const whatsappText = await whatsappResponse.text();
-      const whatsappJsonStart = whatsappText.indexOf('{');
-      const whatsappJsonEnd = whatsappText.lastIndexOf('}');
-      const whatsappJsonString = whatsappText.substring(whatsappJsonStart, whatsappJsonEnd + 1);
-      const whatsappData = JSON.parse(whatsappJsonString);
-
-      // Find the row with matching username in Column C (index 2)
-      const whatsappUserRow = whatsappData.table.rows.find((row, index) => {
-        if (index === 0) return false; // Skip header row
-        const rowUsername = getCellValue(row, 2); // Column C (index 2) - Username
-        return rowUsername && rowUsername.toLowerCase() === (username ? String(username).toLowerCase() : "");
-      });
-
-      if (whatsappUserRow) {
-        const imageUrl = getCellValue(whatsappUserRow, 7); // Column H (index 7) - Image URL
-        console.log("Profile Image URL from WhatsApp Sheet Column H:", imageUrl);
-
-        if (imageUrl) {
-          const displayableUrl = getDisplayableImageUrl(imageUrl);
-          console.log("Converted Thumbnail URL from WhatsApp Sheet:", displayableUrl);
           setUserProfileImage(displayableUrl);
         }
       }
@@ -658,44 +613,28 @@ export default function AdminDashboard() {
 
     setPageLoading(true);
     try {
-      const response = await fetch(`https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=${sheetName}&t=${Date.now()}`, { signal });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${sheetName} sheet data: ${response.status}`);
+      const data = await fetchSheetData(sheetName);
+      if (!data || !data.table) {
+        throw new Error(`Failed to fetch ${sheetName} sheet data`);
       }
-
-      const text = await response.text();
-      const jsonStart = text.indexOf('{');
-      const jsonEnd = text.lastIndexOf('}');
-      const jsonString = text.substring(jsonStart, jsonEnd + 1);
-      const data = JSON.parse(jsonString);
 
       // Fetch Leaves list from Leaves sheet
       const leavesList = [];
       try {
-        const leavesUrl = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`;
-        const leavesRes = await fetch(leavesUrl, { signal });
-        if (leavesRes.ok) {
-          const lText = await leavesRes.text();
-          const lJsonStart = lText.indexOf("{");
-          const lJsonEnd = lText.lastIndexOf("}");
-          if (lJsonStart !== -1 && lJsonEnd !== -1) {
-            const lData = JSON.parse(lText.substring(lJsonStart, lJsonEnd + 1));
-            if (lData.table && lData.table.rows) {
-              lData.table.rows.forEach((r) => {
-                if (r.c) {
-                  const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
-                  const startDateObj = parseDateValue(r.c[2]);
-                  const endDateObj = parseDateValue(r.c[3]);
-                  const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
-                  
-                  if (uName && startDateObj && endDateObj) {
-                    leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
-                  }
-                }
-              });
+        const lData = await fetchSheetData("Leaves");
+        if (lData && lData.table && lData.table.rows) {
+          lData.table.rows.forEach((r) => {
+            if (r.c) {
+              const uName = r.c[1] && r.c[1].v ? String(r.c[1].v).trim().toLowerCase() : "";
+              const startDateObj = parseDateValue(r.c[2]);
+              const endDateObj = parseDateValue(r.c[3]);
+              const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
+              
+              if (uName && startDateObj && endDateObj) {
+                leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
+              }
             }
-          }
+          });
         }
       } catch (e) {
         console.error("Failed to fetch leaves data", e);
@@ -704,28 +643,19 @@ export default function AdminDashboard() {
       // Fetch active users from Whatsapp sheet
       const activeUserDisplayNames = [];
       try {
-        const whatsappUrl = `https://docs.google.com/spreadsheets/d/1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`;
-        const whatsappRes = await fetch(whatsappUrl, { signal });
-        if (whatsappRes.ok) {
-          const wText = await whatsappRes.text();
-          const wJsonStart = wText.indexOf("{");
-          const wJsonEnd = wText.lastIndexOf("}");
-          if (wJsonStart !== -1 && wJsonEnd !== -1) {
-            const wData = JSON.parse(wText.substring(wJsonStart, wJsonEnd + 1));
-            if (wData.table && wData.table.rows) {
-              wData.table.rows.forEach((r, idx) => {
-                if (idx === 0) return;
-                const username = r.c && r.c[2] && r.c[2].v ? r.c[2].v.toString().trim() : "";
-                const role = r.c && r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
-                if (username) {
-                  const roleStr = String(role || "").toLowerCase().trim();
-                  if (roleStr !== "inactive" && roleStr !== "in active") {
-                    activeUserDisplayNames.push(username.trim());
-                  }
-                }
-              });
+        const wData = await fetchSheetData("Whatsapp");
+        if (wData && wData.table && wData.table.rows) {
+          wData.table.rows.forEach((r, idx) => {
+            if (idx === 0) return;
+            const username = r.c && r.c[2] && r.c[2].v ? r.c[2].v.toString().trim() : "";
+            const role = r.c && r.c[4] && r.c[4].v ? r.c[4].v.toString().trim().toLowerCase() : "";
+            if (username) {
+              const roleStr = String(role || "").toLowerCase().trim();
+              if (roleStr !== "inactive" && roleStr !== "in active") {
+                activeUserDisplayNames.push(username.trim());
+              }
             }
-          }
+          });
         }
       } catch (e) {
         console.error("Failed to fetch active users from Whatsapp sheet", e);

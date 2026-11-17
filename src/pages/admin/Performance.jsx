@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import AdminLayout from "../../components/layout/AdminLayout.jsx"
 import EdpmsDashboardView from "./EdpmsDashboardView.jsx"
+import { fetchSheetData } from "../../utils/sheetApi.js"
 
 // Robust date parsing supporting DD/MM/YYYY, YYYY-MM-DD, and native JS date formats
 const parseDateFromDDMMYYYY = (dateStr) => {
@@ -463,63 +464,41 @@ export default function PerformanceDashboard() {
       
       const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
       
-      const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=master&t=${Date.now()}`
-      const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION&t=${Date.now()}`
-      const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist&t=${Date.now()}`
-      const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE&t=${Date.now()}`
-      const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History&t=${Date.now()}`
-      const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions&t=${Date.now()}`
-      const whatsappUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp&t=${Date.now()}`
-      const leavesUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Leaves&t=${Date.now()}`
-      const holidaysUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`
+      const [
+        masterJsonData,
+        delegationJsonData,
+        checklistJsonData,
+        whatsappJsonData,
+        historyJsonData,
+        loginJsonData,
+        deductionsJsonData,
+        leavesJsonData,
+        holidaysJsonData
+      ] = await Promise.all([
+        fetchSheetData("master", { spreadsheetId }),
+        fetchSheetData("DELEGATION", { spreadsheetId }),
+        fetchSheetData("Checklist", { spreadsheetId }),
+        fetchSheetData("Whatsapp", { spreadsheetId }),
+        fetchSheetData("DELEGATION DONE", { spreadsheetId }).catch(() => null),
+        fetchSheetData("Login History", { spreadsheetId }).catch(() => null),
+        fetchSheetData("Point Deductions", { spreadsheetId }).catch(() => null),
+        fetchSheetData("Leaves", { spreadsheetId }).catch(() => null),
+        fetchSheetData("Holidays", { spreadsheetId }).catch(() => null),
+      ]);
 
-      const [masterRes, delegationRes, checklistRes, historyRes, loginRes, deductionsRes, whatsappRes, leavesRes, holidaysRes] = await Promise.all([
-        fetch(masterUrl, { signal }),
-        fetch(delegationUrl, { signal }),
-        fetch(checklistUrl, { signal }),
-        fetch(historyUrl, { signal }).catch(() => null),
-        fetch(loginUrl, { signal }).catch(() => null),
-        fetch(deductionsUrl, { signal }).catch(() => null),
-        fetch(whatsappUrl, { signal }).catch(() => null),
-        fetch(leavesUrl, { signal }).catch(() => null)
-      ])
-
-      if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok || !whatsappRes.ok) {
+      if (!masterJsonData || !delegationJsonData || !checklistJsonData || !whatsappJsonData) {
         throw new Error("Failed to retrieve Google Sheet performance datasets.")
       }
 
-      const parseResponseJson = async (res) => {
-        const text = await res.text()
-        const start = text.indexOf("{")
-        const end = text.lastIndexOf("}")
-        const jsonStr = text.substring(start, end + 1)
-        return JSON.parse(jsonStr)
-      }
-
-      masterJson = await parseResponseJson(masterRes)
-      delegationJson = await parseResponseJson(delegationRes)
-      checklistJson = await parseResponseJson(checklistRes)
-      whatsappJson = await parseResponseJson(whatsappRes)
-      let leavesJson = null
-      
-      if (leavesRes && leavesRes.ok) {
-        leavesJson = await parseResponseJson(leavesRes).catch(() => null)
-      }
-      if (holidaysRes && holidaysRes.ok) {
-        holidaysJson = await parseResponseJson(holidaysRes).catch(() => null)
-      }
-      
-      if (historyRes && historyRes.ok) {
-        historyJson = await parseResponseJson(historyRes)
-      }
-
-      if (loginRes && loginRes.ok) {
-        loginJson = await parseResponseJson(loginRes).catch(() => null)
-      }
-
-      if (deductionsRes && deductionsRes.ok) {
-        deductionsJson = await parseResponseJson(deductionsRes).catch(() => null)
-      }
+      masterJson = masterJsonData;
+      delegationJson = delegationJsonData;
+      checklistJson = checklistJsonData;
+      whatsappJson = whatsappJsonData;
+      historyJson = historyJsonData;
+      loginJson = loginJsonData;
+      deductionsJson = deductionsJsonData;
+      let leavesJson = leavesJsonData;
+      holidaysJson = holidaysJsonData;
 
       const loginList = []
       if (loginJson && loginJson.table && loginJson.table.rows) {

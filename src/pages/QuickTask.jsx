@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { Search, ChevronDown, Filter, Calendar } from "lucide-react";
 import AdminLayout from "../components/layout/AdminLayout";
 import DelegationPage from "./delegation-data";
+import { fetchSheetData } from "../utils/sheetApi";
 
 export default function QuickTask() {
     const [tasks, setTasks] = useState([]);
@@ -81,14 +82,9 @@ export default function QuickTask() {
             }
 
             // Fetch user role from Whatsapp sheet
-            const whatsappSheetUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.WHATSAPP_SHEET}`;
-            const response = await fetch(whatsappSheetUrl);
-            const text = await response.text();
-
-            const jsonStart = text.indexOf('{');
-            const jsonEnd = text.lastIndexOf('}') + 1;
-            const jsonData = text.substring(jsonStart, jsonEnd);
-            const data = JSON.parse(jsonData);
+            const data = await fetchSheetData(CONFIG.WHATSAPP_SHEET, {
+                spreadsheetId: CONFIG.SHEET_ID
+            });
 
             if (data?.table?.rows) {
                 let foundUser = null;
@@ -217,14 +213,9 @@ export default function QuickTask() {
             setLoading(true);
 
             // Fetch from Checklist sheet
-            const checklistUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.CHECKLIST_SHEET}&t=${Date.now()}`;
-            const response = await fetch(checklistUrl);
-            const text = await response.text();
-
-            const jsonStart = text.indexOf('{');
-            const jsonEnd = text.lastIndexOf('}') + 1;
-            const jsonData = text.substring(jsonStart, jsonEnd);
-            const data = JSON.parse(jsonData);
+            const data = await fetchSheetData(CONFIG.CHECKLIST_SHEET, {
+                spreadsheetId: CONFIG.SHEET_ID
+            });
 
             if (data?.table?.rows) {
                 const rows = data.table.rows.slice(1); // Skip header
@@ -305,14 +296,9 @@ export default function QuickTask() {
             setDelegationLoading(true);
 
             // Fetch from Delegation sheet
-            const delegationUrl = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&sheet=${CONFIG.DELEGATION_SHEET}&t=${Date.now()}`;
-            const response = await fetch(delegationUrl);
-            const text = await response.text();
-
-            const jsonStart = text.indexOf('{');
-            const jsonEnd = text.lastIndexOf('}') + 1;
-            const jsonData = text.substring(jsonStart, jsonEnd);
-            const data = JSON.parse(jsonData);
+            const data = await fetchSheetData(CONFIG.DELEGATION_SHEET, {
+                spreadsheetId: CONFIG.SHEET_ID
+            });
 
             if (data?.table?.rows) {
                 const rows = data.table.rows.slice(1); // Skip header

@@ -2,6 +2,7 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import DailyPunchModal from "../common/DailyPunchModal";
 import { getPunchStatus } from "../../utils/punchService";
+import { fetchSheetData } from "../../utils/sheetApi";
 "use client"
 
 import { useState, useEffect, useTransition } from "react"
@@ -249,37 +250,17 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       try {
         console.log("Starting background prefetch of performance data...")
         const spreadsheetId = "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
-        const masterUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Whatsapp`
-        const delegationUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION`
-        const checklistUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Checklist`
-        const historyUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=DELEGATION%20DONE`
-        const loginUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Login%20History`
-        const deductionsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=Point%20Deductions`
 
-        // Fetch sequentially to prevent Google Sheets 503 Rate Limits
-        const masterRes = await fetch(masterUrl);
-        const delegationRes = await fetch(delegationUrl);
-        const checklistRes = await fetch(checklistUrl);
-        const historyRes = await fetch(historyUrl).catch(() => null);
-        const loginRes = await fetch(loginUrl).catch(() => null);
-        const deductionsRes = await fetch(deductionsUrl).catch(() => null);
+        const [masterJson, delegationJson, checklistJson, historyJson, loginJson, deductionsJson] = await Promise.all([
+          fetchSheetData("Whatsapp", { spreadsheetId }),
+          fetchSheetData("DELEGATION", { spreadsheetId }),
+          fetchSheetData("Checklist", { spreadsheetId }),
+          fetchSheetData("DELEGATION DONE", { spreadsheetId }).catch(() => null),
+          fetchSheetData("Login History", { spreadsheetId }).catch(() => null),
+          fetchSheetData("Point Deductions", { spreadsheetId }).catch(() => null),
+        ]);
 
-        if (!masterRes.ok || !delegationRes.ok || !checklistRes.ok) return
-
-        const parseResponseJson = async (res) => {
-          const text = await res.text()
-          const start = text.indexOf("{")
-          const end = text.lastIndexOf("}")
-          const jsonStr = text.substring(start, end + 1)
-          return JSON.parse(jsonStr)
-        }
-
-        const masterJson = await parseResponseJson(masterRes)
-        const delegationJson = await parseResponseJson(delegationRes)
-        const checklistJson = await parseResponseJson(checklistRes)
-        const historyJson = historyRes && historyRes.ok ? await parseResponseJson(historyRes) : null
-        const loginJson = loginRes && loginRes.ok ? await parseResponseJson(loginRes).catch(() => null) : null
-        const deductionsJson = deductionsRes && deductionsRes.ok ? await parseResponseJson(deductionsRes).catch(() => null) : null
+        if (!masterJson || !delegationJson || !checklistJson) return
 
         const payload = {
           masterJson,
@@ -287,7 +268,8 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
           checklistJson,
           historyJson,
           loginJson,
-          deductionsJson
+          deductionsJson,
+          timestamp: Date.now()
         }
         window.sbh_prefetch_performance_raw = payload
         window.sbh_prefetch_performance_raw_time = Date.now()

@@ -21,12 +21,61 @@ import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import sbhLogo from "../../assets/logo.png"
+import { fetchSheetData } from "../../utils/sheetApi"
 
 const CONFIG = {
   APPS_SCRIPT_URL:
     "https://script.google.com/macros/s/AKfycbwlEKO_SGplEReKLOdaCdpmztSXHDB_0oapI1dwiEY7qmuzvhScIvmXjB6_HLP8jFQL/exec",
   MAIN_SPREADSHEET_ID: "1MvNdsblxNzREdV5kSgBo_78IusmQzilbar9pteufEz0"
 }
+
+// Module-level date parsing helpers
+const parseDateStr = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  const str = String(dateStr).trim();
+  if (str.includes("/")) {
+    const parts = str.split("/");
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+      return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+  } else if (str.includes("-")) {
+    const parts = str.split("-");
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+      }
+      return new Date(parts[2], parts[1] - 1, parts[0]);
+    }
+  }
+  const parsed = Date.parse(str);
+  if (!isNaN(parsed)) {
+    return new Date(parsed);
+  }
+  return null;
+};
+
+const parseGVizDateValue = (cell) => {
+  if (!cell) return null;
+  if (cell.v) {
+    if (typeof cell.v === "string" && cell.v.startsWith("Date(2")) {
+      const match = cell.v.match(/Date\((\d+),(\d+),(\d+)\)/);
+      if (match) {
+        return new Date(Number(match[1]), Number(match[2]), Number(match[3]));
+      }
+    }
+    const d = new Date(cell.v);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (cell.f) {
+    const d = parseDateStr(cell.f);
+    if (d) return d;
+  }
+  return null;
+};
 
 export default function AttendanceReport() {
   const [loading, setLoading] = useState(true)
@@ -94,14 +143,12 @@ export default function AttendanceReport() {
     setError(null)
     try {
       // Fetch Attendance logs
-      const attRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Attendance`
-      )
-      if (!attRes.ok) throw new Error("Failed to load attendance logs")
-      const attText = await attRes.text()
-      const attJson = JSON.parse(attText.substring(attText.indexOf("{"), attText.lastIndexOf("}") + 1))
+      const attJson = await fetchSheetData("Attendance", {
+        spreadsheetId: CONFIG.MAIN_SPREADSHEET_ID,
+        scriptUrl: CONFIG.APPS_SCRIPT_URL
+      })
       
-      const parsedLogs = attJson.table.rows.map(row => {
+      const parsedLogs = (attJson?.table?.rows || []).map(row => {
         const getVal = (colIdx) => {
           if (!row || !row.c || !row.c[colIdx]) return "";
           return row.c[colIdx].f || row.c[colIdx].v || "";
@@ -117,73 +164,54 @@ export default function AttendanceReport() {
         };
       })
 
-      const masterRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Whatsapp`
-      )
-      if (!masterRes.ok) throw new Error("Failed to load master employees")
-      const masterText = await masterRes.text()
-      const masterJson = JSON.parse(masterText.substring(masterText.indexOf("{"), masterText.lastIndexOf("}") + 1))
+      // Fetch master employees
+      const masterJson = await fetchSheetData("Whatsapp", {
+        spreadsheetId: CONFIG.MAIN_SPREADSHEET_ID,
+        scriptUrl: CONFIG.APPS_SCRIPT_URL
+      })
       
-      const parsedStaff = masterJson.table.rows.slice(1).map(row => ({
-        username: String(row.c[2]?.v || "").trim(),
-        department: String(row.c[1]?.v || "").trim(),
-        role: String(row.c[4]?.v || "").trim().toLowerCase()
+      const parsedStaff = (masterJson?.table?.rows || []).slice(1).map(row => ({
+        username: String(row.c?.[2]?.v || "").trim(),
+        department: String(row.c?.[1]?.v || "").trim(),
+        role: String(row.c?.[4]?.v || "").trim().toLowerCase()
       })).filter(s => s.username && s.role !== "inactive" && s.role !== "in active")
 
       // Fetch point deductions
-      const dedRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Point%20Deductions`
-      )
       let parsedDeductions = []
-      if (dedRes.ok) {
-        const dedText = await dedRes.text()
-        const dedJson = JSON.parse(dedText.substring(dedText.indexOf("{"), dedText.lastIndexOf("}") + 1))
-        parsedDeductions = dedJson.table.rows.slice(1).map(row => {
-          const getVal = (colIdx) => {
-            if (!row || !row.c || !row.c[colIdx]) return "";
-            return row.c[colIdx].f || row.c[colIdx].v || "";
-          };
-          return {
-            date: getVal(0),
-            username: getVal(1),
-            reason: getVal(2),
-            deducted: Number(getVal(3)) || 0,
-            balance: Number(getVal(4)) || 0
-          };
+      try {
+        const dedJson = await fetchSheetData("Point Deductions", {
+          spreadsheetId: CONFIG.MAIN_SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
         })
+        if (dedJson?.table?.rows) {
+          parsedDeductions = dedJson.table.rows.slice(1).map(row => {
+            const getVal = (colIdx) => {
+              if (!row || !row.c || !row.c[colIdx]) return "";
+              return row.c[colIdx].f || row.c[colIdx].v || "";
+            };
+            return {
+              date: getVal(0),
+              username: getVal(1),
+              reason: getVal(2),
+              deducted: Number(getVal(3)) || 0,
+              balance: Number(getVal(4)) || 0
+            };
+          })
+        }
+      } catch (dedErr) {
+        console.warn("Point deductions fetch warning:", dedErr);
       }
 
       // Fetch Leaves
-      const leavesRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Leaves`
-      )
       let parsedLeaves = []
-      if (leavesRes.ok) {
-        const leavesText = await leavesRes.text()
-        const leavesJson = JSON.parse(leavesText.substring(leavesText.indexOf("{"), leavesText.lastIndexOf("}") + 1))
-        
-        const parseGVizDateValue = (cell) => {
-          if (!cell) return null;
-          if (cell.v) {
-            if (typeof cell.v === "string" && cell.v.startsWith("Date(2")) {
-              const match = cell.v.match(/Date\((\d+),(\d+),(\d+)\)/);
-              if (match) {
-                return new Date(Number(match[1]), Number(match[2]), Number(match[3]));
-              }
-            }
-            const d = new Date(cell.v);
-            if (!isNaN(d.getTime())) return d;
-          }
-          if (cell.f) {
-            const d = parseDateStr(cell.f);
-            if (d) return d;
-          }
-          return null;
-        };
-
-        if (leavesJson && leavesJson.table && leavesJson.table.rows) {
+      try {
+        const leavesJson = await fetchSheetData("Leaves", {
+          spreadsheetId: CONFIG.MAIN_SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        })
+        if (leavesJson?.table?.rows) {
           leavesJson.table.rows.forEach(row => {
-            if (row.c) {
+            if (row && row.c) {
               const uName = row.c[1] && row.c[1].v ? String(row.c[1].v).trim().toLowerCase() : "";
               const startDateObj = parseGVizDateValue(row.c[2]);
               const endDateObj = parseGVizDateValue(row.c[3]);
@@ -199,17 +227,18 @@ export default function AttendanceReport() {
             }
           })
         }
+      } catch (leavesErr) {
+        console.warn("Leaves fetch warning:", leavesErr);
       }
 
       // Fetch Holidays
-      const holidaysRes = await fetch(
-        `https://docs.google.com/spreadsheets/d/${CONFIG.MAIN_SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Holidays&t=${Date.now()}`
-      ).catch(() => null);
       let parsedHolidays = [];
-      if (holidaysRes && holidaysRes.ok) {
-        const hText = await holidaysRes.text();
-        const hJson = JSON.parse(hText.substring(hText.indexOf("{"), hText.lastIndexOf("}") + 1));
-        if (hJson && hJson.table && hJson.table.rows) {
+      try {
+        const hJson = await fetchSheetData("Holidays", {
+          spreadsheetId: CONFIG.MAIN_SPREADSHEET_ID,
+          scriptUrl: CONFIG.APPS_SCRIPT_URL
+        })
+        if (hJson?.table?.rows) {
           hJson.table.rows.slice(1).forEach(row => {
             if (row && row.c && row.c[0]) {
               const hCell = row.c[0];
@@ -225,6 +254,8 @@ export default function AttendanceReport() {
             }
           });
         }
+      } catch (hErr) {
+        console.warn("Holidays fetch warning:", hErr);
       }
 
       setAttendanceLogs(parsedLogs)
@@ -243,34 +274,6 @@ export default function AttendanceReport() {
   useEffect(() => {
     fetchData()
   }, [])
-
-  // Helper date parsing DD/MM/YYYY
-  const parseDateStr = (dateStr) => {
-    if (!dateStr) return null
-    if (dateStr instanceof Date) return dateStr
-    const str = String(dateStr).trim()
-    if (str.includes("/")) {
-      const parts = str.split("/")
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          return new Date(parts[0], parts[1] - 1, parts[2])
-        }
-        return new Date(parts[2], parts[1] - 1, parts[0])
-      }
-    } else if (str.includes("-")) {
-      const parts = str.split("-")
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          return new Date(parts[0], parts[1] - 1, parts[2])
-        }
-        return new Date(parts[2], parts[1] - 1, parts[0])
-      }
-    }
-    const parsed = Date.parse(str)
-    if (!isNaN(parsed)) {
-      return new Date(parsed)
-    }
-  }
 
   const formatDateToVIP = (dateInput) => {
     if (!dateInput) return "—"
