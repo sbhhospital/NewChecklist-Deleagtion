@@ -206,8 +206,8 @@ function DelegationDataPage() {
   const [nextTargetDate, setNextTargetDate] = useState({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [userRole, setUserRole] = useState("");
-  const [username, setUsername] = useState("");
+  const [userRole, setUserRole] = useState(() => (sessionStorage.getItem("role") || "").toLowerCase().trim());
+  const [username, setUsername] = useState(() => (sessionStorage.getItem("username") || "").trim());
   const [nameFilter, setNameFilter] = useState("");
   const [staffSearchText, setStaffSearchText] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -397,7 +397,7 @@ function DelegationDataPage() {
       }
 
       filteredData.forEach((item) => {
-        if (userRole !== "admin" && item["col4"] !== username) return;
+        if (userRole !== "admin" && (item["col4"] || "").toLowerCase().trim() !== (username || "").toLowerCase().trim()) return;
 
         const status = item["col20"];
         if (status && counts.hasOwnProperty(status)) {
@@ -410,10 +410,10 @@ function DelegationDataPage() {
   }, [accountData, userRole, username, nameFilter]);
 
   useEffect(() => {
-    const role = sessionStorage.getItem("role");
-    const user = sessionStorage.getItem("username");
-    setUserRole(role || "");
-    setUsername(user || "");
+    const role = (sessionStorage.getItem("role") || "").toLowerCase().trim();
+    const user = (sessionStorage.getItem("username") || "").trim();
+    setUserRole(role);
+    setUsername(user);
   }, []);
 
   const parseGoogleSheetsDate = useCallback(
@@ -1061,7 +1061,7 @@ function DelegationDataPage() {
                 : [];
 
               const assignedTo = rowValues[7] ? String(rowValues[7]).trim().toLowerCase() : "";
-              if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return null;
+              if (activeUsersLowerSet.size > 0 && assignedTo && !activeUsersLowerSet.has(assignedTo)) return null;
 
               // Map all columns — use module-level parser to avoid closure issues
               for (let i = 0; i < 16; i++) {
@@ -1165,7 +1165,7 @@ function DelegationDataPage() {
         const googleSheetsRowIndex = rowIndex + 1;
         const taskId = rowValues[1] || "";
         const assignedTo = rowValues[4] ? String(rowValues[4]).trim().toLowerCase() : "";
-        if (assignedTo && !activeUsersLowerSet.has(assignedTo)) return;
+        if (activeUsersLowerSet.size > 0 && assignedTo && !activeUsersLowerSet.has(assignedTo)) return;
 
         const stableId = taskId
           ? `task_${taskId}_${googleSheetsRowIndex}`
@@ -1191,9 +1191,11 @@ function DelegationDataPage() {
           }
         }
 
+        const isAdmin = (userRole || "").toLowerCase().trim() === "admin" || sessionStorage.getItem("isAdmin") === "true";
+
         // Store for scoring calculation (filtered only by user if not admin, but KEEP "Done" tasks)
         const isUserMatch =
-          userRole === "admin" ||
+          isAdmin ||
           (rowData["col4"] &&
             rowData["col4"].toLowerCase().trim() ===
               username.toLowerCase().trim());
@@ -1202,7 +1204,7 @@ function DelegationDataPage() {
         }
 
         // ✅ User filtering logic
-        if (userRole !== "admin") {
+        if (!isAdmin) {
           const taskAssignedTo = rowData["col4"]; // Column E (Name)
           if (
             !taskAssignedTo ||
@@ -1263,7 +1265,7 @@ function DelegationDataPage() {
 
         if (isLeave) {
           const taskAssignedTo = rowData["col4"];
-          const isUserMatch = userRole === "admin" || (taskAssignedTo && taskAssignedTo.toLowerCase().trim() === username.toLowerCase().trim());
+          const isUserMatch = isAdmin || (taskAssignedTo && taskAssignedTo.toLowerCase().trim() === username.toLowerCase().trim());
           if (isUserMatch) {
             processedHistoryData.push(rowData);
           }
