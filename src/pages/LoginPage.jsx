@@ -368,6 +368,7 @@ const LoginPage = () => {
                   <div className="relative">
                     <input
                       type="text"
+                      autoComplete="username"
                       required
                       placeholder="Type or select staff name..."
                       value={formData.username}
@@ -431,6 +432,7 @@ const LoginPage = () => {
                   <div className="relative">
                     <input
                       type={visible ? "text" : "password"}
+                      autoComplete="current-password"
                       required
                       placeholder="••••••••"
                       value={formData.password}
@@ -600,6 +602,7 @@ const LoginPage = () => {
                 <div className="relative">
                   <input
                     type="text"
+                    autoComplete="username"
                     required
                     placeholder="Type or select your Username..."
                     value={formData.username}
@@ -662,6 +665,7 @@ const LoginPage = () => {
                 <div className="relative">
                   <input
                     type={visible ? "text" : "password"}
+                    autoComplete="current-password"
                     required
                     placeholder="••••••••"
                     value={formData.password}

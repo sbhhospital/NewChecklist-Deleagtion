@@ -547,6 +547,7 @@ export default function PerformanceDashboard() {
           }
         });
       }
+      const holidayDatesSet = new Set((holidaysList || []).map(h => h.date));
 
       const leavesList = []
       if (leavesJson && leavesJson.table && leavesJson.table.rows) {
@@ -695,8 +696,7 @@ export default function PerformanceDashboard() {
           let isHoliday = false;
           if (taskDateObj) {
             const formattedDate = formatDateToDDMMYYYY(taskDateObj);
-            const holidayDates = new Set((holidaysList || []).map(h => h.date));
-            if (holidayDates.has(formattedDate)) {
+            if (holidayDatesSet.has(formattedDate)) {
               isHoliday = true;
             }
           }
@@ -742,7 +742,7 @@ export default function PerformanceDashboard() {
           // Compute penalty and score matching calculateTaskScore
           let scoreDetails = { score: 0, baseScore: 3, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0, mainScorePenalty: 0 }
           try {
-            scoreDetails = calculateTaskScore(rawTask, historyList, false, holidayDates)
+            scoreDetails = calculateTaskScore(rawTask, historyList, false, holidayDatesSet)
           } catch (scoreErr) {
             console.error("Error calculating delegation task score:", scoreErr, rawTask)
           }
@@ -827,8 +827,7 @@ export default function PerformanceDashboard() {
           let isHoliday2 = false;
           if (taskDateObj) {
             const formattedDate2 = formatDateToDDMMYYYY(taskDateObj);
-            const holidayDates2 = new Set((holidaysList || []).map(h => h.date));
-            if (holidayDates2.has(formattedDate2)) {
+            if (holidayDatesSet.has(formattedDate2)) {
               isHoliday2 = true;
             }
           }
@@ -867,7 +866,7 @@ export default function PerformanceDashboard() {
 
           let scoreDetails = { score: 100, baseScore: 100, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0 }
           try {
-            scoreDetails = calculateTaskScore(rawTask, [], true, holidayDates2)
+            scoreDetails = calculateTaskScore(rawTask, [], true, holidayDatesSet)
           } catch (scoreErr) {
             console.error("Error calculating checklist task score:", scoreErr, rawTask)
           }

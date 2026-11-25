@@ -83,6 +83,7 @@ const parseGoogleSheetsDateStr = (dateStr) => {
     const match = /Date\((\d+),(\d+),(\d+)/.exec(s);
     if (match) {
       const year = parseInt(match[1], 10);
+      if (year > 2099 || year < 1970) return "";
       const month = parseInt(match[2], 10) + 1; // gviz month is 0-indexed
       const day = parseInt(match[3], 10);
       return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
@@ -92,9 +93,11 @@ const parseGoogleSheetsDateStr = (dateStr) => {
   try {
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
-      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+      const y = d.getFullYear();
+      if (y > 2099 || y < 1970) return "";
+      return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${y}`;
     }
-  } catch (_) {}
+  } catch (_) { }
   return s;
 };
 
@@ -126,7 +129,7 @@ const parseDateValue = (cell) => {
   if (!cell) return null;
   const val = cell.v;
   if (!val) return null;
-  
+
   const valStr = String(val);
   if (valStr.startsWith("Date(")) {
     const match = /Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)/.exec(valStr);
@@ -134,7 +137,7 @@ const parseDateValue = (cell) => {
       return new Date(parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10));
     }
   }
-  
+
   const fmt = cell.f || valStr;
   const parts = fmt.split("/");
   if (parts.length === 3) {
@@ -145,7 +148,7 @@ const parseDateValue = (cell) => {
 
 // Clears delegation cache for a given sheet name
 const clearDelegationCache = (sheetName) => {
-  try { sessionStorage.removeItem(`delegation_sheet_cache_${sheetName}`); } catch(_) {}
+  try { sessionStorage.removeItem(`delegation_sheet_cache_${sheetName}`); } catch (_) { }
 };
 
 function useDebounce(value, delay) {
@@ -251,12 +254,33 @@ function DelegationDataPage() {
 
   const [holidayDates, setHolidayDates] = useState(new Set());
 
+  // Pagination states for high performance (smooth rendering with 0 freeze)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [currentHistoryPage, setCurrentHistoryPage] = useState(1);
+
   const [editingRemarks, setEditingRemarks] = useState({});
   const [showSelectAllWarning, setShowSelectAllWarning] = useState(false);
   const [extensionModal, setExtensionModal] = useState({ isOpen: false, task: null, historyEntries: [] });
   const [tempRemarks, setTempRemarks] = useState({});
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Pre-calculate holiday timestamps once (O(1) lookups during scoring, 0 date allocations)
+  const holidayTimestamps = useMemo(() => {
+    const list = [];
+    if (!holidayDates || holidayDates.size === 0) return list;
+    holidayDates.forEach((hDateStr) => {
+      const hDate = parseDateFromDDMMYYYY(hDateStr);
+      if (hDate && !isNaN(hDate.getTime())) {
+        hDate.setHours(0, 0, 0, 0);
+        if (hDate.getDay() !== 0) { // Non-Sunday holidays
+          list.push(hDate.getTime());
+        }
+      }
+    });
+    return list;
+  }, [holidayDates]);
 
   const formatDateToDDMMYYYY = useCallback((date) => {
     const day = date.getDate().toString().padStart(2, "0");
@@ -265,7 +289,7 @@ function DelegationDataPage() {
     return `${day}/${month}/${year}`;
   }, []);
 
-  const calculateBusinessDelayDays = useCallback((effectiveDeadline, actualOrTodayDate, holidaySet) => {
+  const calculateBusinessDelayDays = useCallback((effectiveDeadline, actualOrTodayDate, holidayTsList) => {
     if (!effectiveDeadline || !actualOrTodayDate) return 0;
     const start = new Date(effectiveDeadline);
     start.setHours(0, 0, 0, 0);
@@ -293,18 +317,14 @@ function DelegationDataPage() {
 
     let delay = totalDays - sundays;
 
-    // Subtract holidays that fall strictly within (start, end] and are not on Sunday
-    if (holidaySet && holidaySet.size > 0) {
-      holidaySet.forEach((hDateStr) => {
-        const hDate = parseDateFromDDMMYYYY(hDateStr);
-        if (hDate) {
-          hDate.setHours(0, 0, 0, 0);
-          const hTime = hDate.getTime();
-          if (hTime > startTime && hTime <= endTime && hDate.getDay() !== 0) {
-            delay = Math.max(0, delay - 1);
-          }
+    // Subtract holidays that fall strictly within (start, end]
+    if (holidayTsList && holidayTsList.length > 0) {
+      for (let i = 0; i < holidayTsList.length; i++) {
+        const hTime = holidayTsList[i];
+        if (hTime > startTime && hTime <= endTime) {
+          delay = Math.max(0, delay - 1);
         }
-      });
+      }
     }
 
     return Math.max(0, delay);
@@ -320,7 +340,7 @@ function DelegationDataPage() {
 
   const getGoogleDriveThumbnailUrl = (url) => {
     if (!url || typeof url !== "string") return url;
-    
+
     let fileId = "";
     const ucExportMatch = url.match(/export=view&id=([^&]+)/);
     const directMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
@@ -503,7 +523,7 @@ function DelegationDataPage() {
     for (let i = 0; i < historyData.length; i++) {
       const h = historyData[i];
       if (!h) continue;
-      const tId = String(h["col1"] || "").trim();
+      const tId = String(h["col1"] !== undefined && h["col1"] !== null ? h["col1"] : "").trim();
       if (!tId) continue;
 
       let record = map.get(tId);
@@ -513,7 +533,7 @@ function DelegationDataPage() {
       }
       record.entries.push(h);
       const action = String(h["col2"] || "").toLowerCase().trim();
-      if (action === "extend date" || action === "extended") {
+      if (action.includes("extend")) {
         record.extensionCount++;
       }
     }
@@ -525,32 +545,32 @@ function DelegationDataPage() {
     if (!unfilteredDelegationData || !Array.isArray(unfilteredDelegationData)) return map;
     for (let i = 0; i < unfilteredDelegationData.length; i++) {
       const item = unfilteredDelegationData[i];
-      if (item && item["col1"]) {
+      if (item && item["col1"] !== undefined && item["col1"] !== null) {
         map.set(String(item["col1"]).trim(), item);
       }
     }
     return map;
   }, [unfilteredDelegationData]);
 
-  const calculateTaskScore = useCallback((task, history) => {
+  const calculateTaskScore = useCallback((task) => {
     if (!task) {
       return { score: 0, baseScore: 3, completionReward: 0, penalty: 0, extensionCount: 0, delayDays: 0, extensionPenalty: 0, delayPenalty: 0, mainScorePenalty: 0 };
     }
-    const taskId = String(task["col1"] || "").trim();
-    
-    // Count extensions from history (O(1) Map lookup)
+    const taskId = String(task["col1"] !== undefined && task["col1"] !== null ? task["col1"] : "").trim();
+
+    // Count extensions from history (O(1) Map lookup - 0 expensive loops)
     let extensionCount = 0;
     const histRecord = historyMapByTaskId.get(taskId);
     if (histRecord) {
       extensionCount = histRecord.extensionCount;
-    } else if (history && Array.isArray(history)) {
-      extensionCount = history.filter(
-        (h) => String(h["col1"] || "").trim() === taskId && (String(h["col2"]).toLowerCase() === "extend date" || String(h["col2"]).toLowerCase() === "extended")
-      ).length;
-    } else if (task["col10"] && task["col6"] && task["col10"] !== task["col6"]) {
+    }
+    // Also check if task itself in sheet reflects an extension (Planned Date != Start Date or Status is Extend date)
+    const isExtendedInSheet = (task["col10"] && task["col6"] && String(task["col10"]).trim() !== String(task["col6"]).trim()) ||
+      (task["col13"] && String(task["col13"]).toLowerCase().includes("extend"));
+    if (isExtendedInSheet && extensionCount === 0) {
       extensionCount = 1;
     }
-    
+
     // Calculate delay penalty
     let delayDays = 0;
     const deadlineStr = task["col10"] || task["col6"] || "";
@@ -573,14 +593,12 @@ function DelegationDataPage() {
       } else {
         if (isDone || isVerifyPending) {
           if (actualDate && actualDate > effectiveDeadline) {
-            delayDays = calculateBusinessDelayDays(effectiveDeadline, actualDate, holidayDates);
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, actualDate, holidayTimestamps);
           } else if (actualDate && actualDate <= effectiveDeadline) {
             delayDays = 0;
           } else {
             const col12Val = parseInt(task["col12"], 10);
             if (!isNaN(col12Val) && col12Val > 0) {
-              // Only use sheet's delayDays if we don't have enough info, but clamp it if needed
-              // If it's before cutoff, just ignore it.
               if (deadlineDate >= cutoffDate) {
                 delayDays = col12Val;
               }
@@ -590,12 +608,11 @@ function DelegationDataPage() {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           if (today > effectiveDeadline) {
-            delayDays = calculateBusinessDelayDays(effectiveDeadline, today, holidayDates);
+            delayDays = calculateBusinessDelayDays(effectiveDeadline, today, holidayTimestamps);
           }
         }
       }
     }
-
 
     // Use Task Value from column V (index 21) if available, fallback to 3 points
     let taskWeight = parseInt(task["col21"], 10);
@@ -634,7 +651,7 @@ function DelegationDataPage() {
 
       if (delayDays === 1) delayPenaltyOnTask = 2;
       else if (delayDays === 2) delayPenaltyOnTask = 5;
-      if (delayDays >= 3) delayPenaltyOnTask = 10;
+      else if (delayDays >= 3) delayPenaltyOnTask = 10;
       if (delayDays > 3) mainScorePenalty += (delayDays - 3) * 10;
     }
 
@@ -662,7 +679,7 @@ function DelegationDataPage() {
       delayPenalty: delayPenaltyOnTask,
       mainScorePenalty
     };
-  }, [parseDateFromDDMMYYYY, holidayDates, calculateBusinessDelayDays, historyMapByTaskId]);
+  }, [parseDateFromDDMMYYYY, holidayTimestamps, calculateBusinessDelayDays, historyMapByTaskId]);
 
   const scoringSummary = useMemo(() => {
     let tasksToScore = unfilteredDelegationData;
@@ -701,17 +718,17 @@ function DelegationDataPage() {
 
     tasksToScore.forEach((task) => {
       const scoreDetails = calculateTaskScore(task, historyData);
-      
+
       const taskStartDate = task["col6"];
       if (taskStartDate) {
-          const taskDateObj = parseDateFromDDMMYYYY(taskStartDate);
-          if (taskDateObj && taskDateObj.getMonth() === currentMonth && taskDateObj.getFullYear() === currentYear) {
-              thisMonthPenaltySum += scoreDetails.mainScorePenalty || 0;
-          }
+        const taskDateObj = parseDateFromDDMMYYYY(taskStartDate);
+        if (taskDateObj && taskDateObj.getMonth() === currentMonth && taskDateObj.getFullYear() === currentYear) {
+          thisMonthPenaltySum += scoreDetails.mainScorePenalty || 0;
+        }
       }
-      
+
       const isCompleted = task["col20"] === "Done" || task["col20"] === "Verify Pending";
-      
+
       if (isCompleted) {
         completedCount++;
       }
@@ -719,7 +736,7 @@ function DelegationDataPage() {
       if (task["col20"] === "Done") {
         totalTaskRewards += (scoreDetails.score || 0);
       }
-      
+
       totalMainScorePenalties += (scoreDetails.mainScorePenalty || 0);
 
       if (scoreDetails.extensionCount > 0) {
@@ -949,6 +966,7 @@ function DelegationDataPage() {
     return Array.from(dates).sort((a, b) => {
       const dateA = parseDateFromDDMMYYYY(a);
       const dateB = parseDateFromDDMMYYYY(b);
+      if (!dateA && !dateB) return 0;
       if (!dateA) return 1;
       if (!dateB) return -1;
       return dateA.getTime() - dateB.getTime();
@@ -1007,6 +1025,7 @@ function DelegationDataPage() {
         const dateStrB = b["col0"] || "";
         const dateA = parseDateFromDDMMYYYY(dateStrA);
         const dateB = parseDateFromDDMMYYYY(dateStrB);
+        if (!dateA && !dateB) return 0;
         if (!dateA) return 1;
         if (!dateB) return -1;
         return dateB.getTime() - dateA.getTime();
@@ -1021,6 +1040,29 @@ function DelegationDataPage() {
     username,
     nameFilter,
   ]); // Added nameFilter dependency
+
+  // Reset pagination on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, nameFilter, dateRange, statusFilter]);
+
+  useEffect(() => {
+    setCurrentHistoryPage(1);
+  }, [debouncedSearchTerm, nameFilter, startDate, endDate, showHistory]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAccountData.length / pageSize));
+  const paginatedAccountData = useMemo(() => {
+    if (pageSize >= 9999) return filteredAccountData;
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredAccountData.slice(startIndex, startIndex + pageSize);
+  }, [filteredAccountData, currentPage, pageSize]);
+
+  const totalHistoryPages = Math.max(1, Math.ceil(filteredHistoryData.length / pageSize));
+  const paginatedHistoryData = useMemo(() => {
+    if (pageSize >= 9999) return filteredHistoryData;
+    const startIndex = (currentHistoryPage - 1) * pageSize;
+    return filteredHistoryData.slice(startIndex, startIndex + pageSize);
+  }, [filteredHistoryData, currentHistoryPage, pageSize]);
   // Optimized data fetching with parallel requests
   const processFetchedData = (data, processedHistoryData, rawDelegationList, fetchedAllDelegationData) => {
     setHistoryData(processedHistoryData || []);
@@ -1158,7 +1200,7 @@ function DelegationDataPage() {
               const startDateObj = parseDateValue(r.c[2]);
               const endDateObj = parseDateValue(r.c[3]);
               const targetSheet = r.c[4] && r.c[4].v ? String(r.c[4].v).trim() : "both";
-              
+
               if (uName && startDateObj && endDateObj) {
                 leavesList.push({ username: uName, startDateObj, endDateObj, targetSheet });
               }
@@ -1252,7 +1294,7 @@ function DelegationDataPage() {
           isAdmin ||
           (rowData["col4"] &&
             rowData["col4"].toLowerCase().trim() ===
-              username.toLowerCase().trim());
+            username.toLowerCase().trim());
         if (isUserMatch) {
           rawDelegationList.push(rowData);
         }
@@ -1274,17 +1316,17 @@ function DelegationDataPage() {
         const taskStartDateStr = rowData["col6"];
         const taskDateObj = parseDateFromDDMMYYYY(taskStartDateStr);
         let isLeave = (rowData["col16"] && rowData["col16"].toString().trim().toLowerCase() === "leave") ||
-                        (rowData["col12"] && rowData["col12"].toString().trim().toLowerCase() === "leave");
-        
+          (rowData["col12"] && rowData["col12"].toString().trim().toLowerCase() === "leave");
+
         if (taskDateObj && taskAssignedTo) {
           const isL = leavesList.some(l => {
             if (l.username !== taskAssignedTo.trim().toLowerCase()) return false;
             if (l.targetSheet !== "both" && l.targetSheet !== "DELEGATION") return false;
-            
+
             const startD = new Date(l.startDateObj);
             const endD = new Date(l.endDateObj);
-            startD.setHours(0,0,0,0);
-            endD.setHours(23,59,59,999);
+            startD.setHours(0, 0, 0, 0);
+            endD.setHours(23, 59, 59, 999);
             return taskDateObj >= startD && taskDateObj <= endD;
           });
           if (isL) {
@@ -1403,7 +1445,7 @@ function DelegationDataPage() {
     [handleSelectItem]
   );
 
-    const handleSelectAllItems = useCallback((e) => {
+  const handleSelectAllItems = useCallback((e) => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (e && e.preventDefault) e.preventDefault();
     setShowSelectAllWarning(true);
@@ -1527,7 +1569,7 @@ function DelegationDataPage() {
       // Process Verify Pending tasks (update existing records in DELEGATION DONE)
       if (verifyPendingTasks.length > 0) {
         await processVerifyPendingTasks(verifyPendingTasks, statusData);
-        
+
         // Update local historyData status to Admin Done
         setHistoryData(prev =>
           prev.map(historyItem => {
@@ -1549,7 +1591,7 @@ function DelegationDataPage() {
           const submittedStatus = statusData[id] || "";
           const finalStatus = (userRole === "admin" && submittedStatus === "Done") ? "Admin Done" : submittedStatus;
           const pointsEarned = calculateSingleTaskPoints(item, finalStatus, historyData);
-          
+
           let formattedNextTargetDate = "";
           if (nextTargetDate[id]) {
             const convertedDate = convertToGoogleSheetsDate(nextTargetDate[id]);
@@ -1576,9 +1618,67 @@ function DelegationDataPage() {
         setHistoryData(prev => [...newHistoryEntries, ...prev]);
       }
 
-      // Update local state - remove submitted items
+      // Update local state:
+      // If task was marked "Extend date", keep it in the active list with its new Planned Date, status, and remarks!
+      // Only tasks marked "Done" or "Admin Done" are removed from active pending tasks.
+      const extendedMap = new Map();
+      regularTasks.forEach(({ id, item }) => {
+        if (statusData[id] === "Extend date") {
+          let formattedNextTargetDate = "";
+          if (nextTargetDate[id]) {
+            const convertedDate = convertToGoogleSheetsDate(nextTargetDate[id]);
+            formattedNextTargetDate = convertedDate.formatted;
+          }
+          extendedMap.set(item._id, {
+            newPlannedDate: formattedNextTargetDate,
+            newRemarks: remarksData[id] || item["col14"] || "",
+          });
+        }
+      });
+
       setAccountData((prev) =>
-        prev.filter((item) => !selectedItems.has(item._id))
+        prev
+          .map((item) => {
+            if (extendedMap.has(item._id)) {
+              const ext = extendedMap.get(item._id);
+              return {
+                ...item,
+                col10: ext.newPlannedDate || item["col10"],
+                col13: "Extend date",
+                col14: ext.newRemarks,
+                col20: "Pending",
+              };
+            }
+            return item;
+          })
+          .filter((item) => {
+            if (selectedItems.has(item._id)) {
+              const st = statusData[item._id];
+              if (st === "Done" || st === "Admin Done") return false;
+            }
+            return true;
+          })
+      );
+
+      setUnfilteredDelegationData((prev) =>
+        prev.map((item) => {
+          if (extendedMap.has(item._id)) {
+            const ext = extendedMap.get(item._id);
+            return {
+              ...item,
+              col10: ext.newPlannedDate || item["col10"],
+              col13: "Extend date",
+              col14: ext.newRemarks,
+            };
+          }
+          if (selectedItems.has(item._id)) {
+            const st = statusData[item._id];
+            if (st === "Done" || st === "Admin Done") {
+              return { ...item, col20: userRole === "admin" ? "Admin Done" : "Done" };
+            }
+          }
+          return item;
+        })
       );
 
       const successMessage = [];
@@ -1674,7 +1774,7 @@ function DelegationDataPage() {
   const calculateSingleTaskPoints = (taskItem, statusDataVal, historyDataList) => {
     const taskId = taskItem["col1"];
     const taskWeight = parseInt(taskItem["col21"], 10) || 3; // Col V is col21
-    
+
     // Count extensions
     let extensionCount = 0;
     if (historyDataList && Array.isArray(historyDataList)) {
@@ -1682,7 +1782,7 @@ function DelegationDataPage() {
         (h) => String(h["col1"]).trim() === String(taskId).trim() && String(h["col2"]).toLowerCase() === "extend date"
       ).length;
     }
-    
+
     if (statusDataVal === "Extend Date" || statusDataVal === "Extended") {
       extensionCount += 1;
     }
@@ -1691,7 +1791,7 @@ function DelegationDataPage() {
     let delayDays = 0;
     const dueDateStr = taskItem["col10"];
     const startDateStr = taskItem["col6"];
-    
+
     const parseDDMMYYYY = (dStr) => {
       if (!dStr) return null;
       const parts = dStr.split("/");
@@ -1873,6 +1973,61 @@ function DelegationDataPage() {
         throw new Error(result.error || "Failed to batch insert regular tasks");
       }
 
+      // CRITICAL: Update source DELEGATION sheet (Column K for Extended Date, Column L for Actual Date, Column N for Status, Column O for Remarks)
+      const updatePromises = tasks.map(async ({ id, item }) => {
+        if (!item._rowIndex || item._rowIndex < 2) return;
+
+        const submittedStatus = statusData[id] || "";
+        const isExtend = submittedStatus === "Extend date";
+        const isDone = submittedStatus === "Done";
+
+        let formattedNextTargetDate = "";
+        if (nextTargetDate[id]) {
+          const convertedDate = convertToGoogleSheetsDate(nextTargetDate[id]);
+          formattedNextTargetDate = convertedDate.formatted;
+        }
+
+        const updateFormData = new FormData();
+        updateFormData.append("sheetName", CONFIG.SOURCE_SHEET_NAME);
+        updateFormData.append("action", "update");
+        updateFormData.append("rowIndex", String(item._rowIndex));
+
+        const rowData = Array(23).fill("");
+
+        if (isExtend) {
+          if (formattedNextTargetDate) {
+            rowData[10] = formattedNextTargetDate; // Column K (Planned Date)
+          }
+          rowData[13] = "Extend date"; // Column N (Status)
+          if (remarksData[id]) {
+            rowData[14] = remarksData[id]; // Column O (Remarks)
+          }
+        } else if (isDone) {
+          rowData[11] = dateForSubmission.formatted; // Column L (Actual Completion Date)
+          rowData[13] = (userRole === "admin" ? "Admin Done" : "Done"); // Column N (Status)
+          if (remarksData[id]) {
+            rowData[14] = remarksData[id]; // Column O (Remarks)
+          }
+          if (userRole === "admin") {
+            rowData[19] = "Admin Done"; // Column T (Admin Done)
+          }
+        }
+
+        updateFormData.append("rowData", JSON.stringify(rowData));
+
+        try {
+          await fetch(CONFIG.APPS_SCRIPT_URL, {
+            method: "POST",
+            body: updateFormData,
+            redirect: "follow",
+          });
+        } catch (err) {
+          console.warn("Failed to update source DELEGATION row for task " + item["col1"], err);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
       return result;
     }
   };
@@ -1960,12 +2115,12 @@ function DelegationDataPage() {
     if (!isOpen || typeof document === "undefined") return null;
 
     return createPortal(
-      <div 
-        className="fixed inset-0 flex items-center justify-center p-4 bg-black/60" 
+      <div
+        className="fixed inset-0 flex items-center justify-center p-4 bg-black/60"
         style={{ zIndex: 999999 }}
         onClick={onCancel}
       >
-        <div 
+        <div
           className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 border border-purple-100 animate-fade-in"
           onClick={(e) => e.stopPropagation()}
         >
@@ -2166,9 +2321,8 @@ function DelegationDataPage() {
               {/* Filters Toggle Button */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors shadow-sm ${
-                  showFilters ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-700 hover:bg-purple-50'
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors shadow-sm ${showFilters ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-700 hover:bg-purple-50'
+                  }`}
               >
                 <Filter className="h-3.5 w-3.5" />
                 <span>Filters</span>
@@ -2197,15 +2351,14 @@ function DelegationDataPage() {
                 <button
                   onClick={handleSubmit}
                   disabled={selectedItemsCount === 0 || isSubmitting}
-                  className={`flex items-center justify-center gap-1.5 gradient-bg text-white px-5 py-1.5 rounded-lg focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-bold shadow-md ${
-                    !isSubmitting && selectedItemsCount > 0 ? 'hover:scale-105 active:scale-95' : ''
-                  }`}
+                  className={`flex items-center justify-center gap-1.5 gradient-bg text-white px-5 py-1.5 rounded-lg focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-bold shadow-md ${!isSubmitting && selectedItemsCount > 0 ? 'hover:scale-105 active:scale-95' : ''
+                    }`}
                 >
                   {isSubmitting ? (
                     <>
                       <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                       </svg>
                       <span>Submitting...</span>
                     </>
@@ -2403,7 +2556,7 @@ function DelegationDataPage() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Submission Status
                         </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Task Score
                         </th>
                         {/* Admin Select Column Header */}
@@ -2489,8 +2642,8 @@ function DelegationDataPage() {
                       </tbody>
                     )}
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredHistoryData.length > 0 ? (
-                        filteredHistoryData.map((history) => {
+                      {paginatedHistoryData.length > 0 ? (
+                        paginatedHistoryData.map((history) => {
                           const isAdminDone = isItemAdminDone(history);
                           const isSelected = selectedHistoryItems.some(
                             (item) => item._id === history._id
@@ -2561,7 +2714,7 @@ function DelegationDataPage() {
                                 </span>
                               </td>
                               {/* Task Score Column */}
-                                                            {/* Task Score Column */}
+                              {/* Task Score Column */}
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm font-semibold">
                                   {(() => {
@@ -2788,15 +2941,101 @@ function DelegationDataPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination Bar for History Tasks */}
+                <div className="bg-white border-t border-purple-100 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    <span>
+                      Showing <strong className="text-purple-700">{filteredHistoryData.length > 0 ? (currentHistoryPage - 1) * pageSize + 1 : 0}</strong> to{" "}
+                      <strong className="text-purple-700">{Math.min(currentHistoryPage * pageSize, filteredHistoryData.length)}</strong> of{" "}
+                      <strong className="text-purple-700">{filteredHistoryData.length}</strong> history records
+                    </span>
+                    <span className="text-gray-300">|</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>Per page:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentHistoryPage(1);
+                        }}
+                        className="border border-purple-200 rounded px-1.5 py-0.5 text-xs font-semibold text-purple-900 bg-purple-50/50 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={99999}>All</option>
+                      </select>
+                    </span>
+                  </div>
+
+                  {totalHistoryPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={currentHistoryPage <= 1}
+                        onClick={() => setCurrentHistoryPage((p) => Math.max(1, p - 1))}
+                        className="px-2.5 py-1 text-xs font-semibold rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Prev
+                      </button>
+                      <div className="flex items-center gap-1 px-1">
+                        {Array.from({ length: Math.min(5, totalHistoryPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalHistoryPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentHistoryPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentHistoryPage >= totalHistoryPages - 2) {
+                            pageNum = totalHistoryPages - 4 + i;
+                          } else {
+                            pageNum = currentHistoryPage - 2 + i;
+                          }
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setCurrentHistoryPage(pageNum)}
+                              className={`min-w-[28px] h-7 px-1.5 text-xs font-bold rounded transition-colors ${
+                                currentHistoryPage === pageNum
+                                  ? "bg-purple-600 text-white shadow-sm"
+                                  : "text-purple-700 hover:bg-purple-50 border border-purple-200"
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={currentHistoryPage >= totalHistoryPages}
+                        onClick={() => setCurrentHistoryPage((p) => Math.min(totalHistoryPages, p + 1))}
+                        className="px-2.5 py-1 text-xs font-semibold rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           ) : (
             <>
               {/* Mobile Card View */}
               <div className="block md:hidden space-y-4 px-4 py-4">
-                {filteredAccountData.length > 0 ? (
-                  filteredAccountData.map((account) => {
+                {paginatedAccountData.length > 0 ? (
+                  paginatedAccountData.map((account) => {
                     const isSelected = selectedItems.has(account._id);
+                    const taskId = account["col1"];
+                    const histRecord = historyMapByTaskId.get(String(taskId !== undefined && taskId !== null ? taskId : "").trim());
+                    const taskHistoryEntries = histRecord ? histRecord.entries : [];
+                    let extensionCount = histRecord ? histRecord.extensionCount : 0;
+                    const isSheetExt = (account["col10"] && account["col6"] && String(account["col10"]).trim() !== String(account["col6"]).trim()) ||
+                      (account["col13"] && String(account["col13"]).toLowerCase().includes("extend"));
+                    if (isSheetExt && extensionCount === 0) {
+                      extensionCount = 1;
+                    }
                     return (
                       <div
                         key={account._id}
@@ -2840,6 +3079,23 @@ function DelegationDataPage() {
                               <div className="text-xs text-gray-500">New Deadline</div>
                               <div className="text-sm text-gray-900">{formatDateForDisplay(account["col10"])}</div>
                             </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${extensionCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>
+                              {extensionCount > 0 ? `Extended: ${extensionCount}x` : 'Extended: 0'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setExtensionModal({
+                                isOpen: true,
+                                task: account,
+                                historyEntries: taskHistoryEntries
+                              })}
+                              className="text-[10px] text-purple-700 hover:text-purple-900 font-bold underline bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              📅 See More
+                            </button>
                           </div>
 
                           {isSelected && (
@@ -2910,6 +3166,30 @@ function DelegationDataPage() {
                   })
                 ) : (
                   <div className="p-4 text-center text-gray-500">{searchTerm ? "No tasks matching your search" : "No pending tasks found"}</div>
+                )}
+                {/* Mobile Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 pb-1 text-xs">
+                    <button
+                      type="button"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1 bg-white border border-purple-200 text-purple-700 rounded-md font-bold disabled:opacity-40"
+                    >
+                      Prev
+                    </button>
+                    <span className="font-semibold text-gray-600">
+                      Page {currentPage} of {totalPages} ({filteredAccountData.length} tasks)
+                    </span>
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-3 py-1 bg-white border border-purple-200 text-purple-700 rounded-md font-bold disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -3015,23 +3295,28 @@ function DelegationDataPage() {
                       </tbody>
                     )}
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredAccountData.length > 0 ? (
-                        filteredAccountData.map((account) => {
+                      {paginatedAccountData.length > 0 ? (
+                        paginatedAccountData.map((account) => {
                           const isSelected = selectedItems.has(account._id);
                           const rowColorClass = getRowColor(account["col17"]);
                           const taskId = account["col1"];
-                          
+
                           // Find all extension & completion history records for this task (O(1) Map lookup)
-                          const histRecord = historyMapByTaskId.get(String(taskId || "").trim());
+                          const histRecord = historyMapByTaskId.get(String(taskId !== undefined && taskId !== null ? taskId : "").trim());
                           const taskHistoryEntries = histRecord ? histRecord.entries : [];
-                          const extensionCount = histRecord ? histRecord.extensionCount : 0;
+                          let extensionCount = histRecord ? histRecord.extensionCount : 0;
+                          const isSheetExt = (account["col10"] && account["col6"] && String(account["col10"]).trim() !== String(account["col6"]).trim()) ||
+                            (account["col13"] && String(account["col13"]).toLowerCase().includes("extend"));
+                          if (isSheetExt && extensionCount === 0) {
+                            extensionCount = 1;
+                          }
 
                           return (
                             <tr
                               key={account._id}
                               className={`${isSelected ? "bg-purple-50" : ""} hover:bg-gray-50/80 transition-colors ${rowColorClass} ${isTaskDisabled(account["col20"], userRole)
-                                  ? "opacity-50 bg-gray-100 cursor-not-allowed"
-                                  : ""
+                                ? "opacity-50 bg-gray-100 cursor-not-allowed"
+                                : ""
                                 }`}
                             >
                               {/* 1. Checkbox */}
@@ -3089,9 +3374,8 @@ function DelegationDataPage() {
                               {/* 7. Extension Count & Date Action (Popup) */}
                               <td className="px-2 py-1.5 text-center whitespace-nowrap min-w-[130px]">
                                 <div className="inline-flex flex-col items-center gap-1">
-                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                    extensionCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
-                                  }`}>
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${extensionCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+                                    }`}>
                                     {extensionCount > 0 ? `Extended: ${extensionCount}x` : 'Extended: 0'}
                                   </span>
                                   <button
@@ -3314,20 +3598,97 @@ function DelegationDataPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination Bar for Active Tasks (Desktop) */}
+                <div className="bg-white border-t border-purple-100 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                    <span>
+                      Showing <strong className="text-purple-700">{filteredAccountData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> to{" "}
+                      <strong className="text-purple-700">{Math.min(currentPage * pageSize, filteredAccountData.length)}</strong> of{" "}
+                      <strong className="text-purple-700">{filteredAccountData.length}</strong> tasks
+                    </span>
+                    <span className="text-gray-300">|</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>Per page:</span>
+                      <select
+                        value={pageSize}
+                        onChange={(e) => {
+                          setPageSize(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        className="border border-purple-200 rounded px-1.5 py-0.5 text-xs font-semibold text-purple-900 bg-purple-50/50 focus:outline-none focus:ring-1 focus:ring-purple-400"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={99999}>All</option>
+                      </select>
+                    </span>
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={currentPage <= 1}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className="px-2.5 py-1 text-xs font-semibold rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Prev
+                      </button>
+                      <div className="flex items-center gap-1 px-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={`min-w-[28px] h-7 px-1.5 text-xs font-bold rounded transition-colors ${
+                                currentPage === pageNum
+                                  ? "bg-purple-600 text-white shadow-sm"
+                                  : "text-purple-700 hover:bg-purple-50 border border-purple-200"
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className="px-2.5 py-1 text-xs font-semibold rounded border border-purple-200 text-purple-700 hover:bg-purple-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
         </div>
         {/* Task Extension & Date Change History Modal */}
         {extensionModal.isOpen && extensionModal.task && typeof document !== "undefined" && createPortal(
-          <div 
+          <div
             className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 animate-fade-in"
             style={{ zIndex: 999999 }}
             onClick={() => setExtensionModal({ isOpen: false, task: null, historyEntries: [] })}
           >
             <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-200">
               {/* Modal Header */}
-              <div 
+              <div
                 style={{ background: "linear-gradient(135deg, #6b21a8 0%, #4338ca 100%)", backgroundColor: "#6b21a8" }}
                 className="p-4 text-white flex items-center justify-between shadow-md"
               >
@@ -3415,9 +3776,8 @@ function DelegationDataPage() {
                             </span>
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
-                                <span className={`font-bold ${
-                                  isDone ? 'text-green-700' : isExtend ? 'text-amber-700' : 'text-gray-800'
-                                }`}>
+                                <span className={`font-bold ${isDone ? 'text-green-700' : isExtend ? 'text-amber-700' : 'text-gray-800'
+                                  }`}>
                                   Action: {actionStatus}
                                 </span>
                                 <span className="text-[10px] text-gray-400">
@@ -3448,10 +3808,23 @@ function DelegationDataPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
-                      <p className="font-semibold text-slate-700 text-xs">No past extension or completion records for this task yet.</p>
-                      <p className="text-[11px] text-slate-400 mt-1">This task is progressing on its original schedule.</p>
-                    </div>
+                    extensionModal.task["col10"] && extensionModal.task["col6"] && String(extensionModal.task["col10"]).trim() !== String(extensionModal.task["col6"]).trim() ? (
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
+                        <p className="font-bold text-xs flex items-center gap-1">
+                          <span>🔄</span>
+                          <span>Deadline Extended in Schedule</span>
+                        </p>
+                        <p className="text-[11px] text-amber-800 mt-1">
+                          Original Deadline: <strong className="font-bold">{formatDateForDisplay(extensionModal.task["col6"]) || "—"}</strong> → Extended Target Date: <strong className="font-bold text-purple-700">{formatDateForDisplay(extensionModal.task["col10"]) || "—"}</strong>
+                        </p>
+                        <p className="text-[10px] text-amber-700 mt-0.5">Current Status: {extensionModal.task["col13"] || extensionModal.task["col20"] || "Extend date"}</p>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-500">
+                        <p className="font-semibold text-slate-700 text-xs">No past extension or completion records for this task yet.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">This task is progressing on its original schedule.</p>
+                      </div>
+                    )
                   )}
                 </div>
               </div>
@@ -3473,12 +3846,12 @@ function DelegationDataPage() {
 
         {/* Select-All Block Warning Modal */}
         {showSelectAllWarning && typeof document !== "undefined" && createPortal(
-          <div 
-            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 animate-fade-in" 
+          <div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 animate-fade-in"
             style={{ zIndex: 999999 }}
             onClick={() => setShowSelectAllWarning(false)}
           >
-            <div 
+            <div
               className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-gray-100 text-center p-6 relative"
               onClick={(e) => e.stopPropagation()}
             >
