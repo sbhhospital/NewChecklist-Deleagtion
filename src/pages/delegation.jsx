@@ -103,9 +103,16 @@ const parseGoogleSheetsDateStr = (dateStr) => {
 
 const parseDateFromDDMMYYYY = (dateStr) => {
   if (!dateStr) return null;
-  const parts = dateStr.split("/");
+  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+  const s = String(dateStr).trim();
+  const parts = s.split("/");
   if (parts.length === 3) {
-    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+    const d = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const y = parseInt(parts[2], 10);
+    if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+      return new Date(y, m, d);
+    }
   }
   return null;
 };
@@ -265,22 +272,6 @@ function DelegationDataPage() {
   const [tempRemarks, setTempRemarks] = useState({});
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  // Pre-calculate holiday timestamps once (O(1) lookups during scoring, 0 date allocations)
-  const holidayTimestamps = useMemo(() => {
-    const list = [];
-    if (!holidayDates || holidayDates.size === 0) return list;
-    holidayDates.forEach((hDateStr) => {
-      const hDate = parseDateFromDDMMYYYY(hDateStr);
-      if (hDate && !isNaN(hDate.getTime())) {
-        hDate.setHours(0, 0, 0, 0);
-        if (hDate.getDay() !== 0) { // Non-Sunday holidays
-          list.push(hDate.getTime());
-        }
-      }
-    });
-    return list;
-  }, [holidayDates]);
 
   const formatDateToDDMMYYYY = useCallback((date) => {
     const day = date.getDate().toString().padStart(2, "0");
@@ -509,12 +500,21 @@ function DelegationDataPage() {
     [parseGoogleSheetsDate]
   );
 
-  const parseDateFromDDMMYYYY = useCallback((dateStr) => {
-    if (!dateStr || typeof dateStr !== "string") return null;
-    const parts = dateStr.split("/");
-    if (parts.length !== 3) return null;
-    return new Date(parts[2], parts[1] - 1, parts[0]);
-  }, []);
+  // Pre-calculate holiday timestamps once (O(1) lookups during scoring, 0 date allocations)
+  const holidayTimestamps = useMemo(() => {
+    const list = [];
+    if (!holidayDates || holidayDates.size === 0) return list;
+    holidayDates.forEach((hDateStr) => {
+      const hDate = parseDateFromDDMMYYYY(hDateStr);
+      if (hDate && !isNaN(hDate.getTime())) {
+        hDate.setHours(0, 0, 0, 0);
+        if (hDate.getDay() !== 0) { // Non-Sunday holidays
+          list.push(hDate.getTime());
+        }
+      }
+    });
+    return list;
+  }, [holidayDates]);
 
   const historyMapByTaskId = useMemo(() => {
     const map = new Map();
@@ -679,7 +679,7 @@ function DelegationDataPage() {
       delayPenalty: delayPenaltyOnTask,
       mainScorePenalty
     };
-  }, [parseDateFromDDMMYYYY, holidayTimestamps, calculateBusinessDelayDays, historyMapByTaskId]);
+  }, [holidayTimestamps, calculateBusinessDelayDays, historyMapByTaskId]);
 
   const scoringSummary = useMemo(() => {
     let tasksToScore = unfilteredDelegationData;
@@ -783,7 +783,7 @@ function DelegationDataPage() {
 
       return dateB.getTime() - dateA.getTime();
     },
-    [parseDateFromDDMMYYYY]
+    []
   );
 
   const resetFilters = useCallback(() => {
@@ -945,7 +945,6 @@ function DelegationDataPage() {
     dateRange,
     statusFilter,
     formatDateForDisplay,
-    parseDateFromDDMMYYYY,
     sortDateWise,
   ]);
 
@@ -971,7 +970,7 @@ function DelegationDataPage() {
       if (!dateB) return -1;
       return dateA.getTime() - dateB.getTime();
     });
-  }, [accountData, formatDateForDisplay, parseDateFromDDMMYYYY]);
+  }, [accountData, formatDateForDisplay]);
 
   // Updated filteredHistoryData useMemo with name filter
   const filteredHistoryData = useMemo(() => {
@@ -1035,7 +1034,6 @@ function DelegationDataPage() {
     debouncedSearchTerm,
     startDate,
     endDate,
-    parseDateFromDDMMYYYY,
     userRole,
     username,
     nameFilter,
@@ -1389,7 +1387,6 @@ function DelegationDataPage() {
   }, [
     formatDateToDDMMYYYY,
     parseGoogleSheetsDate,
-    parseDateFromDDMMYYYY,
     isEmpty,
     userRole,
     username,
